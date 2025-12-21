@@ -134,7 +134,107 @@ export const POST = async (req: NextRequest) => {
   try {
     await connect();
     const data = await req.json();
+    const { searchParams } = new URL(req.url);
+    const action = searchParams.get("action");
 
+    // Handle staff assignment action
+    if (action === "assign" && data.staffId && data.projectId) {
+      if (!isValidObjectId(data.staffId)) {
+        return errorResponse("Invalid staff ID format", 400);
+      }
+
+      if (!isValidObjectId(data.projectId)) {
+        return errorResponse("Invalid project ID format", 400);
+      }
+
+      // Find the project
+      const project = await Projects.findById(data.projectId);
+      if (!project) {
+        return errorResponse("Project not found", 404);
+      }
+
+      // Find the staff member
+      const staff = await Staff.findById(data.staffId);
+      if (!staff) {
+        return errorResponse("Staff member not found", 404);
+      }
+
+      // Check if staff is already assigned to this project
+      const isAlreadyAssigned = project.assignedStaff?.some(
+        (assignedStaff: any) => assignedStaff._id.toString() === data.staffId
+      );
+
+      if (isAlreadyAssigned) {
+        return errorResponse("Staff member is already assigned to this project", 409);
+      }
+
+      // Add staff to project's assignedStaff array
+      const staffToAssign = {
+        _id: staff._id,
+        fullName: `${staff.firstName} ${staff.lastName}`,
+      };
+
+      const updatedAssignedStaff = [...(project.assignedStaff || []), staffToAssign];
+
+      // Update the project
+      const updatedProject = await Projects.findByIdAndUpdate(
+        data.projectId,
+        { assignedStaff: updatedAssignedStaff },
+        { new: true }
+      );
+
+      if (!updatedProject) {
+        return errorResponse("Failed to update project", 500);
+      }
+
+      // Log the staff assignment activity
+      try {
+        const activityPayload = {
+          user: data.user || {
+            userId: 'system',
+            fullName: 'System',
+            email: 'system@admin.com'
+          },
+          clientId: project.clientId || 'unknown',
+          projectId: data.projectId,
+          projectName: project.name || project.projectName || 'Unknown Project',
+          activityType: 'staff_assigned',
+          category: 'staff',
+          action: 'assign',
+          description: `Assigned ${staff.firstName} ${staff.lastName} to project "${project.name || project.projectName}"`,
+          message: data.message || 'Staff assigned to project via API',
+          date: new Date().toISOString(),
+          metadata: {
+            staffName: `${staff.firstName} ${staff.lastName}`,
+            staffId: staff._id.toString(),
+          },
+        };
+
+        // Import axios for activity logging
+        const axios = require('axios');
+        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
+        
+        await axios.post(`${domain}/api/activity`, activityPayload);
+        console.log(`✅ Staff assignment activity logged for ${staff.firstName} ${staff.lastName}`);
+      } catch (activityError) {
+        console.error('❌ Error logging staff assignment activity:', activityError);
+        // Don't fail the operation if activity logging fails
+      }
+
+      return successResponse(
+        {
+          staffId: data.staffId,
+          projectId: data.projectId,
+          staffName: `${staff.firstName} ${staff.lastName}`,
+          projectName: project.name || project.projectName,
+          assignedAt: new Date().toISOString()
+        },
+        "Staff member assigned to project successfully",
+        201
+      );
+    }
+
+    // Handle regular staff creation
     if (!data.email) {
       return errorResponse("Email is required", 400);
     }
@@ -275,6 +375,8 @@ export const DELETE = async (req: NextRequest) => {
     await connect();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
+    const action = searchParams.get("action");
+    const projectId = searchParams.get("projectId");
 
     if (!id) {
       return errorResponse("Staff ID is required for deletion", 400);
@@ -284,6 +386,88 @@ export const DELETE = async (req: NextRequest) => {
       return errorResponse("Invalid staff ID format", 400);
     }
 
+    // Handle staff assignment removal action
+    if (action === "remove_assign" && projectId) {
+      if (!isValidObjectId(projectId)) {
+        return errorResponse("Invalid project ID format", 400);
+      }
+
+      // Find the project and remove staff from assignedStaff array
+      const project = await Projects.findById(projectId);
+      if (!project) {
+        return errorResponse("Project not found", 404);
+      }
+
+      // Find the staff member
+      const staff = await Staff.findById(id);
+      if (!staff) {
+        return errorResponse("Staff member not found", 404);
+      }
+
+      // Remove staff from project's assignedStaff array
+      const originalAssignedStaff = project.assignedStaff || [];
+      const updatedAssignedStaff = originalAssignedStaff.filter(
+        (assignedStaff: any) => assignedStaff._id.toString() !== id
+      );
+
+      // Update the project
+      const updatedProject = await Projects.findByIdAndUpdate(
+        projectId,
+        { assignedStaff: updatedAssignedStaff },
+        { new: true }
+      );
+
+      if (!updatedProject) {
+        return errorResponse("Failed to update project", 500);
+      }
+
+      // Log the staff removal activity
+      try {
+        const activityPayload = {
+          user: {
+            userId: 'system',
+            fullName: 'System',
+            email: 'system@admin.com'
+          },
+          clientId: project.clientId || 'unknown',
+          projectId: projectId,
+          projectName: project.name || project.projectName || 'Unknown Project',
+          activityType: 'staff_unassigned',
+          category: 'staff',
+          action: 'unassign',
+          description: `Removed ${staff.firstName} ${staff.lastName} from project "${project.name || project.projectName}"`,
+          message: 'Staff removed from project via API',
+          date: new Date().toISOString(),
+          metadata: {
+            staffName: `${staff.firstName} ${staff.lastName}`,
+            staffId: staff._id.toString(),
+          },
+        };
+
+        // Import axios for activity logging
+        const axios = require('axios');
+        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
+        
+        await axios.post(`${domain}/api/activity`, activityPayload);
+        console.log(`✅ Staff removal activity logged for ${staff.firstName} ${staff.lastName}`);
+      } catch (activityError) {
+        console.error('❌ Error logging staff removal activity:', activityError);
+        // Don't fail the operation if activity logging fails
+      }
+
+      return successResponse(
+        {
+          staffId: id,
+          projectId: projectId,
+          staffName: `${staff.firstName} ${staff.lastName}`,
+          projectName: project.name || project.projectName,
+          removedAt: new Date().toISOString()
+        },
+        "Staff member removed from project successfully"
+      );
+    }
+
+    // Handle regular staff deletion
     // Find the staff member first to get their email
     const staffToDelete = await Staff.findById(id);
     if (!staffToDelete) {

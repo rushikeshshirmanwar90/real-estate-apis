@@ -82,7 +82,7 @@ export const POST = async (req: NextRequest | Request) => {
     return NextResponse.json(
       {
         success: true,
-        message: "Password reset successfully. You can now set a new password."
+        message: "Password reset successfully. Please verify with OTP to set a new password."
       },
       { status: 200 }
     );
