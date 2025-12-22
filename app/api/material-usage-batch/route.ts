@@ -362,8 +362,14 @@ export const POST = async (req: NextRequest | Request) => {
     } catch (activityError) {
       console.error('❌ FAILED TO LOG MATERIAL ACTIVITY:');
       console.error('========================================');
-      console.error('Error message:', activityError.message);
-      console.error('Error stack:', activityError.stack);
+      
+      if (activityError instanceof Error) {
+        console.error('Error message:', activityError.message);
+        console.error('Error stack:', activityError.stack);
+      } else {
+        console.error('Unknown error type:', activityError);
+      }
+      
       console.error('Error details:', JSON.stringify(activityError, null, 2));
       console.error('========================================');
       // Don't fail the main operation if activity logging fails

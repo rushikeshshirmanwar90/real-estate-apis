@@ -82,9 +82,9 @@ export const POST = async (req: NextRequest) => {
                 message: data.message
             },
             metadata: data.metadata || {},
-            status: 'pending',
+            status: 'pending' as 'pending' | 'sent' | 'failed',
             createdAt: new Date().toISOString(),
-            sentAt: null
+            sentAt: null as string | null
         };
 
         console.log('📧 Notification Record Created:', notificationRecord.id);
