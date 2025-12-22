@@ -36,6 +36,14 @@ const StaffSchema = new Schema({
     type: [String],
     required: false,
   },
+  emailVerified: {
+    type: Boolean,
+    default: false,
+  },
+  emailVerifiedAt: {
+    type: Date,
+    required: false,
+  },
 });
 
 export const Staff = models.Staff || model("Staff", StaffSchema);

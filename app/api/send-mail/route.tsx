@@ -1,9 +1,8 @@
-import { EmailTemplate } from "@/components/mail/PropertyMail";
+import { EmailTemplate } from "@/components/mail/WelcomeTemplate";
 import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { render } from '@react-email/components';
 import { transporter } from "@/lib/transporter";
-
 
 export const POST = async (req: NextRequest | Request) => {
     try {
@@ -17,9 +16,9 @@ export const POST = async (req: NextRequest | Request) => {
             );
         }
 
-        const { email } = body;
+        const { email, staffName, companyName } = body;
 
-        const emailHtml = await render(<EmailTemplate details={body.details} />);
+        const emailHtml = await render(<EmailTemplate staffName={staffName} companyName={companyName} />);
 
         const info = await transporter.sendMail({
             from: `"Rushikesh Shrimanwar"`,
