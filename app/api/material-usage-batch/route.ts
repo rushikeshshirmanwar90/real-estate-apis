@@ -14,7 +14,8 @@ type MaterialSubdoc = {
   unit: string;
   specs?: Specs;
   qnt: number;
-  cost?: number;
+  perUnitCost: number;
+  totalCost: number;
   sectionId?: string;
   miniSectionId?: string;
 };
@@ -170,14 +171,14 @@ export const POST = async (req: NextRequest | Request) => {
       }
 
       const available = project.MaterialAvailable![availIndex] as MaterialSubdoc;
-      const costPerUnit = Number(available.cost || 0);
-      const costOfUsedMaterial = costPerUnit * quantity;
+      const perUnitCost = Number(available.perUnitCost);
+      const totalCostForUsage = perUnitCost * quantity;
 
       console.log(`✅ Material found: ${available.name}`);
       console.log(`💰 Cost calculation:`);
-      console.log(`  - Per-unit cost: ${costPerUnit}`);
+      console.log(`  - Per-unit cost: ${perUnitCost}`);
       console.log(`  - Quantity being used: ${quantity}`);
-      console.log(`  - Total cost for quantity used: ${costOfUsedMaterial}`);
+      console.log(`  - Total cost for quantity used: ${totalCostForUsage}`);
       console.log(`  - Available quantity: ${Number(available.qnt || 0)}`);
 
       // Check sufficient quantity
@@ -200,7 +201,8 @@ export const POST = async (req: NextRequest | Request) => {
         unit: available.unit,
         specs: available.specs || {},
         qnt: quantity,
-        cost: costOfUsedMaterial,
+        perUnitCost: perUnitCost,
+        totalCost: totalCostForUsage,
         sectionId: String(sectionId),
         miniSectionId:
           miniSectionId ||
@@ -210,7 +212,7 @@ export const POST = async (req: NextRequest | Request) => {
 
       usedMaterials.push(usedClone);
       materialUpdates.push({ materialId, quantity });
-      totalCostOfUsedMaterials += costOfUsedMaterial;
+      totalCostOfUsedMaterials += totalCostForUsage;
     }
 
     console.log(`\n📊 Processing summary:`);
@@ -283,7 +285,8 @@ export const POST = async (req: NextRequest | Request) => {
         unit: material.unit,
         specs: material.specs || {},
         qnt: material.qnt,
-        cost: material.cost || 0,
+        perUnitCost: material.perUnitCost,
+        totalCost: material.totalCost,
         addedAt: new Date()
       }));
 

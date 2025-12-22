@@ -40,9 +40,15 @@ const MaterialUsedSchema = new Schema(
       type: Number,
       required: true,
     },
-    cost: {
+    perUnitCost: {
       type: Number,
-      default: 0,
+      required: true,
+      min: 0,
+    },
+    totalCost: {
+      type: Number,
+      required: true,
+      min: 0,
     },
     sectionId: {
       type: String,

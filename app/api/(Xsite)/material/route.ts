@@ -13,7 +13,7 @@ type AddMaterialStockItem = {
   unit: string;
   specs?: Specs;
   qnt: number | string;
-  cost: number | string;
+  perUnitCost: number | string; // ✅ NEW: Per-unit cost field
   mergeIfExists?: boolean;
 };
 
@@ -23,7 +23,8 @@ type MaterialSubdoc = {
   unit: string;
   specs?: Specs;
   qnt: number;
-  cost?: number;
+  perUnitCost: number; // ✅ Per-unit cost field
+  totalCost: number;   // ✅ Total cost field
 };
 
 // GET: Fetch MaterialAvailable for a project
@@ -124,7 +125,7 @@ export const POST = async (req: NextRequest | Request) => {
         unit,
         specs = {},
         qnt: rawQnt,
-        cost: rawCost,
+        perUnitCost: rawPerUnitCost,
         mergeIfExists = true,
       } = item as AddMaterialStockItem;
 
@@ -132,7 +133,8 @@ export const POST = async (req: NextRequest | Request) => {
 
       // Basic validation and coercion
       const qnt = typeof rawQnt === "string" ? Number(rawQnt) : rawQnt;
-      const cost = typeof rawCost === "string" ? Number(rawCost) : rawCost;
+      const perUnitCost = typeof rawPerUnitCost === "string" ? Number(rawPerUnitCost) : rawPerUnitCost;
+      const totalCost = perUnitCost * qnt;
 
       if (!projectId || !materialName || !unit) {
         results.push({
@@ -147,8 +149,8 @@ export const POST = async (req: NextRequest | Request) => {
         continue;
       }
 
-      if (typeof cost !== "number" || Number.isNaN(cost)) {
-        results.push({ ...resultBase, error: "cost must be a number" });
+      if (typeof perUnitCost !== "number" || Number.isNaN(perUnitCost)) {
+        results.push({ ...resultBase, error: "perUnitCost must be a number" });
         continue;
       }
 
@@ -160,8 +162,8 @@ export const POST = async (req: NextRequest | Request) => {
         continue;
       }
 
-      if (cost < 0) {
-        results.push({ ...resultBase, error: "Cost cannot be negative" });
+      if (perUnitCost < 0) {
+        results.push({ ...resultBase, error: "Per unit cost cannot be negative" });
         continue;
       }
 
@@ -194,25 +196,26 @@ export const POST = async (req: NextRequest | Request) => {
             existingIndex
           ];
           const oldQnt = Number(existing.qnt || 0);
-          const oldCostPerUnit = Number(existing.cost || 0);
+          const oldPerUnitCost = Number(existing.perUnitCost || 0);
+          const oldTotalCost = Number(existing.totalCost || 0);
           const newQnt = oldQnt + qnt;
+          
           // Calculate weighted average per-unit cost
-          const totalOldCost = oldCostPerUnit * oldQnt;
-          const totalNewCost = cost * qnt;
-          const combinedTotalCost = totalOldCost + totalNewCost;
-          const newCostPerUnit = newQnt > 0 ? combinedTotalCost / newQnt : 0;
+          const newTotalCost = oldTotalCost + totalCost;
+          const newPerUnitCost = newQnt > 0 ? newTotalCost / newQnt : 0;
 
           console.log('\n💰 MERGE COST CALCULATION:');
           console.log('  - Material:', materialName);
-          console.log('  - Old quantity:', oldQnt, '@ ₹', oldCostPerUnit, 'per unit = ₹', totalOldCost);
-          console.log('  - New quantity:', qnt, '@ ₹', cost, 'per unit = ₹', totalNewCost);
-          console.log('  - Combined quantity:', newQnt, '@ ₹', newCostPerUnit.toFixed(2), 'per unit = ₹', combinedTotalCost);
-          console.log('  - Adding to spent:', totalNewCost);
+          console.log('  - Old quantity:', oldQnt, '@ ₹', oldPerUnitCost, 'per unit = ₹', oldTotalCost);
+          console.log('  - New quantity:', qnt, '@ ₹', perUnitCost, 'per unit = ₹', totalCost);
+          console.log('  - Combined quantity:', newQnt, '@ ₹', newPerUnitCost.toFixed(2), 'per unit = ₹', newTotalCost);
+          console.log('  - Adding to spent:', totalCost);
 
           // update fields on the document and save
           existing.qnt = newQnt;
-          existing.cost = newCostPerUnit; // Store weighted average per-unit cost
-          project.spent = (project.spent || 0) + totalNewCost; // Add only the new total cost
+          existing.perUnitCost = newPerUnitCost; // Store weighted average per-unit cost
+          existing.totalCost = newTotalCost; // Store total cost
+          project.spent = (project.spent || 0) + totalCost; // Add only the new total cost
 
           const saved = await project.save();
 
@@ -239,13 +242,12 @@ export const POST = async (req: NextRequest | Request) => {
 
       // Create new batch using findByIdAndUpdate
       // Assign an explicit _id to material subdocuments so other APIs can reference them reliably
-      const totalCostForImport = cost * qnt;
       
       console.log('\n💰 IMPORT COST CALCULATION:');
       console.log('  - Material:', materialName);
-      console.log('  - Per-unit cost:', cost);
+      console.log('  - Per-unit cost:', perUnitCost);
       console.log('  - Quantity:', qnt);
-      console.log('  - Total cost for import:', totalCostForImport);
+      console.log('  - Total cost for import:', totalCost);
       
       const newMaterial: MaterialSubdoc = {
         _id: new ObjectId(),
@@ -253,7 +255,8 @@ export const POST = async (req: NextRequest | Request) => {
         unit,
         specs: specs || {},
         qnt: Number(qnt),
-        cost: Number(cost), // Store per-unit cost
+        perUnitCost: Number(perUnitCost), // Store per-unit cost
+        totalCost: Number(totalCost), // Store total cost
       };
 
       const updatedProject = await Projects.findByIdAndUpdate(
@@ -263,7 +266,7 @@ export const POST = async (req: NextRequest | Request) => {
             MaterialAvailable: newMaterial,
           },
           $inc: {
-            spent: cost * qnt, // FIXED: Add total cost (per-unit cost × quantity) to spent
+            spent: totalCost, // Add total cost to spent
           },
         },
         { new: true }

@@ -48,7 +48,7 @@ export const GET = async (req: NextRequest) => {
     const email = searchParams.get("email");
     const clientId = searchParams.get("clientId");
 
-    console.log('🔍 Admin API (users) called with:', { id, email, clientId });
+    console.log('🔍 Admin API (users/admin) called with:', { id, email, clientId });
 
     // Get specific admin by ID
     if (id) {
@@ -87,14 +87,19 @@ export const GET = async (req: NextRequest) => {
       // ✅ Validate client exists
       try {
         await requireValidClient(clientId);
+        console.log('✅ Client validation passed for admin');
       } catch (clientError) {
+        console.log('❌ Client validation failed for admin:', clientError);
         if (clientError instanceof Error) {
           return errorResponse(clientError.message, 404);
         }
         return errorResponse("Client validation failed", 404);
       }
 
+      console.log('🔍 Fetching admin for clientId:', clientId);
       const adminData = await Admin.findOne({ clientId });
+      console.log('📊 Admin found:', adminData ? 'Yes' : 'No');
+      
       if (!adminData) {
         return errorResponse("Admin not found with this clientId", 404);
       }
@@ -103,14 +108,16 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Get all admins
+    console.log('🔍 Fetching all admins');
     const adminData = await Admin.find().sort({ createdAt: -1 });
+    console.log('📊 Total admins found:', adminData.length);
 
     return successResponse(
       adminData,
       `Retrieved ${adminData.length} admin(s) successfully`
     );
   } catch (error: unknown) {
-    console.error("GET /admin error:", error);
+    console.error("GET /users/admin error:", error);
     return errorResponse("Failed to fetch admin data", 500, error);
   }
 };
@@ -172,7 +179,7 @@ export const POST = async (req: NextRequest) => {
 
     return successResponse(savedAdmin, "Admin created successfully", 201);
   } catch (error: unknown) {
-    console.error("POST /admin error:", error);
+    console.error("POST /users/admin error:", error);
 
     // Handle mongoose validation errors
     if (
@@ -246,7 +253,7 @@ export const PUT = async (req: NextRequest) => {
 
     return successResponse(updatedAdmin, "Admin updated successfully");
   } catch (error: unknown) {
-    console.error("PUT /admin error:", error);
+    console.error("PUT /users/admin error:", error);
 
     // Handle mongoose validation errors
     if (
@@ -292,7 +299,7 @@ export const DELETE = async (req: NextRequest) => {
 
     return successResponse(deletedAdmin, "Admin deleted successfully");
   } catch (error: unknown) {
-    console.error("DELETE /admin error:", error);
+    console.error("DELETE /users/admin error:", error);
     return errorResponse("Failed to delete admin", 500, error);
   }
 };

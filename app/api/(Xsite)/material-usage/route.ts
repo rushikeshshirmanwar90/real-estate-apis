@@ -13,7 +13,8 @@ type MaterialSubdoc = {
   unit: string;
   specs?: Specs;
   qnt: number;
-  cost?: number;
+  perUnitCost: number; // Per-unit cost field
+  totalCost: number;   // Total cost field
   sectionId?: string;
   miniSectionId?: string;
 };
@@ -165,12 +166,13 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     const available = project.MaterialAvailable![availIndex] as MaterialSubdoc;
-    // CONFIRMED: available.cost is per-unit cost (from frontend MaterialFormModal)
-    const costPerUnit = Number(available.cost || 0);
+    
+    // Get per-unit cost from available material
+    const costPerUnit = Number(available.perUnitCost);
     const costOfUsedMaterial = costPerUnit * qnt;
 
     console.log('\n💰 COST CALCULATION:');
-    console.log('  - Per-unit cost (from available.cost):', costPerUnit);
+    console.log('  - Per-unit cost (from available.perUnitCost):', costPerUnit);
     console.log('  - Quantity being used:', qnt);
     console.log('  - Total cost for quantity used:', costOfUsedMaterial);
     console.log('  - Available quantity:', Number(available.qnt || 0));
@@ -194,7 +196,8 @@ export const POST = async (req: NextRequest | Request) => {
       unit: available.unit,
       specs: available.specs || {},
       qnt: qnt,
-      cost: costOfUsedMaterial, // ✅ Use calculated cost for the specific quantity
+      perUnitCost: costPerUnit, // Store per-unit cost
+      totalCost: costOfUsedMaterial, // Store total cost for used quantity
       sectionId: String(sectionId),
       miniSectionId:
         miniSectionId ||

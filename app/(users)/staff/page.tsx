@@ -25,8 +25,8 @@ const Page = () => {
     useEffect(() => {
         const fetchStaffData = async () => {
             try {
-                const res = await axios.get(`${domain}/api/staff`)
-                const data = res.data.staffData
+                const res = await axios.get(`${domain}/api/staff?clientId=${process.env.NEXT_PUBLIC_CLIENT_ID}`)
+                const data = res.data.data || res.data.staffData
 
 
                 const transformedData: StaffProps[] = data.map((item: StaffApiResponse) => ({

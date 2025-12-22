@@ -20,7 +20,7 @@ export const GET = async (req: NextRequest) => {
     const email = searchParams.get("email");
     const clientId = searchParams.get("clientId");
 
-    console.log('🔍 Staff API (users) called with:', { id, email, clientId });
+    console.log('🔍 Staff API (users/staff) called with:', { id, email, clientId });
 
     // ✅ Require clientId for all staff operations
     if (!clientId) {
@@ -168,7 +168,7 @@ export const GET = async (req: NextRequest) => {
       `Retrieved ${staffWithProjects.length} staff member(s) successfully`
     );
   } catch (error: unknown) {
-    console.error("GET /staff error:", error);
+    console.error("GET /users/staff error:", error);
     return errorResponse("Failed to fetch staff data", 500, error);
   }
 };
@@ -341,7 +341,7 @@ export const POST = async (req: NextRequest) => {
       201
     );
   } catch (error: unknown) {
-    console.error("POST /staff error:", error);
+    console.error("POST /users/staff error:", error);
 
     // Handle mongoose validation errors
     if (
@@ -438,7 +438,7 @@ export const PUT = async (req: NextRequest) => {
 
     return successResponse(updatedStaff, "Staff member updated successfully");
   } catch (error: unknown) {
-    console.error("PUT /staff error:", error);
+    console.error("PUT /users/staff error:", error);
 
     // Handle mongoose validation errors
     if (
@@ -599,7 +599,7 @@ export const DELETE = async (req: NextRequest) => {
 
     return successResponse(deletedStaff, "Staff member deleted successfully");
   } catch (error: unknown) {
-    console.error("DELETE /staff error:", error);
+    console.error("DELETE /users/staff error:", error);
     return errorResponse("Failed to delete staff member", 500, error);
   }
 };

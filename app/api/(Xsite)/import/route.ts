@@ -38,7 +38,15 @@ export const POST = async (req: NextRequest | Request) => {
       sectionId,
       {
         $push: {
-          MaterialAvailable: { $each: materials },
+          MaterialAvailable: { 
+            $each: materials.map((material: any) => ({
+              ...material,
+              perUnitCost: material.perUnitCost || material.cost || 0,
+              totalCost: material.totalCost || (material.cost * material.qnt) || 0,
+              // Remove old cost field if it exists
+              cost: undefined
+            }))
+          },
         },
       },
       { new: true, runValidators: true }
