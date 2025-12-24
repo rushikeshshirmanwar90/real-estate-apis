@@ -27,12 +27,16 @@ type MaterialSubdoc = {
   totalCost: number;   // ✅ Total cost field
 };
 
-// GET: Fetch MaterialAvailable for a project
+// GET: Fetch MaterialAvailable for a project with pagination
 export const GET = async (req: NextRequest | Request) => {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
     const clientId = searchParams.get("clientId");
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "10");
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = searchParams.get("sortOrder") || "desc";
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -45,39 +49,177 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
-    await connect();
-
-    const project = await Projects.findOne(
-      {
-        _id: new ObjectId(projectId),
-        clientId: new ObjectId(clientId),
-      },
-      { MaterialAvailable: 1 }
-    );
-
-    if (!project) {
+    // Validate pagination parameters
+    if (page < 1 || limit < 1 || limit > 100) {
       return NextResponse.json(
         {
-          message: "Project not found",
+          message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-100",
         },
         {
-          status: 404,
+          status: 400,
         }
       );
     }
+
+    await connect();
+
+    console.log('\n========================================');
+    console.log('MATERIAL API - PAGINATION REQUEST');
+    console.log('========================================');
+    console.log('Project ID:', projectId);
+    console.log('Client ID:', clientId);
+    console.log('Page:', page);
+    console.log('Limit:', limit);
+    console.log('Sort By:', sortBy);
+    console.log('Sort Order:', sortOrder);
+    console.log('========================================\n');
+
+    // Use MongoDB aggregation for efficient pagination
+    const pipeline: any[] = [
+      // Match the project
+      {
+        $match: {
+          _id: new ObjectId(projectId),
+          clientId: new ObjectId(clientId),
+        }
+      },
+      // Unwind MaterialAvailable array to work with individual materials
+      {
+        $unwind: {
+          path: "$MaterialAvailable",
+          preserveNullAndEmptyArrays: false
+        }
+      },
+      // Add sorting field (use current date if createdAt doesn't exist)
+      {
+        $addFields: {
+          "MaterialAvailable.sortField": {
+            $cond: {
+              if: { $eq: [sortBy, "createdAt"] },
+              then: {
+                $ifNull: ["$MaterialAvailable.createdAt", new Date()]
+              },
+              else: {
+                $cond: {
+                  if: { $eq: [sortBy, "name"] },
+                  then: "$MaterialAvailable.name",
+                  else: {
+                    $cond: {
+                      if: { $eq: [sortBy, "totalCost"] },
+                      then: "$MaterialAvailable.totalCost",
+                      else: "$MaterialAvailable.qnt"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      // Sort materials
+      {
+        $sort: {
+          "MaterialAvailable.sortField": sortOrder === "asc" ? 1 : -1
+        }
+      },
+      // Group back to get total count and paginated results
+      {
+        $group: {
+          _id: "$_id",
+          totalCount: { $sum: 1 },
+          materials: { $push: "$MaterialAvailable" }
+        }
+      },
+      // Add pagination info
+      {
+        $project: {
+          totalCount: 1,
+          totalPages: { $ceil: { $divide: ["$totalCount", limit] } },
+          currentPage: { $literal: page },
+          hasNextPage: { $gt: [{ $ceil: { $divide: ["$totalCount", limit] } }, page] },
+          hasPrevPage: { $gt: [page, 1] },
+          materials: {
+            $slice: [
+              "$materials",
+              (page - 1) * limit,
+              limit
+            ]
+          }
+        }
+      }
+    ];
+
+    const result = await Projects.aggregate(pipeline);
+
+    if (!result || result.length === 0) {
+      // Project exists but has no materials
+      const projectExists = await Projects.findOne({
+        _id: new ObjectId(projectId),
+        clientId: new ObjectId(clientId),
+      });
+
+      if (!projectExists) {
+        return NextResponse.json(
+          {
+            message: "Project not found",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      // Return empty pagination result
+      return NextResponse.json(
+        {
+          success: true,
+          message: "No materials found for this project",
+          MaterialAvailable: [],
+          pagination: {
+            totalCount: 0,
+            totalPages: 0,
+            currentPage: page,
+            hasNextPage: false,
+            hasPrevPage: false,
+            itemsPerPage: limit
+          }
+        },
+        {
+          status: 200,
+        }
+      );
+    }
+
+    const paginationData = result[0];
+
+    console.log('✅ PAGINATION RESULT:');
+    console.log('  - Total materials:', paginationData.totalCount);
+    console.log('  - Total pages:', paginationData.totalPages);
+    console.log('  - Current page:', paginationData.currentPage);
+    console.log('  - Materials in this page:', paginationData.materials.length);
+    console.log('  - Has next page:', paginationData.hasNextPage);
+    console.log('  - Has previous page:', paginationData.hasPrevPage);
 
     return NextResponse.json(
       {
         success: true,
         message: "Material available fetched successfully",
-        MaterialAvailable: project.MaterialAvailable || [],
+        MaterialAvailable: paginationData.materials || [],
+        pagination: {
+          totalCount: paginationData.totalCount,
+          totalPages: paginationData.totalPages,
+          currentPage: paginationData.currentPage,
+          hasNextPage: paginationData.hasNextPage,
+          hasPrevPage: paginationData.hasPrevPage,
+          itemsPerPage: limit
+        }
       },
       {
         status: 200,
       }
     );
   } catch (error: unknown) {
-    console.log(error);
+    console.error('❌ Material API Error:', error);
 
     return NextResponse.json(
       {

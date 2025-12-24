@@ -171,12 +171,47 @@ export const POST = async (req: NextRequest | Request) => {
       }
 
       const available = project.MaterialAvailable![availIndex] as MaterialSubdoc;
-      const perUnitCost = Number(available.perUnitCost);
+      
+      // ✅ FIXED: Robust cost calculation with validation and fallbacks
+      let perUnitCost = 0;
+      
+      // Try to get per-unit cost from various possible fields
+      if (available.perUnitCost !== undefined && available.perUnitCost !== null && !isNaN(Number(available.perUnitCost))) {
+        perUnitCost = Number(available.perUnitCost);
+      } else if ((available as any).cost !== undefined && (available as any).cost !== null && !isNaN(Number((available as any).cost))) {
+        // Fallback to legacy 'cost' field
+        perUnitCost = Number((available as any).cost);
+      } else {
+        // Default to 0 if no valid cost found
+        perUnitCost = 0;
+        console.warn(`⚠️ No valid cost found for material ${available.name}, using 0`);
+      }
+      
+      // Ensure perUnitCost is a valid number
+      if (isNaN(perUnitCost) || !isFinite(perUnitCost)) {
+        perUnitCost = 0;
+        console.warn(`⚠️ Invalid perUnitCost for material ${available.name}, using 0`);
+      }
+      
       const totalCostForUsage = perUnitCost * quantity;
+      
+      // Validate the calculated total cost
+      if (isNaN(totalCostForUsage) || !isFinite(totalCostForUsage)) {
+        console.error(`❌ Invalid total cost calculation for ${available.name}: ${perUnitCost} * ${quantity} = ${totalCostForUsage}`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid cost calculation for material ${available.name}. Please check material cost data.`,
+          },
+          { status: 400 }
+        );
+      }
 
       console.log(`✅ Material found: ${available.name}`);
       console.log(`💰 Cost calculation:`);
-      console.log(`  - Per-unit cost: ${perUnitCost}`);
+      console.log(`  - Raw perUnitCost field: ${available.perUnitCost} (type: ${typeof available.perUnitCost})`);
+      console.log(`  - Raw cost field (legacy): ${(available as any).cost} (type: ${typeof (available as any).cost})`);
+      console.log(`  - Calculated per-unit cost: ${perUnitCost}`);
       console.log(`  - Quantity being used: ${quantity}`);
       console.log(`  - Total cost for quantity used: ${totalCostForUsage}`);
       console.log(`  - Available quantity: ${Number(available.qnt || 0)}`);
@@ -195,14 +230,14 @@ export const POST = async (req: NextRequest | Request) => {
         );
       }
 
-      // Prepare used material clone
+      // Prepare used material clone with validated cost values
       const usedClone: MaterialSubdoc = {
         name: available.name,
         unit: available.unit,
         specs: available.specs || {},
         qnt: quantity,
-        perUnitCost: perUnitCost,
-        totalCost: totalCostForUsage,
+        perUnitCost: perUnitCost, // Already validated above
+        totalCost: totalCostForUsage, // Already validated above
         sectionId: String(sectionId),
         miniSectionId:
           miniSectionId ||
@@ -210,14 +245,73 @@ export const POST = async (req: NextRequest | Request) => {
           undefined,
       };
 
+      // Final validation of the used material clone
+      if (isNaN(usedClone.perUnitCost) || isNaN(usedClone.totalCost) || 
+          !isFinite(usedClone.perUnitCost) || !isFinite(usedClone.totalCost)) {
+        console.error(`❌ Invalid cost values in used material clone for ${available.name}:`, {
+          perUnitCost: usedClone.perUnitCost,
+          totalCost: usedClone.totalCost
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid cost values for material ${available.name}. Cannot proceed with usage.`,
+          },
+          { status: 400 }
+        );
+      }
+
       usedMaterials.push(usedClone);
       materialUpdates.push({ materialId, quantity });
+      
+      // Validate before adding to total cost
+      if (isNaN(totalCostForUsage) || !isFinite(totalCostForUsage)) {
+        console.error(`❌ Invalid cost to add to total: ${totalCostForUsage}`);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid cost calculation for material ${available.name}`,
+          },
+          { status: 400 }
+        );
+      }
+      
       totalCostOfUsedMaterials += totalCostForUsage;
     }
 
     console.log(`\n📊 Processing summary:`);
     console.log(`  - Materials to process: ${usedMaterials.length}`);
     console.log(`  - Total cost: ${totalCostOfUsedMaterials}`);
+
+    // Final validation before database operations
+    if (isNaN(totalCostOfUsedMaterials) || !isFinite(totalCostOfUsedMaterials)) {
+      console.error(`❌ Invalid total cost before database operations: ${totalCostOfUsedMaterials}`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid total cost calculation. Cannot proceed with material usage.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate all used materials have valid cost values
+    for (const material of usedMaterials) {
+      if (isNaN(material.perUnitCost) || isNaN(material.totalCost) || 
+          !isFinite(material.perUnitCost) || !isFinite(material.totalCost)) {
+        console.error(`❌ Invalid cost values in material ${material.name}:`, {
+          perUnitCost: material.perUnitCost,
+          totalCost: material.totalCost
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Invalid cost values for material ${material.name}. Cannot save to database.`,
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Perform batch updates
     const bulkOperations: any[] = [];

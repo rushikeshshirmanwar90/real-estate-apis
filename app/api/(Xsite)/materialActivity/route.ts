@@ -35,11 +35,16 @@ export const GET = async (req: NextRequest | Request) => {
   // Date-based pagination parameters
   const beforeDate = searchParams.get("beforeDate"); // Get activities before this date
   const afterDate = searchParams.get("afterDate");   // Get activities after this date
+  const targetDate = searchParams.get("targetDate"); // Get activities for specific date
   const dateLimit = Math.max(1, Math.min(50, parseInt(searchParams.get("dateLimit") || "10"))); // Number of dates to return
   
   // Traditional pagination (fallback)
   const limit = Math.max(1, Math.min(1000, parseInt(searchParams.get("limit") || "50")));
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
   const skip = Math.max(0, parseInt(searchParams.get("skip") || "0"));
+  
+  // Calculate skip from page if page is provided and skip is 0
+  const actualSkip = skip > 0 ? skip : (page - 1) * limit;
   
   // Pagination mode
   const paginationMode = searchParams.get("paginationMode") || "traditional"; // "traditional" or "date"
@@ -58,26 +63,52 @@ export const GET = async (req: NextRequest | Request) => {
     if (userId) query["user.userId"] = userId;
 
     // Handle date filtering
-    if (beforeDate || afterDate) {
+    if (beforeDate || afterDate || targetDate) {
       query.date = {};
       if (beforeDate) query.date.$lt = beforeDate;
       if (afterDate) query.date.$gt = afterDate;
+      if (targetDate) {
+        // For specific date, get activities for that entire day
+        const startOfDay = targetDate + 'T00:00:00.000Z';
+        const endOfDay = targetDate + 'T23:59:59.999Z';
+        query.date = { $gte: startOfDay, $lte: endOfDay };
+      }
     }
 
     if (paginationMode === "date") {
       // Date-based pagination
-      const materials = await MaterialActivity.find(query)
-        .sort({ date: -1, createdAt: -1 })
-        .limit(1000); // Get more activities to group by date
+      let materials;
+      
+      if (targetDate) {
+        // Get activities for specific date
+        materials = await MaterialActivity.find(query)
+          .sort({ date: -1, createdAt: -1 })
+          .limit(1000);
+      } else {
+        // Get activities for date range
+        materials = await MaterialActivity.find(query)
+          .sort({ date: -1, createdAt: -1 })
+          .limit(1000);
+      }
+
+      // Get all available dates for navigation
+      const allMaterials = await MaterialActivity.find(clientId ? { clientId } : {})
+        .sort({ date: -1, createdAt: -1 });
+      
+      const availableDates = [...new Set(allMaterials.map(material => 
+        material.date ? material.date.split('T')[0] : new Date(material.createdAt).toISOString().split('T')[0]
+      ))].sort((a, b) => b.localeCompare(a));
 
       if (!materials || materials.length === 0) {
         return successResponse({
           dateGroups: [],
+          availableDates,
           totalActivities: 0,
           totalDates: 0,
           dateLimit,
           hasMoreDates: false,
           nextDate: null,
+          targetDate,
           paginationMode: "date"
         }, "No material activities found", 200);
       }
@@ -95,8 +126,8 @@ export const GET = async (req: NextRequest | Request) => {
       // Get sorted date keys (newest first)
       const sortedDates = Object.keys(groupedByDate).sort((a, b) => b.localeCompare(a));
       
-      // Apply date limit
-      const limitedDates = sortedDates.slice(0, dateLimit);
+      // Apply date limit if not targeting specific date
+      const limitedDates = targetDate ? sortedDates : sortedDates.slice(0, dateLimit);
       
       // Build response with date groups
       const dateGroups = limitedDates.map(date => ({
@@ -107,18 +138,20 @@ export const GET = async (req: NextRequest | Request) => {
         count: groupedByDate[date].length
       }));
 
-      const totalActivities = limitedDates.reduce((sum, date) => sum + groupedByDate[date].length, 0);
-      const hasMoreDates = sortedDates.length > dateLimit;
+      const totalActivities = limitedDates.reduce((sum, date) => sum + (groupedByDate[date]?.length || 0), 0);
+      const hasMoreDates = !targetDate && sortedDates.length > dateLimit;
       const nextDate = hasMoreDates ? sortedDates[dateLimit] : null;
 
       return successResponse(
         {
           dateGroups,
+          availableDates,
           totalActivities,
           totalDates: sortedDates.length,
           dateLimit,
           hasMoreDates,
           nextDate,
+          targetDate,
           paginationMode: "date"
         },
         "Material activities fetched successfully with date-based pagination",
@@ -129,21 +162,40 @@ export const GET = async (req: NextRequest | Request) => {
       const materials = await MaterialActivity.find(query)
         .sort({ createdAt: -1 })
         .limit(limit)
-        .skip(skip);
+        .skip(actualSkip);
 
       if (!materials || materials.length === 0) {
-        return successResponse([], "No material activities found", 200);
+        return successResponse({
+          activities: [],
+          pagination: {
+            totalCount: 0,
+            totalPages: 0,
+            currentPage: Math.floor(actualSkip / limit) + 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+            limit,
+            skip: actualSkip
+          },
+          paginationMode: "traditional"
+        }, "No material activities found", 200);
       }
 
       const total = await MaterialActivity.countDocuments(query);
+      const totalPages = Math.ceil(total / limit);
+      const currentPage = Math.floor(actualSkip / limit) + 1;
 
       return successResponse(
         {
           activities: materials,
-          total,
-          limit,
-          skip,
-          hasMore: total > skip + limit,
+          pagination: {
+            totalCount: total,
+            totalPages,
+            currentPage,
+            hasNextPage: currentPage < totalPages,
+            hasPrevPage: currentPage > 1,
+            limit,
+            skip: actualSkip
+          },
           paginationMode: "traditional"
         },
         "Material activities fetched successfully",

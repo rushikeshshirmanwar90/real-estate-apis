@@ -19,13 +19,18 @@ type MaterialSubdoc = {
   miniSectionId?: string;
 };
 
-// GET: Fetch MaterialUsed for a project
+// GET: Fetch MaterialUsed for a project with pagination and filtering
 export const GET = async (req: NextRequest | Request) => {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
     const clientId = searchParams.get("clientId");
     const sectionId = searchParams.get("sectionId");
+    const miniSectionId = searchParams.get("miniSectionId");
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = parseInt(searchParams.get("limit") || "10");
+    const sortBy = searchParams.get("sortBy") || "createdAt";
+    const sortOrder = searchParams.get("sortOrder") || "desc";
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -38,50 +43,219 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
-    await connect();
-
-    const project = await Projects.findOne(
-      {
-        _id: new ObjectId(projectId),
-        clientId: new ObjectId(clientId),
-      },
-      { MaterialUsed: 1, MaterialAvailable: 1 }
-    );
-
-    if (!project) {
+    // Validate pagination parameters
+    if (page < 1 || limit < 1 || limit > 100) {
       return NextResponse.json(
         {
-          message: "Project not found",
+          message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-100",
         },
         {
-          status: 404,
+          status: 400,
         }
       );
     }
 
-    // Get MaterialUsed array
-    const allUsed = project.MaterialUsed || [];
+    await connect();
 
-    // If sectionId is provided, filter MaterialUsed to that section
-    const filteredUsed = sectionId
-      ? allUsed.filter(
-          (m: MaterialSubdoc) => String(m.sectionId) === String(sectionId)
-        )
-      : allUsed;
+    console.log('\n========================================');
+    console.log('MATERIAL USAGE API - PAGINATION REQUEST');
+    console.log('========================================');
+    console.log('Project ID:', projectId);
+    console.log('Client ID:', clientId);
+    console.log('Section ID:', sectionId);
+    console.log('Mini Section ID:', miniSectionId);
+    console.log('Page:', page);
+    console.log('Limit:', limit);
+    console.log('Sort By:', sortBy);
+    console.log('Sort Order:', sortOrder);
+    console.log('========================================\n');
 
-    // FIXED: Return MaterialUsed instead of MaterialAvailable
+    // Build match conditions for filtering
+    const matchConditions: any = {
+      _id: new ObjectId(projectId),
+      clientId: new ObjectId(clientId),
+    };
+
+    // Use MongoDB aggregation for efficient pagination with filtering
+    const pipeline: any[] = [
+      // Match the project
+      {
+        $match: matchConditions
+      },
+      // Unwind MaterialUsed array to work with individual materials
+      {
+        $unwind: {
+          path: "$MaterialUsed",
+          preserveNullAndEmptyArrays: false
+        }
+      }
+    ];
+
+    // Add filtering conditions for MaterialUsed
+    const materialUsedFilters: any = {};
+    
+    if (sectionId) {
+      materialUsedFilters["MaterialUsed.sectionId"] = sectionId;
+    }
+    
+    if (miniSectionId && miniSectionId !== 'all-sections') {
+      materialUsedFilters["MaterialUsed.miniSectionId"] = miniSectionId;
+    }
+
+    // Apply filters if any exist
+    if (Object.keys(materialUsedFilters).length > 0) {
+      pipeline.push({
+        $match: materialUsedFilters
+      });
+    }
+
+    // Add sorting field (use current date if createdAt doesn't exist)
+    pipeline.push({
+      $addFields: {
+        "MaterialUsed.sortField": {
+          $cond: {
+            if: { $eq: [sortBy, "createdAt"] },
+            then: {
+              $ifNull: [
+                "$MaterialUsed.createdAt", 
+                "$MaterialUsed.addedAt",
+                new Date()
+              ]
+            },
+            else: {
+              $cond: {
+                if: { $eq: [sortBy, "name"] },
+                then: "$MaterialUsed.name",
+                else: {
+                  $cond: {
+                    if: { $eq: [sortBy, "totalCost"] },
+                    then: "$MaterialUsed.totalCost",
+                    else: "$MaterialUsed.qnt"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Sort materials
+    pipeline.push({
+      $sort: {
+        "MaterialUsed.sortField": sortOrder === "asc" ? 1 : -1
+      }
+    });
+
+    // Group back to get total count and paginated results
+    pipeline.push({
+      $group: {
+        _id: "$_id",
+        totalCount: { $sum: 1 },
+        materials: { $push: "$MaterialUsed" }
+      }
+    });
+
+    // Add pagination info
+    pipeline.push({
+      $project: {
+        totalCount: 1,
+        totalPages: { $ceil: { $divide: ["$totalCount", limit] } },
+        currentPage: { $literal: page },
+        hasNextPage: { $gt: [{ $ceil: { $divide: ["$totalCount", limit] } }, page] },
+        hasPrevPage: { $gt: [page, 1] },
+        materials: {
+          $slice: [
+            "$materials",
+            (page - 1) * limit,
+            limit
+          ]
+        }
+      }
+    });
+
+    const result = await Projects.aggregate(pipeline);
+
+    if (!result || result.length === 0) {
+      // Project exists but has no used materials (or no materials matching filters)
+      const projectExists = await Projects.findOne({
+        _id: new ObjectId(projectId),
+        clientId: new ObjectId(clientId),
+      });
+
+      if (!projectExists) {
+        return NextResponse.json(
+          {
+            message: "Project not found",
+          },
+          {
+            status: 404,
+          }
+        );
+      }
+
+      // Return empty pagination result
+      return NextResponse.json(
+        {
+          success: true,
+          message: sectionId || miniSectionId 
+            ? "No used materials found for the specified filters" 
+            : "No used materials found for this project",
+          MaterialUsed: [],
+          pagination: {
+            totalCount: 0,
+            totalPages: 0,
+            currentPage: page,
+            hasNextPage: false,
+            hasPrevPage: false,
+            itemsPerPage: limit
+          },
+          filters: {
+            sectionId: sectionId || null,
+            miniSectionId: miniSectionId || null
+          }
+        },
+        {
+          status: 200,
+        }
+      );
+    }
+
+    const paginationData = result[0];
+
+    console.log('✅ MATERIAL USAGE PAGINATION RESULT:');
+    console.log('  - Total used materials:', paginationData.totalCount);
+    console.log('  - Total pages:', paginationData.totalPages);
+    console.log('  - Current page:', paginationData.currentPage);
+    console.log('  - Materials in this page:', paginationData.materials.length);
+    console.log('  - Has next page:', paginationData.hasNextPage);
+    console.log('  - Has previous page:', paginationData.hasPrevPage);
+    console.log('  - Applied filters:', { sectionId, miniSectionId });
+
     return NextResponse.json(
       {
         success: true,
         message: "Material used fetched successfully",
-        MaterialUsed: filteredUsed, // ✅ Return MaterialUsed!
+        MaterialUsed: paginationData.materials || [],
+        pagination: {
+          totalCount: paginationData.totalCount,
+          totalPages: paginationData.totalPages,
+          currentPage: paginationData.currentPage,
+          hasNextPage: paginationData.hasNextPage,
+          hasPrevPage: paginationData.hasPrevPage,
+          itemsPerPage: limit
+        },
+        filters: {
+          sectionId: sectionId || null,
+          miniSectionId: miniSectionId || null
+        }
       },
       {
         status: 200,
       }
     );
   } catch (error: unknown) {
-    console.log(error);
+    console.error('❌ Material Usage API Error:', error);
     return NextResponse.json(
       {
         success: false,
@@ -167,12 +341,45 @@ export const POST = async (req: NextRequest | Request) => {
 
     const available = project.MaterialAvailable![availIndex] as MaterialSubdoc;
     
-    // Get per-unit cost from available material
-    const costPerUnit = Number(available.perUnitCost);
+    // ✅ FIXED: Robust cost calculation with validation and fallbacks
+    let costPerUnit = 0;
+    
+    // Try to get per-unit cost from various possible fields
+    if (available.perUnitCost !== undefined && available.perUnitCost !== null && !isNaN(Number(available.perUnitCost))) {
+      costPerUnit = Number(available.perUnitCost);
+    } else if ((available as any).cost !== undefined && (available as any).cost !== null && !isNaN(Number((available as any).cost))) {
+      // Fallback to legacy 'cost' field
+      costPerUnit = Number((available as any).cost);
+    } else {
+      // Default to 0 if no valid cost found
+      costPerUnit = 0;
+      console.warn(`⚠️ No valid cost found for material ${available.name}, using 0`);
+    }
+    
+    // Ensure costPerUnit is a valid number
+    if (isNaN(costPerUnit) || !isFinite(costPerUnit)) {
+      costPerUnit = 0;
+      console.warn(`⚠️ Invalid costPerUnit for material ${available.name}, using 0`);
+    }
+    
     const costOfUsedMaterial = costPerUnit * qnt;
+    
+    // Validate the calculated total cost
+    if (isNaN(costOfUsedMaterial) || !isFinite(costOfUsedMaterial)) {
+      console.error(`❌ Invalid total cost calculation for ${available.name}: ${costPerUnit} * ${qnt} = ${costOfUsedMaterial}`);
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Invalid cost calculation for material ${available.name}. Please check material cost data.`,
+        },
+        { status: 400 }
+      );
+    }
 
     console.log('\n💰 COST CALCULATION:');
-    console.log('  - Per-unit cost (from available.perUnitCost):', costPerUnit);
+    console.log('  - Raw perUnitCost field:', available.perUnitCost, '(type:', typeof available.perUnitCost, ')');
+    console.log('  - Raw cost field (legacy):', (available as any).cost, '(type:', typeof (available as any).cost, ')');
+    console.log('  - Calculated per-unit cost:', costPerUnit);
     console.log('  - Quantity being used:', qnt);
     console.log('  - Total cost for quantity used:', costOfUsedMaterial);
     console.log('  - Available quantity:', Number(available.qnt || 0));
@@ -190,20 +397,36 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
-    // Prepare used material clone (include section/miniSection IDs)
+    // Prepare used material clone (include section/miniSection IDs) with validated costs
     const usedClone: MaterialSubdoc = {
       name: available.name,
       unit: available.unit,
       specs: available.specs || {},
       qnt: qnt,
-      perUnitCost: costPerUnit, // Store per-unit cost
-      totalCost: costOfUsedMaterial, // Store total cost for used quantity
+      perUnitCost: costPerUnit, // Store per-unit cost (already validated)
+      totalCost: costOfUsedMaterial, // Store total cost for used quantity (already validated)
       sectionId: String(sectionId),
       miniSectionId:
         miniSectionId ||
         (available as unknown as { miniSectionId?: string }).miniSectionId ||
         undefined,
     };
+
+    // Final validation of the used material clone
+    if (isNaN(usedClone.perUnitCost) || isNaN(usedClone.totalCost) || 
+        !isFinite(usedClone.perUnitCost) || !isFinite(usedClone.totalCost)) {
+      console.error(`❌ Invalid cost values in used material clone for ${available.name}:`, {
+        perUnitCost: usedClone.perUnitCost,
+        totalCost: usedClone.totalCost
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Invalid cost values for material ${available.name}. Cannot proceed with usage.`,
+        },
+        { status: 400 }
+      );
+    }
 
     // Use findByIdAndUpdate with $inc and array operations
     // ✅ FIXED: Do NOT increase spent when using materials - it's just a transfer
