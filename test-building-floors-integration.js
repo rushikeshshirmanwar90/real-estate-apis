@@ -15,10 +15,9 @@ async function testBuildingFloorsIntegration() {
         const buildingResponse = await axios.post(`${BASE_URL}/api/building`, {
             projectId: TEST_PROJECT_ID,
             name: 'Test Building for Floors',
-            buildingType: 'Residential',
-            constructionStatus: 'Under Construction',
             totalFloors: 0,
-            totalUnits: 0,
+            hasBasement: false,
+            hasGroundFloor: true,
             description: 'Test building for floors integration'
         });
 
@@ -101,15 +100,62 @@ async function testBuildingFloorsIntegration() {
             console.log(`   Unit ${index + 1}: ${unit.unitNumber} (${unit.type}, ${unit.status})`);
         });
 
-        // Test 6: Update building details
-        console.log('\n6. Updating building details...');
-        const updateResponse = await axios.put(`${BASE_URL}/api/building?id=${buildingId}`, {
-            description: 'Updated test building with floors and units',
-            location: 'Test Location',
-            area: 5000,
-            completionDate: '2024-12-31'
+        // Test 6: Test automatic floor creation
+        console.log('\n6. Testing automatic floor creation...');
+        const autoFloorResponse = await axios.put(`${BASE_URL}/api/building?id=${buildingId}`, {
+            description: 'Updated test building with automatic floors',
+            totalFloors: 3,
+            hasBasement: true,
+            hasGroundFloor: true,
+            floors: [
+                {
+                    floorNumber: -1,
+                    floorName: 'Basement',
+                    floorType: 'Parking',
+                    totalUnits: 0,
+                    totalBookedUnits: 0,
+                    description: 'Basement floor',
+                    isActive: true
+                },
+                {
+                    floorNumber: 0,
+                    floorName: 'Ground Floor',
+                    floorType: 'Commercial',
+                    totalUnits: 0,
+                    totalBookedUnits: 0,
+                    description: 'Ground floor',
+                    isActive: true
+                },
+                {
+                    floorNumber: 1,
+                    floorName: '1st Floor',
+                    floorType: 'Residential',
+                    totalUnits: 0,
+                    totalBookedUnits: 0,
+                    description: '1st Floor - Residential units',
+                    isActive: true
+                },
+                {
+                    floorNumber: 2,
+                    floorName: '2nd Floor',
+                    floorType: 'Residential',
+                    totalUnits: 0,
+                    totalBookedUnits: 0,
+                    description: '2nd Floor - Residential units',
+                    isActive: true
+                },
+                {
+                    floorNumber: 3,
+                    floorName: '3rd Floor',
+                    floorType: 'Residential',
+                    totalUnits: 0,
+                    totalBookedUnits: 0,
+                    description: '3rd Floor - Residential units',
+                    isActive: true
+                }
+            ]
         });
-        console.log('✅ Building details updated');
+        console.log('✅ Automatic floor creation completed');
 
         // Test 7: Get updated building with floors
         console.log('\n7. Retrieving updated building...');
@@ -118,7 +164,6 @@ async function testBuildingFloorsIntegration() {
         console.log('✅ Building retrieved with details:');
         console.log(`   Name: ${updatedBuilding.name}`);
         console.log(`   Total Floors: ${updatedBuilding.totalFloors}`);
-        console.log(`   Total Units: ${updatedBuilding.totalUnits}`);
         console.log(`   Floors in building: ${updatedBuilding.floors?.length || 0}`);
 
         console.log('\n🎉 All tests passed! Building floors integration is working correctly.');

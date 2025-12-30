@@ -38,7 +38,6 @@ export const GET = async (req: NextRequest) => {
             totalFloors: building.totalFloors || 0,
             totalUnits: building.totalUnits || 0,
             totalBookedUnits: building.totalBookedUnits || 0,
-            completionDate: building.completionDate,
             isActive: building.isActive
           },
           summary: summary

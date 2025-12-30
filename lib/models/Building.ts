@@ -16,37 +16,6 @@ const SectionSchema = new Schema(
   { _id: true }
 );
 
-// Unit Type Schema for different types of units (1BHK, 2BHK, shops, etc.)
-const UnitTypeSchema = new Schema({
-  type: {
-    type: String,
-    required: true,
-    enum: ['1BHK', '2BHK', '3BHK', '4BHK', "5BHK", "6BHK", 'Studio', 'Shop', 'Office', 'Parking', 'Storage', 'Other'],
-  },
-  count: {
-    type: Number,
-    required: true,
-    min: 0,
-  },
-  bookedCount: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0,
-  },
-  area: {
-    type: Number, // Area per unit in sq ft
-    required: false,
-  },
-  pricePerSqFt: {
-    type: Number,
-    required: false,
-  },
-  description: {
-    type: String,
-    required: false,
-  },
-}, { _id: true });
 
 // Individual Unit Schema for specific unit details
 const UnitSchema = new Schema({
@@ -63,14 +32,11 @@ const UnitSchema = new Schema({
     type: Number, // Area in sq ft
     required: true,
   },
-  price: {
-    type: Number,
-    required: false,
-  },
+
   status: {
     type: String,
     required: true,
-    enum: ['Available', 'Booked', 'Sold', 'Reserved', 'Under Construction'],
+    enum: ['Available', 'Booked', 'Reserved'],
     default: 'Available',
   },
   customerInfo: {
@@ -108,11 +74,7 @@ const FloorSchema = new Schema({
     type: String, // e.g., "Ground Floor", "First Floor", "Basement", "Mezzanine"
     required: false,
   },
-  floorType: {
-    type: String,
-    enum: ['Residential', 'Commercial', 'Mixed', 'Parking', 'Amenity', 'Other'],
-    default: 'Residential',
-  },
+
   totalUnits: {
     type: Number,
     required: true,
@@ -124,31 +86,11 @@ const FloorSchema = new Schema({
     min: 0,
     default: 0,
   },
-  // Summary of unit types on this floor
-  unitTypes: {
-    type: [UnitTypeSchema],
-    required: false,
-    default: [],
-  },
   // Detailed individual units
   units: {
     type: [UnitSchema],
     required: false,
     default: [],
-  },
-  floorPlan: {
-    type: String, // URL to floor plan image
-    required: false,
-  },
-  images: [String],
-  amenities: [String], // Floor-specific amenities
-  description: {
-    type: String,
-    required: false,
-  },
-  isActive: {
-    type: Boolean,
-    default: true,
   },
 }, { _id: true, timestamps: true });
 
@@ -210,24 +152,8 @@ const buildingSchema = new Schema(
       required: false,
     },
 
-    location: {
-      type: String,
-      required: false,
-    },
-
-    area: {
-      type: Number,
-      require: false,
-    },
-
     // Building specifications
     totalFloors: {
-      type: Number,
-      required: false,
-      min: 0,
-    },
-
-    totalUnits: {
       type: Number,
       required: false,
       min: 0,
@@ -240,10 +166,15 @@ const buildingSchema = new Schema(
       default: 0,
     },
 
-    buildingType: {
-      type: String,
-      enum: ['Residential', 'Commercial', 'Mixed Use', 'Industrial', 'Other'],
-      default: 'Residential',
+    // Floor configuration
+    hasBasement: {
+      type: Boolean,
+      default: false,
+    },
+
+    hasGroundFloor: {
+      type: Boolean,
+      default: true,
     },
 
     images: {
@@ -263,11 +194,6 @@ const buildingSchema = new Schema(
       default: [],
     },
 
-    flatInfo: {
-      type: [FlatInfoSchema],
-      required: false,
-    },
-
     amenities: {
       type: [AmenitiesSchema],
       required: false,
@@ -278,27 +204,9 @@ const buildingSchema = new Schema(
       required: false,
     },
 
-    // Building-wide unit type summary
-    unitTypeSummary: {
-      type: [UnitTypeSchema],
-      required: false,
-      default: [],
-    },
-
-    // Construction and legal information
-    constructionStatus: {
-      type: String,
-      enum: ['Planning', 'Under Construction', 'Completed', 'Ready to Move'],
-      default: 'Planning',
-    },
 
     approvals: {
       type: [String], // Array of approval types/numbers
-      required: false,
-    },
-
-    completionDate: {
-      type: Date,
       required: false,
     },
 
@@ -320,4 +228,4 @@ buildingSchema.index({ 'floors.units.type': 1 });
 
 const Building = models.Building || model("Building", buildingSchema);
 
-export { Building, FloorSchema, UnitSchema, UnitTypeSchema };
+export { Building, FloorSchema, UnitSchema };

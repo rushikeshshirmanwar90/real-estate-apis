@@ -24,8 +24,53 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid building ID format", 400);
       }
 
-      const building = await Building.findById(id).lean();
+      let building = await Building.findById(id).lean();
+      
+      // If building doesn't exist, try to create it from project section data
       if (!building) {
+        logger.info(`Building ${id} not found, attempting to create from project section`);
+        
+        try {
+          // Find the project that contains this building section
+          const Projects = (await import("@/lib/models/Project")).Projects;
+          const project = await Projects.findOne({
+            $or: [
+              { "section.sectionId": id, "section.type": "building" },
+              { "section.sectionId": id, "section.type": "Buildings" }
+            ]
+          }).lean() as any;
+
+          if (project && project.section && Array.isArray(project.section)) {
+            const section = project.section.find((s: any) => 
+              s.sectionId === id && (s.type === "building" || s.type === "Buildings")
+            );
+
+            if (section) {
+              // Create the building record
+              const newBuilding = new Building({
+                _id: id,
+                name: section.name,
+                projectId: project._id,
+                description: '',
+                totalFloors: 0,
+                totalBookedUnits: 0,
+                hasBasement: false,
+                hasGroundFloor: true,
+                floors: [],
+                images: [],
+                isActive: true
+              });
+
+              building = await newBuilding.save();
+              logger.info(`Created missing building record for ${id}`);
+              
+              return successResponse(building, "Building created and retrieved successfully");
+            }
+          }
+        } catch (createError) {
+          logger.error("Error creating missing building", createError);
+        }
+        
         return errorResponse("Building not found", 404);
       }
 
@@ -88,7 +133,20 @@ export const POST = async (req: NextRequest) => {
     session.startTransaction();
 
     try {
-      const newBuilding = new Building(body);
+      // Create building with proper defaults
+      const buildingData = {
+        ...body,
+        description: body.description || '',
+        totalFloors: body.totalFloors || 0,
+        totalBookedUnits: body.totalBookedUnits || 0,
+        hasBasement: body.hasBasement || false,
+        hasGroundFloor: body.hasGroundFloor !== undefined ? body.hasGroundFloor : true,
+        floors: body.floors || [],
+        images: body.images || [],
+        isActive: true
+      };
+
+      const newBuilding = new Building(buildingData);
       const savedBuilding = await newBuilding.save({ session });
 
       const updatedProject = await Projects.findByIdAndUpdate(
@@ -137,6 +195,8 @@ export const POST = async (req: NextRequest) => {
           }
         });
       }
+
+      logger.info(`Building created successfully: ${savedBuilding._id} with ${savedBuilding.floors?.length || 0} floors`);
 
       return successResponse(
         savedBuilding,
@@ -238,6 +298,29 @@ export const PUT = async (req: NextRequest) => {
 
     const body = await req.json();
 
+    // Handle automatic floor creation if floors array is provided
+    if (body.floors && Array.isArray(body.floors)) {
+      // Create floors with proper ObjectIds
+      const floorsWithIds = body.floors.map((floor: any) => ({
+        ...floor,
+        _id: new mongoose.Types.ObjectId(),
+        unitTypes: floor.unitTypes || [],
+        units: floor.units || [],
+        images: floor.images || [],
+        amenities: floor.amenities || [],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }));
+
+      body.floors = floorsWithIds;
+      
+      // Update total floors count based on actual floors created
+      const actualFloorCount = floorsWithIds.filter((floor: any) => floor.floorNumber > 0).length;
+      body.totalFloors = actualFloorCount;
+
+      logger.info(`Creating ${floorsWithIds.length} floors for building ${id}`);
+    }
+
     const updatedBuilding = await Building.findByIdAndUpdate(
       id,
       { $set: body },
@@ -248,7 +331,11 @@ export const PUT = async (req: NextRequest) => {
       return errorResponse("Building not found", 404);
     }
 
-    return successResponse(updatedBuilding, "Building updated successfully");
+    const responseMessage = body.floors && Array.isArray(body.floors) 
+      ? `Building updated successfully with ${body.floors.length} floors created`
+      : "Building updated successfully";
+
+    return successResponse(updatedBuilding, responseMessage);
   } catch (error: unknown) {
     logger.error("Error updating building", error);
 
