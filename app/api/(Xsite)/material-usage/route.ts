@@ -1,6 +1,6 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
-import { ObjectId } from "mongodb";
+import { Types } from "mongoose";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -72,8 +72,8 @@ export const GET = async (req: NextRequest | Request) => {
 
     // Build match conditions for filtering
     const matchConditions: any = {
-      _id: new ObjectId(projectId),
-      clientId: new ObjectId(clientId),
+      _id: new Types.ObjectId(projectId),
+      clientId: new Types.ObjectId(clientId),
     };
 
     // Use MongoDB aggregation for efficient pagination with filtering
@@ -179,8 +179,8 @@ export const GET = async (req: NextRequest | Request) => {
     if (!result || result.length === 0) {
       // Project exists but has no used materials (or no materials matching filters)
       const projectExists = await Projects.findOne({
-        _id: new ObjectId(projectId),
-        clientId: new ObjectId(clientId),
+        _id: new Types.ObjectId(projectId),
+        clientId: new Types.ObjectId(clientId),
       });
 
       if (!projectExists) {
@@ -442,7 +442,7 @@ export const POST = async (req: NextRequest | Request) => {
         },
       },
       {
-        arrayFilters: [{ "elem._id": new ObjectId(materialId) }],
+        arrayFilters: [{ "elem._id": new Types.ObjectId(materialId) }],
         new: true,
         fields: {
           MaterialAvailable: 1,

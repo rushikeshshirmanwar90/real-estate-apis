@@ -1,7 +1,7 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
-import { ObjectId } from "mongodb";
+import { Types } from "mongoose";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -320,13 +320,13 @@ export const POST = async (req: NextRequest | Request) => {
     for (const update of materialUpdates) {
       bulkOperations.push({
         updateOne: {
-          filter: { _id: new ObjectId(projectId) },
+          filter: { _id: new Types.ObjectId(projectId) },
           update: {
             $inc: {
               "MaterialAvailable.$[elem].qnt": -update.quantity,
             },
           },
-          arrayFilters: [{ "elem._id": new ObjectId(update.materialId) }],
+          arrayFilters: [{ "elem._id": new Types.ObjectId(update.materialId) }],
         },
       });
     }
@@ -334,7 +334,7 @@ export const POST = async (req: NextRequest | Request) => {
     // Add used materials
     bulkOperations.push({
       updateOne: {
-        filter: { _id: new ObjectId(projectId) },
+        filter: { _id: new Types.ObjectId(projectId) },
         update: {
           $push: {
             MaterialUsed: { $each: usedMaterials },

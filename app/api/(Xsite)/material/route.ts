@@ -3,7 +3,6 @@ import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
-import { ObjectId } from "mongodb";
 
 type Specs = Record<string, unknown>;
 
@@ -79,8 +78,8 @@ export const GET = async (req: NextRequest | Request) => {
       // Match the project
       {
         $match: {
-          _id: new ObjectId(projectId),
-          clientId: new ObjectId(clientId),
+          _id: new Types.ObjectId(projectId),
+          clientId: new Types.ObjectId(clientId),
         }
       },
       // Unwind MaterialAvailable array to work with individual materials
@@ -154,8 +153,8 @@ export const GET = async (req: NextRequest | Request) => {
     if (!result || result.length === 0) {
       // Project exists but has no materials
       const projectExists = await Projects.findOne({
-        _id: new ObjectId(projectId),
-        clientId: new ObjectId(clientId),
+        _id: new Types.ObjectId(projectId),
+        clientId: new Types.ObjectId(clientId),
       });
 
       if (!projectExists) {
@@ -392,7 +391,7 @@ export const POST = async (req: NextRequest | Request) => {
       console.log('  - Total cost for import:', totalCost);
       
       const newMaterial: MaterialSubdoc = {
-        _id: new ObjectId(),
+        _id: new Types.ObjectId(),
         name: materialName,
         unit,
         specs: specs || {},

@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { ObjectId } from "mongodb";
+import { Types } from "mongoose";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -24,8 +24,8 @@ export const GET = async (req: NextRequest | Request) => {
     if (id) {
       // Find project by both _id and clientId
       const project = await Projects.findOne({
-        _id: new ObjectId(id),
-        clientId: new ObjectId(clientId),
+        _id: new Types.ObjectId(id),
+        clientId: new Types.ObjectId(clientId),
       });
       if (!project) {
         return new Response("Project not found", { status: 404 });

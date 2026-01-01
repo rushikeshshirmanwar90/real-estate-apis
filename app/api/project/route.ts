@@ -1,7 +1,7 @@
 import { Projects } from "@/lib/models/Project";
 import connect from "@/lib/db";
 import { NextRequest } from "next/server";
-import { ObjectId } from "mongodb";
+import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import {
@@ -44,8 +44,8 @@ export const GET = async (req: NextRequest) => {
       }
 
       const project = await Projects.findOne({
-        _id: new ObjectId(id),
-        clientId: new ObjectId(clientId),
+        _id: new Types.ObjectId(id),
+        clientId: new Types.ObjectId(clientId),
       }).lean();
 
       if (!project) {
@@ -59,12 +59,12 @@ export const GET = async (req: NextRequest) => {
     const { page, limit, skip } = getPaginationParams(req);
 
     const [projects, total] = await Promise.all([
-      Projects.find({ clientId: new ObjectId(clientId) })
+      Projects.find({ clientId: new Types.ObjectId(clientId) })
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
         .lean(),
-      Projects.countDocuments({ clientId: new ObjectId(clientId) }),
+      Projects.countDocuments({ clientId: new Types.ObjectId(clientId) }),
     ]);
 
     const meta = createPaginationMeta(page, limit, total);
@@ -106,7 +106,7 @@ export const POST = async (req: NextRequest) => {
 
     const formattedBody = {
       ...body,
-      clientId: new ObjectId(body.clientId),
+      clientId: new Types.ObjectId(body.clientId),
     };
 
     const newProject = new Projects(formattedBody);
