@@ -30,15 +30,15 @@ export const GET = async (req: NextRequest) => {
       return successResponse(
         {
           building: {
-            id: building._id,
-            name: building.name,
-            projectId: building.projectId,
-            buildingType: building.buildingType,
-            constructionStatus: building.constructionStatus,
-            totalFloors: building.totalFloors || 0,
-            totalUnits: building.totalUnits || 0,
-            totalBookedUnits: building.totalBookedUnits || 0,
-            isActive: building.isActive
+            id: (building as any)._id,
+            name: (building as any).name,
+            projectId: (building as any).projectId,
+            buildingType: (building as any).buildingType,
+            constructionStatus: (building as any).constructionStatus,
+            totalFloors: (building as any).totalFloors || 0,
+            totalUnits: (building as any).totalUnits || 0,
+            totalBookedUnits: (building as any).totalBookedUnits || 0,
+            isActive: (building as any).isActive
           },
           summary: summary
         },
@@ -52,7 +52,24 @@ export const GET = async (req: NextRequest) => {
 
       const buildings = await Building.find({ projectId }).lean();
       
-      const projectSummary = {
+      const projectSummary: {
+        totalBuildings: number;
+        totalFloors: number;
+        totalUnits: number;
+        totalBookedUnits: number;
+        buildingsByType: Record<string, number>;
+        buildingsByStatus: Record<string, number>;
+        unitsByType: Record<string, number>;
+        unitsByStatus: Record<string, number>;
+        floorsByType: Record<string, number>;
+        revenue: {
+          totalValue: number;
+          bookedValue: number;
+          availableValue: number;
+        };
+        buildings: any[];
+        occupancyRate?: number;
+      } = {
         totalBuildings: buildings.length,
         totalFloors: 0,
         totalUnits: 0,
@@ -88,15 +105,15 @@ export const GET = async (req: NextRequest) => {
 
         // Aggregate unit statistics
         Object.entries(buildingSummary.unitsByType).forEach(([type, count]) => {
-          projectSummary.unitsByType[type] = (projectSummary.unitsByType[type] || 0) + count;
+          projectSummary.unitsByType[type] = (projectSummary.unitsByType[type] || 0) + (count as number);
         });
 
         Object.entries(buildingSummary.unitsByStatus).forEach(([status, count]) => {
-          projectSummary.unitsByStatus[status] = (projectSummary.unitsByStatus[status] || 0) + count;
+          projectSummary.unitsByStatus[status] = (projectSummary.unitsByStatus[status] || 0) + (count as number);
         });
 
         Object.entries(buildingSummary.floorsByType).forEach(([type, count]) => {
-          projectSummary.floorsByType[type] = (projectSummary.floorsByType[type] || 0) + count;
+          projectSummary.floorsByType[type] = (projectSummary.floorsByType[type] || 0) + (count as number);
         });
 
         // Aggregate revenue
@@ -140,7 +157,29 @@ export const GET = async (req: NextRequest) => {
 
 // Helper function to calculate building summary
 function calculateBuildingSummary(building: any) {
-  const summary = {
+  const summary: {
+    floors: {
+      total: number;
+      byType: Record<string, number>;
+      byStatus: Record<string, number>;
+    };
+    units: {
+      total: number;
+      booked: number;
+      available: number;
+    };
+    unitsByType: Record<string, number>;
+    unitsByStatus: Record<string, number>;
+    floorsByType: Record<string, number>;
+    revenue: {
+      totalValue: number;
+      bookedValue: number;
+      availableValue: number;
+    };
+    occupancyRate: number;
+    averageUnitSize: number;
+    totalArea: number;
+  } = {
     floors: {
       total: building.floors?.length || 0,
       byType: {},
@@ -255,7 +294,27 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("No buildings found", 404);
     }
 
-    const report = {
+    const report: {
+      generatedAt: Date;
+      reportType: string;
+      totalBuildings: number;
+      buildings: any[];
+      aggregatedSummary: {
+        totalFloors: number;
+        totalUnits: number;
+        totalBookedUnits: number;
+        totalArea: number;
+        totalRevenue: number;
+        bookedRevenue: number;
+        availableRevenue: number;
+        overallOccupancyRate: number;
+        unitsByType: Record<string, number>;
+        unitsByStatus: Record<string, number>;
+        floorsByType: Record<string, number>;
+        buildingsByType: Record<string, number>;
+        buildingsByStatus: Record<string, number>;
+      };
+    } = {
       generatedAt: new Date(),
       reportType: reportType,
       totalBuildings: buildings.length,

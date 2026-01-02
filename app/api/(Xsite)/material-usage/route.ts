@@ -1,7 +1,6 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { Types } from "mongoose";
-import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
 // Local types matching MaterialSchema
