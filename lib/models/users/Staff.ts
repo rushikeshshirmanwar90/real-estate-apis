@@ -25,7 +25,7 @@ const StaffSchema = new Schema({
 
   clientIds: {
     type: [String],
-    required: true,
+    required: false,
   },
   role: {
     type: String,

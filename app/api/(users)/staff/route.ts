@@ -310,27 +310,25 @@ export const POST = async (req: NextRequest) => {
     }
 
     // ✅ Support both single clientId and multiple clientIds
-    if (!data.clientId && (!data.clientIds || data.clientIds.length === 0)) {
-      return errorResponse("At least one Client ID is required", 400);
-    }
-
-    // Convert single clientId to clientIds array for consistency
+    // Allow empty clientIds array for self-registration (admin will assign later)
     const clientIds = data.clientIds || (data.clientId ? [data.clientId] : []);
     
-    // Validate all clientIds
-    for (const cId of clientIds) {
-      if (!Types.ObjectId.isValid(cId)) {
-        return errorResponse(`Invalid client ID format: ${cId}`, 400);
-      }
-      
-      // ✅ Validate each client exists
-      try {
-        await requireValidClient(cId);
-      } catch (clientError) {
-        if (clientError instanceof Error) {
-          return errorResponse(clientError.message, 404);
+    // Validate all clientIds if provided
+    if (clientIds.length > 0) {
+      for (const cId of clientIds) {
+        if (!Types.ObjectId.isValid(cId)) {
+          return errorResponse(`Invalid client ID format: ${cId}`, 400);
         }
-        return errorResponse("Client validation failed", 404);
+        
+        // ✅ Validate each client exists
+        try {
+          await requireValidClient(cId);
+        } catch (clientError) {
+          if (clientError instanceof Error) {
+            return errorResponse(clientError.message, 404);
+          }
+          return errorResponse("Client validation failed", 404);
+        }
       }
     }
 
