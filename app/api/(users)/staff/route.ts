@@ -22,27 +22,31 @@ export const GET = async (req: NextRequest) => {
 
     console.log('🔍 Staff API (users) called with:', { id, email, clientId });
 
-    // ✅ Require clientId for all staff operations
-    if (!clientId) {
-      console.log('❌ No clientId provided');
+    // ✅ For email-based queries (login flow), clientId is optional
+    // ✅ For other operations, clientId is required
+    if (!email && !clientId) {
+      console.log('❌ No clientId provided for non-email query');
       return errorResponse("Client ID is required", 400);
     }
 
-    if (!Types.ObjectId.isValid(clientId)) {
+    // Validate clientId format if provided
+    if (clientId && !Types.ObjectId.isValid(clientId)) {
       console.log('❌ Invalid clientId format:', clientId);
       return errorResponse("Invalid client ID format", 400);
     }
 
-    // ✅ Validate client exists before fetching staff
-    try {
-      await requireValidClient(clientId);
-      console.log('✅ Client validation passed');
-    } catch (clientError) {
-      console.log('❌ Client validation failed:', clientError);
-      if (clientError instanceof Error) {
-        return errorResponse(clientError.message, 404);
+    // ✅ Validate client exists before fetching staff (only if clientId is provided)
+    if (clientId) {
+      try {
+        await requireValidClient(clientId);
+        console.log('✅ Client validation passed');
+      } catch (clientError) {
+        console.log('❌ Client validation failed:', clientError);
+        if (clientError instanceof Error) {
+          return errorResponse(clientError.message, 404);
+        }
+        return errorResponse("Client validation failed", 404);
       }
-      return errorResponse("Client validation failed", 404);
     }
 
     // Get specific staff by ID
@@ -51,10 +55,14 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid staff ID format", 400);
       }
 
-      // ✅ Filter by both ID and clientId
+      if (!clientId) {
+        return errorResponse("Client ID is required when fetching by ID", 400);
+      }
+
+      // ✅ Filter by both ID and clientIds array (staff can belong to multiple clients)
       const staffData = await Staff.findOne({ 
         _id: id, 
-        clientId: clientId 
+        clientIds: clientId // MongoDB will match if clientId is in the array
       });
       
       if (!staffData) {
@@ -92,11 +100,14 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid email format", 400);
       }
 
-      // ✅ Filter by both email and clientId
-      const staffData = await Staff.findOne({ 
-        email: email, 
-        clientId: clientId 
-      });
+      // ✅ For login flow: Find by email only (email is unique across all staff)
+      // ✅ For other operations: Filter by both email and clientIds
+      const query: any = { email: email };
+      if (clientId) {
+        query.clientIds = clientId; // MongoDB will match if clientId is in the array
+      }
+      
+      const staffData = await Staff.findOne(query);
       
       if (!staffData) {
         return errorResponse("Staff member not found with this email", 404);
@@ -104,11 +115,22 @@ export const GET = async (req: NextRequest) => {
 
       // Populate assignedProjects for this staff member
       try {
+        const projectQuery: any = {
+          "assignedStaff._id": staffData._id.toString()
+        };
+        // Only filter by clientId if it was provided
+        if (clientId) {
+          projectQuery.clientId = clientId;
+        } else {
+          // Use the staff's first clientId for project filtering (or all clientIds)
+          // For login, we'll get projects from all their clients
+          if (staffData.clientIds && staffData.clientIds.length > 0) {
+            projectQuery.clientId = { $in: staffData.clientIds };
+          }
+        }
+        
         const assignedProjects = await Projects.find(
-          {
-            "assignedStaff._id": staffData._id.toString(),
-            clientId: clientId // ✅ Also filter projects by clientId
-          },
+          projectQuery,
           { name: 1 } // Only get project names
         );
 
@@ -127,8 +149,13 @@ export const GET = async (req: NextRequest) => {
     }
 
     // ✅ Get all staff members filtered by clientId
+    if (!clientId) {
+      return errorResponse("Client ID is required when fetching all staff", 400);
+    }
+    
     console.log('🔍 Fetching all staff for clientId:', clientId);
-    const staffData = await Staff.find({ clientId: clientId }).sort({ createdAt: -1 });
+    // Find staff where clientId is in their clientIds array
+    const staffData = await Staff.find({ clientIds: clientId }).sort({ createdAt: -1 });
     console.log('📊 Found staff count:', staffData.length);
 
     // Populate assignedProjects for each staff member by querying Projects collection
@@ -282,22 +309,29 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Email is required", 400);
     }
 
-    if (!data.clientId) {
-      return errorResponse("Client ID is required", 400);
+    // ✅ Support both single clientId and multiple clientIds
+    if (!data.clientId && (!data.clientIds || data.clientIds.length === 0)) {
+      return errorResponse("At least one Client ID is required", 400);
     }
 
-    if (!Types.ObjectId.isValid(data.clientId)) {
-      return errorResponse("Invalid client ID format", 400);
-    }
-
-    // ✅ Validate client exists before creating staff
-    try {
-      await requireValidClient(data.clientId);
-    } catch (clientError) {
-      if (clientError instanceof Error) {
-        return errorResponse(clientError.message, 404);
+    // Convert single clientId to clientIds array for consistency
+    const clientIds = data.clientIds || (data.clientId ? [data.clientId] : []);
+    
+    // Validate all clientIds
+    for (const cId of clientIds) {
+      if (!Types.ObjectId.isValid(cId)) {
+        return errorResponse(`Invalid client ID format: ${cId}`, 400);
       }
-      return errorResponse("Client validation failed", 404);
+      
+      // ✅ Validate each client exists
+      try {
+        await requireValidClient(cId);
+      } catch (clientError) {
+        if (clientError instanceof Error) {
+          return errorResponse(clientError.message, 404);
+        }
+        return errorResponse("Client validation failed", 404);
+      }
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -305,13 +339,12 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Invalid email format", 400);
     }
 
-    // ✅ Check if staff already exists within the same client
+    // ✅ Check if staff already exists with this email
     const existingStaff = await Staff.findOne({ 
-      email: data.email, 
-      clientId: data.clientId 
+      email: data.email
     });
     if (existingStaff) {
-      return errorResponse("Staff member already exists with this email for this client", 409);
+      return errorResponse("Staff member already exists with this email", 409);
     }
 
     // Check if login user already exists
@@ -320,11 +353,11 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("User already exists with this email", 409);
     }
 
-    const { password, ...staffData } = data;
+    const { password, clientId, ...staffData } = data;
     console.log(password);
 
-    // Create new staff member
-    const newStaff = new Staff(staffData);
+    // Create new staff member with clientIds array
+    const newStaff = new Staff({ ...staffData, clientIds });
     const savedStaff = await newStaff.save();
 
     // Create login user entry
@@ -403,23 +436,22 @@ export const PUT = async (req: NextRequest) => {
         return errorResponse("Invalid email format", 400);
       }
 
-      // ✅ Check if email is already used by another staff member within the same client
+      // ✅ Check if email is already used by another staff member
       const existingStaff = await Staff.findOne({
         email: updateData.email,
-        clientId: clientId,
         _id: { $ne: id },
       });
       if (existingStaff) {
         return errorResponse(
-          "Email already exists for another staff member in this client",
+          "Email already exists for another staff member",
           409
         );
       }
     }
 
-    // ✅ Find and update the staff member (filtered by both ID and clientId)
+    // ✅ Find and update the staff member (filtered by both ID and clientIds array)
     const updatedStaff = await Staff.findOneAndUpdate(
-      { _id: id, clientId: clientId },
+      { _id: id, clientIds: clientId }, // Check if clientId is in clientIds array
       { ...updateData, updatedAt: new Date() },
       { new: true, runValidators: true }
     );
@@ -504,10 +536,10 @@ export const DELETE = async (req: NextRequest) => {
         return errorResponse("Project not found", 404);
       }
 
-      // ✅ Find the staff member and ensure it belongs to the same client
+      // ✅ Find the staff member and ensure it belongs to the client
       const staff = await Staff.findOne({ 
         _id: id, 
-        clientId: clientId 
+        clientIds: clientId // Check if clientId is in clientIds array
       });
       if (!staff) {
         return errorResponse("Staff member not found", 404);
@@ -577,10 +609,10 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     // Handle regular staff deletion
-    // ✅ Find the staff member first and ensure it belongs to the same client
+    // ✅ Find the staff member first and ensure it belongs to the client
     const staffToDelete = await Staff.findOne({ 
       _id: id, 
-      clientId: clientId 
+      clientIds: clientId // Check if clientId is in clientIds array
     });
     if (!staffToDelete) {
       return errorResponse("Staff member not found", 404);
@@ -589,7 +621,7 @@ export const DELETE = async (req: NextRequest) => {
     // Delete the staff member
     const deletedStaff = await Staff.findOneAndDelete({ 
       _id: id, 
-      clientId: clientId 
+      clientIds: clientId 
     });
 
     // Delete the corresponding login user entry
