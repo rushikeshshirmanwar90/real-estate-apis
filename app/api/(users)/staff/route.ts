@@ -7,6 +7,7 @@ import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import bcrypt from "bcrypt";
+import { isStrongPassword } from "@/lib/utils/validation";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -353,23 +354,47 @@ export const POST = async (req: NextRequest) => {
     }
 
     const { password, clientId, ...staffData } = data;
-    console.log('Password provided:', !!password);
+    console.log('🔍 Password debugging:');
+    console.log('  - Password provided:', !!password);
+    console.log('  - Password length:', password?.length || 0);
+    console.log('  - Password type:', typeof password);
+    console.log('  - Raw data keys:', Object.keys(data));
+
+    // Validate password if provided
+    if (password && !isStrongPassword(password)) {
+      console.log('❌ Password validation failed');
+      return errorResponse(
+        "Password must be at least 8 characters with uppercase, lowercase, number, and special character (@$!%*?&)",
+        400
+      );
+    }
 
     // Hash password if provided
     let hashedPassword = null;
-    if (password) {
+    if (password && password.trim()) {
       const SALT_ROUNDS = 10;
-      hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-      console.log('Password hashed successfully');
+      hashedPassword = await bcrypt.hash(password.trim(), SALT_ROUNDS);
+      console.log('✅ Password hashed successfully');
+      console.log('  - Hashed password length:', hashedPassword.length);
+    } else {
+      console.log('❌ No password provided or password is empty');
     }
 
     // Create new staff member with clientIds array and password
-    const newStaff = new Staff({ 
+    const staffPayload = { 
       ...staffData, 
       clientIds,
       ...(hashedPassword && { password: hashedPassword })
-    });
+    };
+    
+    console.log('📦 Staff payload keys:', Object.keys(staffPayload));
+    console.log('📦 Staff payload has password:', 'password' in staffPayload);
+    
+    const newStaff = new Staff(staffPayload);
     const savedStaff = await newStaff.save();
+
+    console.log('✅ Staff saved with keys:', Object.keys(savedStaff.toObject()));
+    console.log('✅ Saved staff has password:', 'password' in savedStaff.toObject());
 
     // Create login user entry with password
     const loginPayload = {
@@ -377,8 +402,14 @@ export const POST = async (req: NextRequest) => {
       userType: "staff",
       ...(hashedPassword && { password: hashedPassword })
     };
+    
+    console.log('📦 LoginUser payload keys:', Object.keys(loginPayload));
+    console.log('📦 LoginUser payload has password:', 'password' in loginPayload);
+    
     const newLoginUser = new LoginUser(loginPayload);
     await newLoginUser.save();
+
+    console.log('✅ LoginUser saved successfully');
 
     return successResponse(
       savedStaff,
