@@ -1,5 +1,20 @@
 import { models, model, Schema } from "mongoose";
 
+const ClientAssignmentSchema = new Schema({
+  clientId: {
+    type: String,
+    required: true,
+  },
+  clientName: {
+    type: String,
+    required: true,
+  },
+  assignedAt: {
+    type: Date,
+    default: Date.now,
+  },
+}, { _id: false });
+
 const StaffSchema = new Schema({
   firstName: {
     type: String,
@@ -23,9 +38,10 @@ const StaffSchema = new Schema({
     required: false,
   },
 
-  clientIds: {
-    type: [String],
+  clients: {
+    type: [ClientAssignmentSchema],
     required: false,
+    default: [],
   },
   role: {
     type: String,

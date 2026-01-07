@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { Staff } from "@/lib/models/users/Staff";
+import { Client } from "@/lib/models/super-admin/Client";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
@@ -12,7 +13,7 @@ const isValidObjectId = (id: string): boolean => {
 
 /**
  * POST /api/(users)/staff/assign-client
- * Assign a staff member to one or more clients by adding clientIds to their clientIds array
+ * Assign a staff member to one or more clients by adding client objects to their clients array
  * 
  * Request body:
  * {
@@ -52,20 +53,9 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Staff member not found", 404);
     }
 
-    // Validate that all clients exist
-    for (const clientId of data.clientIds) {
-      try {
-        await requireValidClient(clientId);
-      } catch (clientError) {
-        if (clientError instanceof Error) {
-          return errorResponse(clientError.message, 404);
-        }
-        return errorResponse(`Client validation failed for ID: ${clientId}`, 404);
-      }
-    }
-
-    // Get current clientIds (ensure it's an array)
-    const currentClientIds = staff.clientIds || [];
+    // Get current clients (ensure it's an array)
+    const currentClients = staff.clients || [];
+    const currentClientIds = currentClients.map((c: { clientId: string }) => c.clientId);
     
     // Filter out clientIds that are already assigned
     const newClientIds = data.clientIds.filter(
@@ -79,14 +69,40 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    // Add new clientIds to the staff member's clientIds array
-    const updatedClientIds = [...currentClientIds, ...newClientIds];
+    // Fetch client details for new assignments
+    const newClientAssignments = [];
+    for (const clientId of newClientIds) {
+      try {
+        // Validate that client exists
+        await requireValidClient(clientId);
+        
+        // Fetch client details
+        const client = await Client.findById(clientId);
+        if (!client) {
+          return errorResponse(`Client not found: ${clientId}`, 404);
+        }
+
+        newClientAssignments.push({
+          clientId: clientId,
+          clientName: client.name || client.companyName || 'Unknown Client',
+          assignedAt: new Date()
+        });
+      } catch (clientError) {
+        if (clientError instanceof Error) {
+          return errorResponse(clientError.message, 404);
+        }
+        return errorResponse(`Client validation failed for ID: ${clientId}`, 404);
+      }
+    }
+
+    // Add new client assignments to the staff member's clients array
+    const updatedClients = [...currentClients, ...newClientAssignments];
 
     // Update the staff member
     const updatedStaff = await Staff.findByIdAndUpdate(
       data.staffId,
       { 
-        clientIds: updatedClientIds,
+        clients: updatedClients,
         updatedAt: new Date()
       },
       { new: true, runValidators: true }
@@ -100,8 +116,8 @@ export const POST = async (req: NextRequest) => {
       {
         staffId: data.staffId,
         staffName: `${updatedStaff.firstName} ${updatedStaff.lastName}`,
-        clientIds: updatedClientIds,
-        newlyAssignedClientIds: newClientIds,
+        clients: updatedClients,
+        newlyAssignedClients: newClientAssignments,
         assignedAt: new Date().toISOString()
       },
       `Staff member assigned to ${newClientIds.length} new client(s) successfully`,
@@ -115,7 +131,7 @@ export const POST = async (req: NextRequest) => {
 
 /**
  * DELETE /api/(users)/staff/assign-client
- * Remove a staff member from one or more clients by removing clientIds from their clientIds array
+ * Remove a staff member from one or more clients by removing client objects from their clients array
  * 
  * Query params:
  * - staffId: string (required)
@@ -162,16 +178,16 @@ export const DELETE = async (req: NextRequest) => {
       return errorResponse("Staff member not found", 404);
     }
 
-    // Get current clientIds
-    const currentClientIds = staff.clientIds || [];
+    // Get current clients
+    const currentClients = staff.clients || [];
 
-    // Filter out the clientIds to remove
-    const updatedClientIds = currentClientIds.filter(
-      (clientId: string) => !clientIds.includes(clientId)
+    // Filter out the clients to remove
+    const updatedClients = currentClients.filter(
+      (client: { clientId: string }) => !clientIds.includes(client.clientId)
     );
 
-    // Check if any clientIds were actually removed
-    if (updatedClientIds.length === currentClientIds.length) {
+    // Check if any clients were actually removed
+    if (updatedClients.length === currentClients.length) {
       return errorResponse(
         "Staff member is not assigned to any of the specified clients",
         404
@@ -182,7 +198,7 @@ export const DELETE = async (req: NextRequest) => {
     const updatedStaff = await Staff.findByIdAndUpdate(
       staffId,
       { 
-        clientIds: updatedClientIds,
+        clients: updatedClients,
         updatedAt: new Date()
       },
       { new: true, runValidators: true }
@@ -192,13 +208,13 @@ export const DELETE = async (req: NextRequest) => {
       return errorResponse("Failed to update staff member", 500);
     }
 
-    const removedCount = currentClientIds.length - updatedClientIds.length;
+    const removedCount = currentClients.length - updatedClients.length;
 
     return successResponse(
       {
         staffId: staffId,
         staffName: `${updatedStaff.firstName} ${updatedStaff.lastName}`,
-        clientIds: updatedClientIds,
+        clients: updatedClients,
         removedClientIds: clientIds,
         removedAt: new Date().toISOString()
       },

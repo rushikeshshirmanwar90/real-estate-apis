@@ -61,10 +61,10 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client ID is required when fetching by ID", 400);
       }
 
-      // ✅ Filter by both ID and clientIds array (staff can belong to multiple clients)
+      // ✅ Filter by both ID and clients array (staff can belong to multiple clients)
       const staffData = await Staff.findOne({ 
         _id: id, 
-        clientIds: clientId // MongoDB will match if clientId is in the array
+        "clients.clientId": clientId // MongoDB will match if clientId is in the clients array
       });
       
       if (!staffData) {
@@ -103,10 +103,10 @@ export const GET = async (req: NextRequest) => {
       }
 
       // ✅ For login flow: Find by email only (email is unique across all staff)
-      // ✅ For other operations: Filter by both email and clientIds
+      // ✅ For other operations: Filter by both email and clients array
       const query: any = { email: email };
       if (clientId) {
-        query.clientIds = clientId; // MongoDB will match if clientId is in the array
+        query["clients.clientId"] = clientId; // MongoDB will match if clientId is in the clients array
       }
       
       const staffData = await Staff.findOne(query);
@@ -124,10 +124,11 @@ export const GET = async (req: NextRequest) => {
         if (clientId) {
           projectQuery.clientId = clientId;
         } else {
-          // Use the staff's first clientId for project filtering (or all clientIds)
+          // Use the staff's first client for project filtering (or all clients)
           // For login, we'll get projects from all their clients
-          if (staffData.clientIds && staffData.clientIds.length > 0) {
-            projectQuery.clientId = { $in: staffData.clientIds };
+          if (staffData.clients && staffData.clients.length > 0) {
+            const clientIds = staffData.clients.map((c: { clientId: string }) => c.clientId);
+            projectQuery.clientId = { $in: clientIds };
           }
         }
         
@@ -156,8 +157,8 @@ export const GET = async (req: NextRequest) => {
     }
     
     console.log('🔍 Fetching all staff for clientId:', clientId);
-    // Find staff where clientId is in their clientIds array
-    const staffData = await Staff.find({ clientIds: clientId }).sort({ createdAt: -1 });
+    // Find staff where clientId is in their clients array
+    const staffData = await Staff.find({ "clients.clientId": clientId }).sort({ createdAt: -1 });
     console.log('📊 Found staff count:', staffData.length);
 
     // Populate assignedProjects for each staff member by querying Projects collection
@@ -311,20 +312,24 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Email is required", 400);
     }
 
-    // ✅ Support both single clientId and multiple clientIds
-    // Allow empty clientIds array for self-registration (admin will assign later)
-    const clientIds = data.clientIds || (data.clientId ? [data.clientId] : []);
+    // ✅ Support both single clientId and multiple clients
+    // Allow empty clients array for self-registration (admin will assign later)
+    const clients = data.clients || [];
     
-    // Validate all clientIds if provided
-    if (clientIds.length > 0) {
-      for (const cId of clientIds) {
-        if (!Types.ObjectId.isValid(cId)) {
-          return errorResponse(`Invalid client ID format: ${cId}`, 400);
+    // Validate all clients if provided
+    if (clients.length > 0) {
+      for (const client of clients) {
+        if (!client.clientId || !Types.ObjectId.isValid(client.clientId)) {
+          return errorResponse(`Invalid client ID format: ${client.clientId}`, 400);
+        }
+        
+        if (!client.clientName || typeof client.clientName !== 'string') {
+          return errorResponse(`Client name is required for client ID: ${client.clientId}`, 400);
         }
         
         // ✅ Validate each client exists
         try {
-          await requireValidClient(cId);
+          await requireValidClient(client.clientId);
         } catch (clientError) {
           if (clientError instanceof Error) {
             return errorResponse(clientError.message, 404);
@@ -359,6 +364,7 @@ export const POST = async (req: NextRequest) => {
     console.log('  - Password length:', password?.length || 0);
     console.log('  - Password type:', typeof password);
     console.log('  - Raw data keys:', Object.keys(data));
+    console.log('  - Clients array:', clients);
 
     // Validate password if provided
     if (password && !isStrongPassword(password)) {
@@ -380,21 +386,23 @@ export const POST = async (req: NextRequest) => {
       console.log('❌ No password provided or password is empty');
     }
 
-    // Create new staff member with clientIds array and password
+    // Create new staff member with clients array and password
     const staffPayload = { 
       ...staffData, 
-      clientIds,
+      clients,
       ...(hashedPassword && { password: hashedPassword })
     };
     
     console.log('📦 Staff payload keys:', Object.keys(staffPayload));
     console.log('📦 Staff payload has password:', 'password' in staffPayload);
+    console.log('📦 Staff payload clients:', staffPayload.clients);
     
     const newStaff = new Staff(staffPayload);
     const savedStaff = await newStaff.save();
 
     console.log('✅ Staff saved with keys:', Object.keys(savedStaff.toObject()));
     console.log('✅ Saved staff has password:', 'password' in savedStaff.toObject());
+    console.log('✅ Saved staff clients:', savedStaff.clients);
 
     // Create login user entry with password
     const loginPayload = {
@@ -492,9 +500,9 @@ export const PUT = async (req: NextRequest) => {
       }
     }
 
-    // ✅ Find and update the staff member (filtered by both ID and clientIds array)
+    // ✅ Find and update the staff member (filtered by both ID and clients array)
     const updatedStaff = await Staff.findOneAndUpdate(
-      { _id: id, clientIds: clientId }, // Check if clientId is in clientIds array
+      { _id: id, "clients.clientId": clientId }, // Check if clientId is in clients array
       { ...updateData, updatedAt: new Date() },
       { new: true, runValidators: true }
     );
@@ -582,7 +590,7 @@ export const DELETE = async (req: NextRequest) => {
       // ✅ Find the staff member and ensure it belongs to the client
       const staff = await Staff.findOne({ 
         _id: id, 
-        clientIds: clientId // Check if clientId is in clientIds array
+        "clients.clientId": clientId // Check if clientId is in clients array
       });
       if (!staff) {
         return errorResponse("Staff member not found", 404);
@@ -655,7 +663,7 @@ export const DELETE = async (req: NextRequest) => {
     // ✅ Find the staff member first and ensure it belongs to the client
     const staffToDelete = await Staff.findOne({ 
       _id: id, 
-      clientIds: clientId // Check if clientId is in clientIds array
+      "clients.clientId": clientId // Check if clientId is in clients array
     });
     if (!staffToDelete) {
       return errorResponse("Staff member not found", 404);
@@ -664,7 +672,7 @@ export const DELETE = async (req: NextRequest) => {
     // Delete the staff member
     const deletedStaff = await Staff.findOneAndDelete({ 
       _id: id, 
-      clientIds: clientId 
+      "clients.clientId": clientId 
     });
 
     // Delete the corresponding login user entry
