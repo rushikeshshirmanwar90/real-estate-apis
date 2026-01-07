@@ -6,6 +6,7 @@ import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import bcrypt from "bcrypt";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -352,16 +353,29 @@ export const POST = async (req: NextRequest) => {
     }
 
     const { password, clientId, ...staffData } = data;
-    console.log(password);
+    console.log('Password provided:', !!password);
 
-    // Create new staff member with clientIds array
-    const newStaff = new Staff({ ...staffData, clientIds });
+    // Hash password if provided
+    let hashedPassword = null;
+    if (password) {
+      const SALT_ROUNDS = 10;
+      hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+      console.log('Password hashed successfully');
+    }
+
+    // Create new staff member with clientIds array and password
+    const newStaff = new Staff({ 
+      ...staffData, 
+      clientIds,
+      ...(hashedPassword && { password: hashedPassword })
+    });
     const savedStaff = await newStaff.save();
 
-    // Create login user entry
+    // Create login user entry with password
     const loginPayload = {
       email: data.email,
       userType: "staff",
+      ...(hashedPassword && { password: hashedPassword })
     };
     const newLoginUser = new LoginUser(loginPayload);
     await newLoginUser.save();
