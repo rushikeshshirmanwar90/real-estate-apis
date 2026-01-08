@@ -17,6 +17,7 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const clientId = searchParams.get("clientId");
+    const staffId = searchParams.get("staffId"); // Add staffId parameter for filtering
 
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
@@ -24,6 +25,11 @@ export const GET = async (req: NextRequest) => {
 
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
+    }
+
+    // Validate staffId if provided
+    if (staffId && !isValidObjectId(staffId)) {
+      return errorResponse("Invalid staff ID format", 400);
     }
 
     await connect();
@@ -43,13 +49,21 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid project ID format", 400);
       }
 
-      const project = await Projects.findOne({
+      // Build query for single project
+      const projectQuery: any = {
         _id: new Types.ObjectId(id),
         clientId: new Types.ObjectId(clientId),
-      }).lean();
+      };
+
+      // If staffId is provided, filter by assigned staff
+      if (staffId) {
+        projectQuery["assignedStaff._id"] = staffId;
+      }
+
+      const project = await Projects.findOne(projectQuery).lean();
 
       if (!project) {
-        return errorResponse("Project not found", 404);
+        return errorResponse("Project not found or not assigned to this staff member", 404);
       }
 
       return successResponse(project, "Project retrieved successfully");
@@ -58,14 +72,25 @@ export const GET = async (req: NextRequest) => {
     // Pagination
     const { page, limit, skip } = getPaginationParams(req);
 
+    // Build query for multiple projects
+    const projectsQuery: any = { clientId: new Types.ObjectId(clientId) };
+
+    // If staffId is provided, filter by assigned staff
+    if (staffId) {
+      projectsQuery["assignedStaff._id"] = staffId;
+      console.log(`🔍 Filtering projects for staff ID: ${staffId}`);
+    }
+
     const [projects, total] = await Promise.all([
-      Projects.find({ clientId: new Types.ObjectId(clientId) })
+      Projects.find(projectsQuery)
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
         .lean(),
-      Projects.countDocuments({ clientId: new Types.ObjectId(clientId) }),
+      Projects.countDocuments(projectsQuery),
     ]);
+
+    console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}`);
 
     const meta = createPaginationMeta(page, limit, total);
 

@@ -1,6 +1,7 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
+import { Types } from "mongoose";
 
 export const GET = async (req: NextRequest) => {
     try {
@@ -8,12 +9,14 @@ export const GET = async (req: NextRequest) => {
         
         const { searchParams } = new URL(req.url);
         const clientId = searchParams.get('clientId');
+        const staffId = searchParams.get('staffId'); // Add staffId parameter for filtering
 
         console.log('\n========================================');
         console.log('📋 CLIENT PROJECTS API');
         console.log('========================================');
         console.log('Request Parameters:');
         console.log('  - Client ID:', clientId);
+        console.log('  - Staff ID:', staffId);
 
         // Validation
         if (!clientId) {
@@ -26,9 +29,29 @@ export const GET = async (req: NextRequest) => {
             );
         }
 
-        // Fetch projects for this client
-        const projects = await Projects.find({ clientId })
-            .select('_id name title createdAt')
+        // Validate staffId if provided
+        if (staffId && !Types.ObjectId.isValid(staffId)) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: "Invalid staff ID format",
+                },
+                { status: 400 }
+            );
+        }
+
+        // Build query
+        const projectsQuery: any = { clientId };
+
+        // If staffId is provided, filter by assigned staff
+        if (staffId) {
+            projectsQuery["assignedStaff._id"] = staffId;
+            console.log('🔍 Filtering projects for staff member');
+        }
+
+        // Fetch projects for this client (and optionally filtered by staff)
+        const projects = await Projects.find(projectsQuery)
+            .select('_id name title createdAt assignedStaff')
             .sort({ createdAt: -1 }) // Latest first
             .lean();
 
@@ -38,12 +61,17 @@ export const GET = async (req: NextRequest) => {
         const processedProjects = projects.map((project: any) => ({
             _id: project._id.toString(),
             name: project.name || project.title || 'Unnamed Project',
-            createdAt: project.createdAt || new Date().toISOString()
+            createdAt: project.createdAt || new Date().toISOString(),
+            assignedStaff: project.assignedStaff || []
         }));
 
         console.log('📋 Processed Projects:');
         processedProjects.forEach((project, index) => {
             console.log(`  ${index + 1}. ${project.name} (ID: ${project._id})`);
+            if (staffId) {
+                const isAssigned = project.assignedStaff.some((staff: any) => staff._id === staffId);
+                console.log(`     - Staff assigned: ${isAssigned ? 'Yes' : 'No'}`);
+            }
         });
 
         console.log('========================================\n');
@@ -55,7 +83,7 @@ export const GET = async (req: NextRequest) => {
                     projects: processedProjects,
                     count: processedProjects.length
                 },
-                message: `Found ${processedProjects.length} projects`
+                message: `Found ${processedProjects.length} projects${staffId ? ' assigned to staff member' : ''}`
             },
             { status: 200 }
         );
