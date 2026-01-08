@@ -119,7 +119,7 @@ const migrateStaffClientIds = async () => {
           // Keep clientIds for now (will be removed in a separate cleanup step)
         });
 
-        console.log(`   ✅ Migrated to clients: ${newClients.map(c => `${c.clientName} (${c.clientId})`).join(', ')}`);
+        console.log(`   ✅ Migrated to clients: ${newClients.map((c: { clientName: string; clientId: string }) => `${c.clientName} (${c.clientId})`).join(', ')}`);
         migratedCount++;
 
       } catch (staffError) {
