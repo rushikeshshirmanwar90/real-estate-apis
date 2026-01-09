@@ -3,7 +3,7 @@
  * Run this once after updating the Staff model to populate the assignedProjects field
  */
 
-const connect = require("../lib/db").default;
+const connectDB = require("../lib/db").default;
 
 async function syncStaffProjectAssignments() {
   try {
@@ -83,7 +83,7 @@ async function runSync() {
     console.log("✅ All required environment variables are set");
     console.log("🔄 Starting staff project assignments sync...");
     
-    await connect();
+    await connectDB();
     console.log("✅ Connected to database");
     
     const result = await syncStaffProjectAssignments();

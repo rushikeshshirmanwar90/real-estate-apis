@@ -2,7 +2,7 @@
  * Diagnostic script to check the current state of staff assignments
  */
 
-const connect = require("../lib/db").default;
+const connectDB = require("../lib/db").default;
 const { Staff } = require("../lib/models/users/Staff");
 const { Projects } = require("../lib/models/Project");
 
@@ -20,7 +20,7 @@ async function diagnoseStaffAssignments() {
 
     console.log("✅ All required environment variables are set");
 
-    await connect();
+    await connectDB();
     console.log("✅ Connected to database");
 
     // Get counts

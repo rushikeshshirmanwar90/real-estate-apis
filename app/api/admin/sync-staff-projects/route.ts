@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import  connect  from "@/lib/db";
 import { syncStaffProjectAssignments } from "@/lib/utils/staffProjectUtils";
-import { successResponse, errorResponse } from "@/lib/utils/response";
+import { successResponse, errorResponse } from "@/lib/utils/api-response";
 
 export const POST = async (req: NextRequest) => {
   try {

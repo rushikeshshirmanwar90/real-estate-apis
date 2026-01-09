@@ -2,7 +2,7 @@
  * Test script to verify staff assignment functionality
  */
 
-const connect = require("../lib/db").default;
+const connectDB = require("../lib/db").default;
 
 async function assignStaffToProject(staffId, projectId, projectName, clientId, clientName) {
   try {
@@ -88,7 +88,7 @@ async function testStaffAssignment() {
 
     console.log("✅ All required environment variables are set");
 
-    await connect();
+    await connectDB();
     console.log("✅ Connected to database");
 
     const { Staff } = require("../lib/models/users/Staff");
