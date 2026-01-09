@@ -1,19 +1,57 @@
 import { models, model, Schema } from "mongoose";
 
-const ClientAssignmentSchema = new Schema({
-  clientId: {
-    type: String,
-    required: true,
+const ClientAssignmentSchema = new Schema(
+  {
+    clientId: {
+      type: String,
+      required: true,
+    },
+    clientName: {
+      type: String,
+      required: true,
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
-  clientName: {
-    type: String,
-    required: true,
+  { _id: false }
+);
+
+// Simplified project assignment schema
+const ProjectAssignmentSchema = new Schema(
+  {
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Projects",
+      required: true,
+    },
+    projectName: {
+      type: String,
+      required: true,
+    },
+    clientId: {
+      type: Schema.Types.ObjectId,
+      ref: "Client",
+      required: true,
+    },
+    clientName: {
+      type: String,
+      required: true,
+    },
+    assignedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    // Optional: track assignment status
+    status: {
+      type: String,
+      enum: ["active", "completed", "paused"],
+      default: "active",
+    },
   },
-  assignedAt: {
-    type: Date,
-    default: Date.now,
-  },
-}, { _id: false });
+  { _id: false }
+);
 
 const StaffSchema = new Schema({
   firstName: {
@@ -49,8 +87,9 @@ const StaffSchema = new Schema({
     required: true,
   },
   assignedProjects: {
-    type: [String],
+    type: [ProjectAssignmentSchema],
     required: false,
+    default: [],
   },
   emailVerified: {
     type: Boolean,

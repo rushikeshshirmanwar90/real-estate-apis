@@ -71,28 +71,13 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Staff member not found", 404);
       }
 
-      // Populate assignedProjects for this staff member
-      try {
-        const assignedProjects = await Projects.find(
-          {
-            "assignedStaff._id": staffData._id.toString(),
-            clientId: clientId // ✅ Also filter projects by clientId
-          },
-          { name: 1 } // Only get project names
-        );
-
-        const projectNames = assignedProjects.map(project => project.name);
-        const staffObj = staffData.toObject();
-        staffObj.assignedProjects = projectNames;
-
-        return successResponse(staffObj, "Staff member retrieved successfully");
-      } catch (error) {
-        console.error(`Error fetching projects for staff ${id}:`, error);
-        // Return staff with empty assignedProjects on error
-        const staffObj = staffData.toObject();
-        staffObj.assignedProjects = [];
-        return successResponse(staffObj, "Staff member retrieved successfully");
-      }
+      // Populate assignedProjects from the staff document itself
+      const staffObj = staffData.toObject();
+      
+      // The assignedProjects field now contains the actual project assignments
+      // No need to query Projects collection anymore
+      
+      return successResponse(staffObj, "Staff member retrieved successfully");
     }
 
     // Get specific staff by email
@@ -116,39 +101,18 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Populate assignedProjects for this staff member
-      try {
-        const projectQuery: any = {
-          "assignedStaff._id": staffData._id.toString()
-        };
-        // Only filter by clientId if it was provided
-        if (clientId) {
-          projectQuery.clientId = clientId;
-        } else {
-          // Use the staff's first client for project filtering (or all clients)
-          // For login, we'll get projects from all their clients
-          if (staffData.clients && staffData.clients.length > 0) {
-            const clientIds = staffData.clients.map((c: { clientId: string }) => c.clientId);
-            projectQuery.clientId = { $in: clientIds };
-          }
-        }
-        
-        const assignedProjects = await Projects.find(
-          projectQuery,
-          { name: 1 } // Only get project names
+      // Populate assignedProjects from the staff document itself
+      const staffObj = staffData.toObject();
+      
+      // The assignedProjects field now contains the actual project assignments
+      // Filter by clientId if provided
+      if (clientId && staffObj.assignedProjects) {
+        staffObj.assignedProjects = staffObj.assignedProjects.filter(
+          (project: any) => project.clientId.toString() === clientId
         );
-
-        const projectNames = assignedProjects.map(project => project.name);
-        const staffObj = staffData.toObject();
-        staffObj.assignedProjects = projectNames;
-
-        return successResponse(staffObj, "Staff member retrieved successfully");
-      } catch (error) {
-        console.error(`Error fetching projects for staff ${email}:`, error);
-        // Return staff with empty assignedProjects on error
-        const staffObj = staffData.toObject();
-        staffObj.assignedProjects = [];
-        return successResponse(staffObj, "Staff member retrieved successfully");
       }
+      
+      return successResponse(staffObj, "Staff member retrieved successfully");
     }
 
     // ✅ Get all staff members filtered by clientId
@@ -161,36 +125,19 @@ export const GET = async (req: NextRequest) => {
     const staffData = await Staff.find({ "clients.clientId": clientId }).sort({ createdAt: -1 });
     console.log('📊 Found staff count:', staffData.length);
 
-    // Populate assignedProjects for each staff member by querying Projects collection
-    const staffWithProjects = await Promise.all(
-      staffData.map(async (staff) => {
-        try {
-          // Find projects where this staff member is assigned
-          const assignedProjects = await Projects.find(
-            {
-              "assignedStaff._id": staff._id.toString(),
-              clientId: clientId // ✅ Also filter projects by clientId
-            },
-            { name: 1 } // Only get project names
-          );
-
-          // Extract project names
-          const projectNames = assignedProjects.map(project => project.name);
-
-          // Convert to plain object and add assignedProjects
-          const staffObj = staff.toObject();
-          staffObj.assignedProjects = projectNames;
-
-          return staffObj;
-        } catch (error) {
-          console.error(`Error fetching projects for staff ${staff._id}:`, error);
-          // Return staff with empty assignedProjects on error
-          const staffObj = staff.toObject();
-          staffObj.assignedProjects = [];
-          return staffObj;
-        }
-      })
-    );
+    // Use assignedProjects from the staff documents themselves
+    const staffWithProjects = staffData.map((staff) => {
+      const staffObj = staff.toObject();
+      
+      // Filter assignedProjects by clientId if they exist
+      if (staffObj.assignedProjects && clientId) {
+        staffObj.assignedProjects = staffObj.assignedProjects.filter(
+          (project: any) => project.clientId.toString() === clientId
+        );
+      }
+      
+      return staffObj;
+    });
 
     console.log('✅ Returning staff data:', staffWithProjects.length, 'items');
     return successResponse(
@@ -220,8 +167,8 @@ export const POST = async (req: NextRequest) => {
         return errorResponse("Invalid project ID format", 400);
       }
 
-      // Find the project
-      const project = await Projects.findById(data.projectId);
+      // Find the project with client information
+      const project = await Projects.findById(data.projectId).populate('clientId', 'name');
       if (!project) {
         return errorResponse("Project not found", 404);
       }
@@ -232,79 +179,67 @@ export const POST = async (req: NextRequest) => {
         return errorResponse("Staff member not found", 404);
       }
 
-      // Check if staff is already assigned to this project
-      const isAlreadyAssigned = project.assignedStaff?.some(
-        (assignedStaff: any) => assignedStaff._id.toString() === data.staffId
-      );
-
-      if (isAlreadyAssigned) {
-        return errorResponse("Staff member is already assigned to this project", 409);
-      }
-
-      // Add staff to project's assignedStaff array
-      const staffToAssign = {
-        _id: staff._id,
-        fullName: `${staff.firstName} ${staff.lastName}`,
-      };
-
-      const updatedAssignedStaff = [...(project.assignedStaff || []), staffToAssign];
-
-      // Update the project
-      const updatedProject = await Projects.findByIdAndUpdate(
-        data.projectId,
-        { assignedStaff: updatedAssignedStaff },
-        { new: true }
-      );
-
-      if (!updatedProject) {
-        return errorResponse("Failed to update project", 500);
-      }
-
-      // Log the staff assignment activity
+      // Use the utility function to assign staff to project
+      const { assignStaffToProject } = await import("@/lib/utils/staffProjectUtils");
+      
       try {
-        const activityPayload = {
-          user: data.user || {
-            userId: 'system',
-            fullName: 'System',
-            email: 'system@admin.com'
-          },
-          clientId: project.clientId || 'unknown',
-          projectId: data.projectId,
-          projectName: project.name || project.projectName || 'Unknown Project',
-          activityType: 'staff_assigned',
-          category: 'staff',
-          action: 'assign',
-          description: `Assigned ${staff.firstName} ${staff.lastName} to project "${project.name || project.projectName}"`,
-          message: data.message || 'Staff assigned to project via API',
-          date: new Date().toISOString(),
-          metadata: {
+        await assignStaffToProject(
+          data.staffId,
+          data.projectId,
+          project.name,
+          project.clientId._id.toString(),
+          project.clientId.name
+        );
+
+        // Log the staff assignment activity
+        try {
+          const activityPayload = {
+            user: data.user || {
+              userId: 'system',
+              fullName: 'System',
+              email: 'system@admin.com'
+            },
+            clientId: project.clientId._id || 'unknown',
+            projectId: data.projectId,
+            projectName: project.name || 'Unknown Project',
+            activityType: 'staff_assigned',
+            category: 'staff',
+            action: 'assign',
+            description: `Assigned ${staff.firstName} ${staff.lastName} to project "${project.name}"`,
+            message: data.message || 'Staff assigned to project via API',
+            date: new Date().toISOString(),
+            metadata: {
+              staffName: `${staff.firstName} ${staff.lastName}`,
+              staffId: staff._id.toString(),
+            },
+          };
+
+          // Import axios for activity logging
+          const axios = require('axios');
+          const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
+          
+          await axios.post(`${domain}/api/activity`, activityPayload);
+          console.log(`✅ Staff assignment activity logged for ${staff.firstName} ${staff.lastName}`);
+        } catch (activityError) {
+          console.error('❌ Error logging staff assignment activity:', activityError);
+          // Don't fail the operation if activity logging fails
+        }
+
+        return successResponse(
+          {
+            staffId: data.staffId,
+            projectId: data.projectId,
             staffName: `${staff.firstName} ${staff.lastName}`,
-            staffId: staff._id.toString(),
+            projectName: project.name,
+            clientName: project.clientId.name,
+            assignedAt: new Date().toISOString()
           },
-        };
-
-        // Import axios for activity logging
-        const axios = require('axios');
-        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
-        
-        await axios.post(`${domain}/api/activity`, activityPayload);
-        console.log(`✅ Staff assignment activity logged for ${staff.firstName} ${staff.lastName}`);
-      } catch (activityError) {
-        console.error('❌ Error logging staff assignment activity:', activityError);
-        // Don't fail the operation if activity logging fails
+          "Staff member assigned to project successfully",
+          201
+        );
+      } catch (assignmentError: any) {
+        return errorResponse(assignmentError.message || "Failed to assign staff to project", 500);
       }
-
-      return successResponse(
-        {
-          staffId: data.staffId,
-          projectId: data.projectId,
-          staffName: `${staff.firstName} ${staff.lastName}`,
-          projectName: project.name || project.projectName,
-          assignedAt: new Date().toISOString()
-        },
-        "Staff member assigned to project successfully",
-        201
-      );
     }
 
     // Handle regular staff creation
@@ -596,67 +531,59 @@ export const DELETE = async (req: NextRequest) => {
         return errorResponse("Staff member not found", 404);
       }
 
-      // Remove staff from project's assignedStaff array
-      const originalAssignedStaff = project.assignedStaff || [];
-      const updatedAssignedStaff = originalAssignedStaff.filter(
-        (assignedStaff: any) => assignedStaff._id.toString() !== id
-      );
-
-      // Update the project
-      const updatedProject = await Projects.findByIdAndUpdate(
-        projectId,
-        { assignedStaff: updatedAssignedStaff },
-        { new: true }
-      );
-
-      if (!updatedProject) {
-        return errorResponse("Failed to update project", 500);
-      }
-
-      // Log the staff removal activity
+      // Remove staff from project's assignedStaff array using utility function
+      const { removeStaffFromProject } = await import("@/lib/utils/staffProjectUtils");
+      
       try {
-        const activityPayload = {
-          user: {
-            userId: 'system',
-            fullName: 'System',
-            email: 'system@admin.com'
-          },
-          clientId: project.clientId || 'unknown',
-          projectId: projectId,
-          projectName: project.name || project.projectName || 'Unknown Project',
-          activityType: 'staff_unassigned',
-          category: 'staff',
-          action: 'unassign',
-          description: `Removed ${staff.firstName} ${staff.lastName} from project "${project.name || project.projectName}"`,
-          message: 'Staff removed from project via API',
-          date: new Date().toISOString(),
-          metadata: {
+        await removeStaffFromProject(id, projectId);
+
+        // Log the staff removal activity
+        try {
+          const activityPayload = {
+            user: {
+              userId: 'system',
+              fullName: 'System',
+              email: 'system@admin.com'
+            },
+            clientId: project.clientId || 'unknown',
+            projectId: projectId,
+            projectName: project.name || project.projectName || 'Unknown Project',
+            activityType: 'staff_unassigned',
+            category: 'staff',
+            action: 'unassign',
+            description: `Removed ${staff.firstName} ${staff.lastName} from project "${project.name || project.projectName}"`,
+            message: 'Staff removed from project via API',
+            date: new Date().toISOString(),
+            metadata: {
+              staffName: `${staff.firstName} ${staff.lastName}`,
+              staffId: staff._id.toString(),
+            },
+          };
+
+          // Import axios for activity logging
+          const axios = require('axios');
+          const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
+          
+          await axios.post(`${domain}/api/activity`, activityPayload);
+          console.log(`✅ Staff removal activity logged for ${staff.firstName} ${staff.lastName}`);
+        } catch (activityError) {
+          console.error('❌ Error logging staff removal activity:', activityError);
+          // Don't fail the operation if activity logging fails
+        }
+
+        return successResponse(
+          {
+            staffId: id,
+            projectId: projectId,
             staffName: `${staff.firstName} ${staff.lastName}`,
-            staffId: staff._id.toString(),
+            projectName: project.name || project.projectName,
+            removedAt: new Date().toISOString()
           },
-        };
-
-        // Import axios for activity logging
-        const axios = require('axios');
-        const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
-        
-        await axios.post(`${domain}/api/activity`, activityPayload);
-        console.log(`✅ Staff removal activity logged for ${staff.firstName} ${staff.lastName}`);
-      } catch (activityError) {
-        console.error('❌ Error logging staff removal activity:', activityError);
-        // Don't fail the operation if activity logging fails
+          "Staff member removed from project successfully"
+        );
+      } catch (removalError: any) {
+        return errorResponse(removalError.message || "Failed to remove staff from project", 500);
       }
-
-      return successResponse(
-        {
-          staffId: id,
-          projectId: projectId,
-          staffName: `${staff.firstName} ${staff.lastName}`,
-          projectName: project.name || project.projectName,
-          removedAt: new Date().toISOString()
-        },
-        "Staff member removed from project successfully"
-      );
     }
 
     // Handle regular staff deletion

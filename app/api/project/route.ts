@@ -137,6 +137,45 @@ export const POST = async (req: NextRequest) => {
     const newProject = new Projects(formattedBody);
     await newProject.save();
 
+    // ✅ SYNC STAFF ASSIGNMENTS: Add project to Staff model when assignedStaff is provided
+    if (body.assignedStaff && Array.isArray(body.assignedStaff) && body.assignedStaff.length > 0) {
+      try {
+        console.log(`🔄 Syncing ${body.assignedStaff.length} staff assignments for new project ${newProject._id}`);
+        
+        // Import utility function
+        const { addProjectToStaff } = await import("@/lib/utils/staffProjectUtils");
+
+        // Add each assigned staff member to the Staff model
+        for (const staff of body.assignedStaff) {
+          try {
+            console.log(`➕ Adding project to staff ${staff.fullName} (${staff._id})`);
+            
+            await addProjectToStaff(
+              staff._id,
+              newProject._id.toString(),
+              newProject.name || newProject.projectName || 'Unknown Project',
+              body.clientId,
+              'Unknown Client' // We don't have client name in project creation data
+            );
+            
+            console.log(`✅ Successfully added project to staff ${staff.fullName}'s assignedProjects`);
+          } catch (error) {
+            console.error(`❌ Error adding project to staff ${staff.fullName}:`, error);
+            // Continue with other staff members even if one fails
+          }
+        }
+
+        console.log(`✅ Staff synchronization completed for new project ${newProject._id}`);
+      } catch (error) {
+        console.error(`❌ Error during staff synchronization for new project ${newProject._id}:`, error);
+        // Don't fail the project creation if staff sync fails, but log the error
+        logger.error("Staff synchronization failed during project creation", { 
+          projectId: newProject._id, 
+          error: error 
+        });
+      }
+    }
+
     // ✅ Log activity for project creation
     const userInfo = extractUserInfo(req, body);
     if (userInfo) {

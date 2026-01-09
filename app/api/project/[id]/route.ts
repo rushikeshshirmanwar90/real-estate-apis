@@ -162,7 +162,39 @@ export const DELETE = async (
       const deletedMiniSections = await MiniSection.deleteMany({ projectId: id }, { session });
       logger.info(`Deleted ${deletedMiniSections.deletedCount} mini sections for project ${id}`);
 
-      // 11. Finally, delete the project itself
+      // 11. Remove project from all assigned staff members' assignedProjects
+      if (project.assignedStaff && Array.isArray(project.assignedStaff) && project.assignedStaff.length > 0) {
+        try {
+          console.log(`🔄 Removing project from ${project.assignedStaff.length} staff members`);
+          
+          // Import utility function
+          const { removeProjectFromStaff } = await import("@/lib/utils/staffProjectUtils");
+
+          for (const staff of project.assignedStaff) {
+            try {
+              console.log(`➖ Removing project from staff ${staff.fullName} (${staff._id})`);
+              
+              await removeProjectFromStaff(staff._id, id);
+              
+              console.log(`✅ Successfully removed project from staff ${staff.fullName}`);
+            } catch (error) {
+              console.error(`❌ Error removing project from staff ${staff.fullName}:`, error);
+              // Continue with other staff members even if one fails
+            }
+          }
+
+          console.log(`✅ Staff cleanup completed for deleted project ${id}`);
+        } catch (error) {
+          console.error(`❌ Error during staff cleanup for deleted project ${id}:`, error);
+          // Don't fail the deletion if staff cleanup fails, but log the error
+          logger.error("Staff cleanup failed during project deletion", { 
+            projectId: id, 
+            error: error 
+          });
+        }
+      }
+
+      // 12. Finally, delete the project itself
       const deletedProject = await Projects.findByIdAndDelete(id, { session }).lean();
       if (!deletedProject) {
         await session.abortTransaction();
@@ -281,6 +313,16 @@ export const PUT = async (
       return errorResponse("No update data provided", 400);
     }
 
+    // Get the current project to compare staff assignments
+    const currentProject = await Projects.findById(id).lean();
+    if (!currentProject || !isSingleDocument(currentProject)) {
+      return errorResponse("Project not found", 404);
+    }
+
+    const currentProjectDoc = currentProject as ProjectDocument;
+    const currentAssignedStaff = currentProjectDoc.assignedStaff || [];
+    const newAssignedStaff = body.assignedStaff || [];
+
     // Prepare update data
     const updateData = { ...body };
     // MongoDB will automatically convert string IDs to ObjectIds
@@ -296,6 +338,76 @@ export const PUT = async (
       return errorResponse("Project not found", 404);
     }
     const updatedProject = updatedProjectResult as ProjectDocument;
+
+    // ✅ SYNC STAFF ASSIGNMENTS: Update Staff model when assignedStaff changes
+    if (body.assignedStaff !== undefined) {
+      try {
+        // Import Staff model and utility functions
+        const { Staff } = await import("@/lib/models/users/Staff");
+        const { addProjectToStaff, removeProjectFromStaff } = await import("@/lib/utils/staffProjectUtils");
+
+        // Find staff members that were added
+        const addedStaff = newAssignedStaff.filter((newStaff: any) => 
+          !currentAssignedStaff.some((currentStaff: any) => 
+            currentStaff._id?.toString() === newStaff._id?.toString()
+          )
+        );
+
+        // Find staff members that were removed
+        const removedStaff = currentAssignedStaff.filter((currentStaff: any) => 
+          !newAssignedStaff.some((newStaff: any) => 
+            newStaff._id?.toString() === currentStaff._id?.toString()
+          )
+        );
+
+        console.log(`🔄 Staff assignment changes for project ${id}:`);
+        console.log(`   - Added: ${addedStaff.length} staff members`);
+        console.log(`   - Removed: ${removedStaff.length} staff members`);
+
+        // Add new staff assignments to Staff model (Project already updated)
+        for (const staff of addedStaff) {
+          try {
+            console.log(`➕ Adding project to staff ${staff.fullName} (${staff._id})`);
+            
+            await addProjectToStaff(
+              staff._id,
+              id,
+              updatedProject.name || updatedProject.projectName || 'Unknown Project',
+              updatedProject.clientId?.toString() || body.clientId || 'unknown',
+              'Unknown Client' // We don't have client name in project data
+            );
+            
+            console.log(`✅ Successfully added project to staff ${staff.fullName}'s assignedProjects`);
+          } catch (error) {
+            console.error(`❌ Error adding project to staff ${staff.fullName}:`, error);
+            // Continue with other staff members even if one fails
+          }
+        }
+
+        // Remove staff assignments from Staff model (Project already updated)
+        for (const staff of removedStaff) {
+          try {
+            console.log(`➖ Removing project from staff ${staff.fullName} (${staff._id})`);
+            
+            await removeProjectFromStaff(staff._id, id);
+            
+            console.log(`✅ Successfully removed project from staff ${staff.fullName}'s assignedProjects`);
+          } catch (error) {
+            console.error(`❌ Error removing project from staff ${staff.fullName}:`, error);
+            // Continue with other staff members even if one fails
+          }
+        }
+
+        console.log(`✅ Staff synchronization completed for project ${id}`);
+      } catch (error) {
+        console.error(`❌ Error during staff synchronization for project ${id}:`, error);
+        // Don't fail the project update if staff sync fails, but log the error
+        logger.error("Staff synchronization failed during project update", { 
+          projectId: id, 
+          error: error 
+        });
+      }
+    }
 
     // Log activity for project update
     const userInfo = extractUserInfo(req, body);
