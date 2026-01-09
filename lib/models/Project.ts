@@ -1,6 +1,7 @@
 import { model, models, Schema } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
+import { EmbeddedLaborSchema } from "./Xsite/Labor";
 
 const SectionSchema = new Schema(
   {
@@ -179,6 +180,11 @@ const projectSchema = new Schema(
 
     MaterialAvailable: {
       type: [MaterialSchema],
+      required: false,
+    },
+
+    Labors: {
+      type: [EmbeddedLaborSchema],
       required: false,
     },
   },

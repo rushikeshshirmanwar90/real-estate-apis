@@ -1,6 +1,7 @@
 import { model, models, Schema } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
+import { EmbeddedLaborSchema } from "./Xsite/Labor";
 
 const RowHouseSchema = new Schema(
   {
@@ -47,6 +48,11 @@ const RowHouseSchema = new Schema(
 
     MaterialUsed: {
       type: [MaterialSchema],
+      required: false,
+    },
+
+    Labors: {
+      type: [EmbeddedLaborSchema],
       required: false,
     },
   },

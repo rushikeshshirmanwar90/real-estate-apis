@@ -1,5 +1,6 @@
 import { model, models, Schema } from "mongoose";
 import { MaterialSchema } from "./Xsite/materials-activity";
+import { EmbeddedLaborSchema } from "./Xsite/Labor";
 
 const OtherSectionSchema = new Schema({
   name: {
@@ -29,6 +30,11 @@ const OtherSectionSchema = new Schema({
 
   MaterialUsed: {
     type: [MaterialSchema],
+    required: false,
+  },
+
+  Labors: {
+    type: [EmbeddedLaborSchema],
     required: false,
   },
 });
