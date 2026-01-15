@@ -104,11 +104,8 @@ export const POST = async (req: NextRequest) => {
           type: body.type,
           area: Number(body.area),
           status: 'Available', // Bulk created units are always available initially
-          customerInfo: {
-            name: '',
-            phone: '',
-            email: ''
-          },
+          sold: false, // New field: sold status, default false
+          customerInfo: null, // Default to null instead of empty object
           bookingDate: undefined,
           description: body.description || '',
           images: body.images || []
@@ -171,11 +168,14 @@ export const POST = async (req: NextRequest) => {
         type: body.type,
         area: Number(body.area),
         status: body.status || 'Available',
-        customerInfo: {
-          name: body.customerInfo?.name || '',
-          phone: body.customerInfo?.phone || '',
-          email: body.customerInfo?.email || ''
-        },
+        sold: body.sold !== undefined ? body.sold : false, // New field: sold status, default false
+        customerInfo: body.customerInfo && (body.customerInfo.name || body.customerInfo.phone || body.customerInfo.email) 
+          ? {
+              name: body.customerInfo.name?.trim() || null,
+              phone: body.customerInfo.phone?.trim() || null,
+              email: body.customerInfo.email?.trim() || null
+            }
+          : null, // Only set customerInfo if at least one field has a value, otherwise null
         bookingDate: body.status === 'Booked' ? new Date() : undefined,
         description: body.description || '',
         images: body.images || []
@@ -378,14 +378,28 @@ export const PUT = async (req: NextRequest) => {
         unit.bookingDate = new Date();
       }
     }
+    if (body.sold !== undefined) unit.sold = body.sold; // Update sold status
     if (body.description !== undefined) unit.description = body.description;
-    if (body.customerInfo) {
-      unit.customerInfo = {
-        name: body.customerInfo.name || '',
-        phone: body.customerInfo.phone || '',
-        email: body.customerInfo.email || ''
-      };
+    
+    // Update customerInfo - only set if at least one field has a value, otherwise set to null
+    if (body.customerInfo !== undefined) {
+      const hasCustomerData = body.customerInfo && (
+        body.customerInfo.name?.trim() || 
+        body.customerInfo.phone?.trim() || 
+        body.customerInfo.email?.trim()
+      );
+      
+      if (hasCustomerData) {
+        unit.customerInfo = {
+          name: body.customerInfo.name?.trim() || null,
+          phone: body.customerInfo.phone?.trim() || null,
+          email: body.customerInfo.email?.trim() || null
+        };
+      } else {
+        unit.customerInfo = null;
+      }
     }
+    
     if (body.images) unit.images = body.images;
 
     // Update floor's booked units count

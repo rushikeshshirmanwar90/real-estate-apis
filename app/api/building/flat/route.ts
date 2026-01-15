@@ -2,7 +2,7 @@ import { Building } from "@/lib/models/Building";
 import { RowHouse } from "@/lib/models/RowHouse";
 import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import { CustomerDetails } from "@/lib/models/CustomerDetails";
+import { UserCustomerDetails, IProperty } from "@/lib/models/UserCustomerDetails";
 import mongoose from "mongoose";
 import { Property as PropertyProps } from "@/components/types/customer";
 import { BuildingDoc, DetailedProperty, RowHouseDoc } from "@/types/types";
@@ -22,7 +22,7 @@ export const GET = async (req: NextRequest | Request) => {
     }
 
     // Get customer property information
-    const customerDetails = (await CustomerDetails.findOne({
+    const customerDetails = (await UserCustomerDetails.findOne({
       userId: userId,
     }).lean()) as { userId: string; property: PropertyProps[] } | null;
 
@@ -179,7 +179,7 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Find the user document
-    const userDoc = await CustomerDetails.findOne({ userId: userObjectId });
+    const userDoc = await UserCustomerDetails.findOne({ userId: userObjectId });
 
     if (!userDoc) {
       return NextResponse.json({ message: "User not found" }, { status: 404 });
@@ -189,7 +189,7 @@ export const DELETE = async (req: NextRequest | Request) => {
     if (propertyId) {
       // Check if the property exists in user's property array
       const propertyIndex = userDoc.property.findIndex(
-        (prop: { _id: string }) => prop._id.toString() === propertyId
+        (prop: IProperty) => prop._id?.toString() === propertyId
       );
 
       if (propertyIndex === -1) {

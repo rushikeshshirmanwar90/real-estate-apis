@@ -27,31 +27,38 @@ const UnitSchema = new Schema({
   type: {
     type: String,
     required: true,
-    enum: ['1BHK', '2BHK', '3BHK', '4BHK', 'Studio', 'Shop', 'Office', 'Parking', 'Storage', 'Other'],
+    enum: ['1BHK', '2BHK', '3BHK', '4BHK', '5BHK', 'Studio', 'Shop', 'Office', 'Parking', 'Storage', 'Other'],
   },
   area: {
     type: Number, // Area in sq ft
     required: true,
   },
-
   status: {
     type: String,
     required: true,
     enum: ['Available', 'Booked', 'Reserved'],
     default: 'Available',
   },
+  sold: {
+    type: Boolean,
+    required: false,
+    default: false,
+  },
   customerInfo: {
     name: {
       type: String,
       required: false,
+      default: null,
     },
     phone: {
       type: String,
       required: false,
+      default: null,
     },
     email: {
       type: String,
       required: false,
+      default: null,
     },
   },
   bookingDate: {

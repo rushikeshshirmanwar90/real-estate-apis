@@ -4,7 +4,7 @@ import { Section } from "@/lib/models/Section";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { RoomInfo } from "@/lib/models/RoomInfo";
 import { OtherSection } from "@/lib/models/OtherSection";
-import { CustomerDetails } from "@/lib/models/CustomerDetails";
+import { UserCustomerDetails } from "@/lib/models/UserCustomerDetails";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { MiniSection } from "@/lib/models/Xsite/mini-section";
 import { Activity } from "@/lib/models/Xsite/Activity";
@@ -133,8 +133,8 @@ export const DELETE = async (
       logger.info(`Deleted ${deletedUpdates.deletedCount} updates for project ${id}`);
 
       // 4. Delete Customer Details (properties related to this project)
-      const deletedCustomerDetails = await CustomerDetails.deleteMany({ 
-        "properties.projectId": id 
+      const deletedCustomerDetails = await UserCustomerDetails.deleteMany({ 
+        "property.projectId": id 
       }, { session });
       logger.info(`Deleted ${deletedCustomerDetails.deletedCount} customer details for project ${id}`);
 

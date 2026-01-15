@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { CustomerDetails } from "@/lib/models/CustomerDetails";
+import { UserCustomerDetails, IProperty } from "@/lib/models/UserCustomerDetails";
 import { NextRequest, NextResponse } from "next/server";
 
 export const POST = async (req: NextRequest | Request) => {
@@ -32,7 +32,7 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     // Find customer document
-    const customerDetail = await CustomerDetails.findOne({ userId });
+    const customerDetail = await UserCustomerDetails.findOne({ userId });
 
     if (!customerDetail) {
       return NextResponse.json(
@@ -46,7 +46,7 @@ export const POST = async (req: NextRequest | Request) => {
 
     // Find the property to update
     const propertyIndex = customerDetail.property.findIndex(
-      (prop: { _id: string }) => prop._id.toString() === propertyId
+      (prop: IProperty) => prop._id?.toString() === propertyId
     );
 
     if (propertyIndex === -1) {
@@ -129,7 +129,7 @@ export const PUT = async (req: NextRequest | Request) => {
     }
 
     // Find customer document
-    const customerDetail = await CustomerDetails.findOne({ userId });
+    const customerDetail = await UserCustomerDetails.findOne({ userId });
 
     if (!customerDetail) {
       return NextResponse.json(
@@ -143,7 +143,7 @@ export const PUT = async (req: NextRequest | Request) => {
 
     // Find the property to update
     const propertyIndex = customerDetail.property.findIndex(
-      (prop: { _id: string }) => prop._id.toString() === propertyId
+      (prop: IProperty) => prop._id?.toString() === propertyId
     );
 
     if (propertyIndex === -1) {
@@ -247,7 +247,7 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Find customer document
-    const customerDetail = await CustomerDetails.findOne({ userId });
+    const customerDetail = await UserCustomerDetails.findOne({ userId });
 
     if (!customerDetail) {
       return NextResponse.json(
@@ -261,7 +261,7 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     // Find the property
     const propertyIndex = customerDetail.property.findIndex(
-      (prop: { _id: string }) => prop._id.toString() === propertyId
+      (prop: IProperty) => prop._id?.toString() === propertyId
     );
 
     if (propertyIndex === -1) {

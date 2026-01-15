@@ -39,6 +39,12 @@ const CustomerSchema = new Schema(
       type: Boolean,
       default: false,
     },
+
+    properties: {
+      type: Schema.Types.ObjectId,
+      ref: "UserCustomerDetails",
+      required: false,
+    },
   },
   {
     timestamps: true,

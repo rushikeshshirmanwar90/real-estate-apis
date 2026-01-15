@@ -314,10 +314,10 @@ export const PUT = async (req: NextRequest) => {
 
       body.floors = floorsWithIds;
       
-      // Update total floors count based on actual floors created
-      const actualFloorCount = floorsWithIds.filter((floor: any) => floor.floorNumber > 0).length;
-      body.totalFloors = actualFloorCount;
-
+      // DO NOT modify totalFloors here - it should represent only upper floors (1, 2, 3, etc.)
+      // The totalFloors field is the user's input for "Number of Upper Floors"
+      // Basement (-1) and Ground Floor (0) are tracked separately via hasBasement and hasGroundFloor
+      
       logger.info(`Creating ${floorsWithIds.length} floors for building ${id}`);
     }
 

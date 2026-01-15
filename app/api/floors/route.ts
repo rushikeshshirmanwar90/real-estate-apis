@@ -49,65 +49,152 @@ export const POST = async (req: NextRequest) => {
     await connect();
     const body = await req.json();
 
-    // Validate required fields
-    if (!body.buildingId) {
-      return errorResponse("Building ID is required", 400);
+    // Check if this is a bulk creation request
+    const isBulkCreate = Array.isArray(body.floors);
+
+    if (isBulkCreate) {
+      // Bulk floor creation
+      if (!body.buildingId) {
+        return errorResponse("Building ID is required", 400);
+      }
+
+      if (!isValidObjectId(body.buildingId)) {
+        return errorResponse("Invalid building ID format", 400);
+      }
+
+      if (!body.floors || body.floors.length === 0) {
+        return errorResponse("Floors array is required and must not be empty", 400);
+      }
+
+      // Validate each floor
+      for (const floor of body.floors) {
+        if (!floor.floorName) {
+          return errorResponse("Floor name is required for all floors", 400);
+        }
+
+        if (typeof floor.floorNumber !== 'number') {
+          return errorResponse("Floor number is required and must be a number for all floors", 400);
+        }
+
+        if (typeof floor.totalUnits !== 'number' || floor.totalUnits < 0) {
+          return errorResponse("Total units must be a non-negative number for all floors", 400);
+        }
+      }
+
+      // Create floor objects with MongoDB IDs
+      const newFloors = body.floors.map((floor: any) => ({
+        _id: new mongoose.Types.ObjectId(),
+        floorNumber: floor.floorNumber,
+        floorName: floor.floorName,
+        floorType: floor.floorType || 'Residential',
+        totalUnits: floor.totalUnits,
+        totalBookedUnits: 0,
+        unitTypes: [],
+        units: [],
+        description: floor.description || '',
+        isActive: true,
+      }));
+
+      // Calculate total units to add
+      const totalUnitsToAdd = newFloors.reduce((sum: number, floor: any) => sum + floor.totalUnits, 0);
+
+      // Add all floors to building in one operation
+      // NOTE: We only increment totalFloors for upper floors (floorNumber > 0)
+      // Basement (-1) and Ground Floor (0) are tracked separately
+      const upperFloorsCount = newFloors.filter((f: any) => f.floorNumber > 0).length;
+      
+      const updatedBuilding = await Building.findByIdAndUpdate(
+        body.buildingId,
+        {
+          $push: { floors: { $each: newFloors } },
+          $inc: { 
+            totalFloors: upperFloorsCount, // Only count upper floors
+            totalUnits: totalUnitsToAdd 
+          }
+        },
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!updatedBuilding) {
+        return errorResponse("Building not found", 404);
+      }
+
+      return successResponse(
+        {
+          createdCount: newFloors.length,
+          floors: newFloors
+        },
+        `Successfully created ${newFloors.length} floors`,
+        201
+      );
+    } else {
+      // Single floor creation (existing logic)
+      // Validate required fields
+      if (!body.buildingId) {
+        return errorResponse("Building ID is required", 400);
+      }
+
+      if (!isValidObjectId(body.buildingId)) {
+        return errorResponse("Invalid building ID format", 400);
+      }
+
+      if (!body.floorName) {
+        return errorResponse("Floor name is required", 400);
+      }
+
+      if (typeof body.floorNumber !== 'number') {
+        return errorResponse("Floor number is required and must be a number", 400);
+      }
+
+      if (typeof body.totalUnits !== 'number' || body.totalUnits < 0) {
+        return errorResponse("Total units must be a non-negative number", 400);
+      }
+
+      // Create new floor object
+      const newFloor = {
+        _id: new mongoose.Types.ObjectId(),
+        floorNumber: body.floorNumber,
+        floorName: body.floorName,
+        floorType: body.floorType || 'Residential',
+        totalUnits: body.totalUnits,
+        totalBookedUnits: 0,
+        unitTypes: [],
+        units: [],
+        description: body.description || '',
+        isActive: true,
+      };
+
+      // Add floor to building
+      // Only increment totalFloors if it's an upper floor (floorNumber > 0)
+      const isUpperFloor = body.floorNumber > 0;
+      
+      const updatedBuilding = await Building.findByIdAndUpdate(
+        body.buildingId,
+        {
+          $push: { floors: newFloor },
+          $inc: { 
+            totalFloors: isUpperFloor ? 1 : 0, // Only count upper floors
+            totalUnits: body.totalUnits 
+          }
+        },
+        { new: true, runValidators: true }
+      ).lean();
+
+      if (!updatedBuilding) {
+        return errorResponse("Building not found", 404);
+      }
+
+      // Find the newly added floor
+      const addedFloor = (updatedBuilding as any).floors?.find((f: any) => f._id.toString() === newFloor._id.toString());
+
+      return successResponse(
+        addedFloor,
+        "Floor created successfully",
+        201
+      );
     }
-
-    if (!isValidObjectId(body.buildingId)) {
-      return errorResponse("Invalid building ID format", 400);
-    }
-
-    if (!body.floorName) {
-      return errorResponse("Floor name is required", 400);
-    }
-
-    if (typeof body.floorNumber !== 'number') {
-      return errorResponse("Floor number is required and must be a number", 400);
-    }
-
-    if (typeof body.totalUnits !== 'number' || body.totalUnits < 0) {
-      return errorResponse("Total units must be a non-negative number", 400);
-    }
-
-    // Create new floor object
-    const newFloor = {
-      _id: new mongoose.Types.ObjectId(),
-      floorNumber: body.floorNumber,
-      floorName: body.floorName,
-      floorType: body.floorType || 'Residential',
-      totalUnits: body.totalUnits,
-      totalBookedUnits: 0,
-      unitTypes: [],
-      units: [],
-      description: body.description || '',
-      isActive: true,
-    };
-
-    // Add floor to building
-    const updatedBuilding = await Building.findByIdAndUpdate(
-      body.buildingId,
-      {
-        $push: { floors: newFloor },
-        $inc: { totalFloors: 1, totalUnits: body.totalUnits }
-      },
-      { new: true, runValidators: true }
-    ).lean();
-
-    if (!updatedBuilding) {
-      return errorResponse("Building not found", 404);
-    }
-
-    // Find the newly added floor
-    const addedFloor = (updatedBuilding as any).floors?.find((f: any) => f._id.toString() === newFloor._id.toString());
-
-    return successResponse(
-      addedFloor,
-      "Floor created successfully",
-      201
-    );
   } catch (error: unknown) {
-    logger.error("Error creating floor", error);
+    logger.error("Error creating floor(s)", error);
 
     if (
       error &&
@@ -118,7 +205,7 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Validation failed", 400, error);
     }
 
-    return errorResponse("Failed to create floor", 500);
+    return errorResponse("Failed to create floor(s)", 500);
   }
 };
 
@@ -217,12 +304,15 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     // Remove floor from building and update totals
+    // Only decrement totalFloors if it's an upper floor (floorNumber > 0)
+    const isUpperFloor = floorToDelete.floorNumber > 0;
+    
     const updatedBuilding = await Building.findByIdAndUpdate(
       building._id,
       {
         $pull: { floors: { _id: floorId } },
         $inc: { 
-          totalFloors: -1, 
+          totalFloors: isUpperFloor ? -1 : 0, // Only decrement for upper floors
           totalUnits: -(floorToDelete.totalUnits || 0),
           totalBookedUnits: -(floorToDelete.totalBookedUnits || 0)
         }

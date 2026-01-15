@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
-import { CustomerDetails } from "@/lib/models/CustomerDetails";
+import { UserCustomerDetails } from "@/lib/models/UserCustomerDetails";
 import { Types } from "mongoose";
 
 // For POST and PUT requests
@@ -232,7 +232,7 @@ export const POST = async (req: NextRequest | Request) => {
         })),
       };
 
-      const newCustomerDetails = new CustomerDetails(customerDetailsData);
+      const newCustomerDetails = new UserCustomerDetails(customerDetailsData);
       const savedCustomerDetails = await newCustomerDetails.save();
 
       // Update the customer with reference to CustomerDetails
@@ -249,7 +249,13 @@ export const POST = async (req: NextRequest | Request) => {
       return NextResponse.json(
         {
           user: updatedCustomer,
-          customerDetails: savedCustomerDetails,
+          customerDetails: {
+            _id: savedCustomerDetails._id.toString(),
+            userId: savedCustomerDetails.userId.toString(),
+            property: savedCustomerDetails.property,
+            createdAt: savedCustomerDetails.createdAt?.toISOString(),
+            updatedAt: savedCustomerDetails.updatedAt?.toISOString(),
+          },
         } as UserWithDetailsResponse,
         { status: 200 }
       );
@@ -330,7 +336,7 @@ export const PUT = async (req: NextRequest | Request) => {
     // Handle properties update
     if (propertiesData) {
       // Find existing customer details
-      let customerDetails = await CustomerDetails.findOne({ userId: id });
+      let customerDetails = await UserCustomerDetails.findOne({ userId: id });
 
       if (customerDetails) {
         // Update existing customer details
@@ -364,7 +370,7 @@ export const PUT = async (req: NextRequest | Request) => {
           })),
         };
 
-        customerDetails = new CustomerDetails(customerDetailsData);
+        customerDetails = new UserCustomerDetails(customerDetailsData);
         await customerDetails.save();
 
         // Update the customer with reference to CustomerDetails
@@ -379,7 +385,13 @@ export const PUT = async (req: NextRequest | Request) => {
       return NextResponse.json(
         {
           user: findCustomer,
-          customerDetails: customerDetails,
+          customerDetails: {
+            _id: customerDetails._id.toString(),
+            userId: customerDetails.userId.toString(),
+            property: customerDetails.property,
+            createdAt: customerDetails.createdAt?.toISOString(),
+            updatedAt: customerDetails.updatedAt?.toISOString(),
+          },
         } as UserWithDetailsResponse,
         { status: 200 }
       );
@@ -425,7 +437,7 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Delete customer details first (if they exist)
-    await CustomerDetails.findOneAndDelete({ userId: id });
+    await UserCustomerDetails.findOneAndDelete({ userId: id });
 
     // Delete the customer
     const deletedCustomer = await Customer.findByIdAndDelete(id);

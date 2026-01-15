@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { CustomerDetails } from "@/lib/models/CustomerDetails";
+import { UserCustomerDetails } from "@/lib/models/UserCustomerDetails";
 import { NextRequest } from "next/server";
 import mongoose from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
@@ -21,7 +21,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     const objectId = new mongoose.Types.ObjectId(userId);
-    const property = await CustomerDetails.findOne({ userId: objectId }).lean();
+    const property = await UserCustomerDetails.findOne({ userId: objectId }).lean();
 
     if (!property) {
       return errorResponse("No properties found for this user", 404);
@@ -70,21 +70,21 @@ export const POST = async (req: NextRequest) => {
     const objectId = new mongoose.Types.ObjectId(userId);
 
     // Check if customer details exist
-    const existingCustomer = await CustomerDetails.findOne({
+    const existingCustomer = await UserCustomerDetails.findOne({
       userId: objectId,
     });
 
     let result;
     if (existingCustomer) {
       // Update existing customer
-      result = await CustomerDetails.findOneAndUpdate(
+      result = await UserCustomerDetails.findOneAndUpdate(
         { userId: objectId },
         { $push: { property: propertyData } },
         { new: true, runValidators: true }
       ).lean();
     } else {
       // Create new customer details
-      const newCustomerDetails = new CustomerDetails({
+      const newCustomerDetails = new UserCustomerDetails({
         userId: objectId,
         property: [propertyData],
       });
@@ -127,7 +127,7 @@ export const DELETE = async (req: NextRequest) => {
 
       const objectId = new mongoose.Types.ObjectId(userId);
 
-      const result = await CustomerDetails.findOneAndUpdate(
+      const result = await UserCustomerDetails.findOneAndUpdate(
         { userId: objectId },
         { $pull: { property: { _id: propertyId } } },
         { new: true }
@@ -147,7 +147,7 @@ export const DELETE = async (req: NextRequest) => {
       }
 
       const objectId = new mongoose.Types.ObjectId(userId);
-      const deletedData = await CustomerDetails.findOneAndDelete({
+      const deletedData = await UserCustomerDetails.findOneAndDelete({
         userId: objectId,
       }).lean();
 
@@ -162,7 +162,7 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     // Delete all customer details (admin only - should be protected)
-    const deleteResult = await CustomerDetails.deleteMany({});
+    const deleteResult = await UserCustomerDetails.deleteMany({});
 
     if (deleteResult.deletedCount === 0) {
       return errorResponse("No data found to delete", 404);
@@ -195,7 +195,7 @@ export const PUT = async (req: NextRequest) => {
     const objectId = new mongoose.Types.ObjectId(userId);
 
     // Update specific property in the array
-    const result = await CustomerDetails.findOneAndUpdate(
+    const result = await UserCustomerDetails.findOneAndUpdate(
       {
         userId: objectId,
         "property._id": propertyId,
