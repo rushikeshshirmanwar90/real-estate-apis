@@ -12,7 +12,10 @@ export interface ICustomerDetails extends Document {
   // Project and Flat Information
   selectedProject: string;
   selectedFlat: string;
-  direction: string;
+  north: string;
+  south: string;
+  east: string;
+  west: string;
   
   // Timestamps
   createdAt: Date;
@@ -178,28 +181,36 @@ const CustomerDetailsSchema = new Schema<ICustomerDetails>({
   selectedProject: {
     type: String,
     required: [true, 'Project selection is required'],
-    enum: [
-      'shivai-heights-nanded',
-      'shivai-residency-1',
-      'shivai-gardens-aurangabad',
-      'shivai-paradise-latur',
-      'shivai-towers-pune',
-      'shivai-enclave-mumbai',
-      'shivai-villa-nashik',
-      'shivai-apartments-nagpur'
-    ]
   },
   selectedFlat: {
     type: String,
     required: [true, 'Flat selection is required'],
     trim: true
   },
-  direction: {
+  north: {  
     type: String,
     required: [true, 'Direction details are required'],
     trim: true,
     maxlength: [1000, 'Direction details cannot exceed 1000 characters']
-  }
+  },
+  south: {  
+    type: String,
+    required: [true, 'Direction details are required'],
+    trim: true,
+    maxlength: [1000, 'Direction details cannot exceed 1000 characters']
+  },
+  east: {  
+    type: String,
+    required: [true, 'Direction details are required'],
+    trim: true,
+    maxlength: [1000, 'Direction details cannot exceed 1000 characters']
+  },
+  west: {  
+    type: String,
+    required: [true, 'Direction details are required'],
+    trim: true,
+    maxlength: [1000, 'Direction details cannot exceed 1000 characters']
+  },
 }, {
   timestamps: true,
   collection: 'customerDetails'
