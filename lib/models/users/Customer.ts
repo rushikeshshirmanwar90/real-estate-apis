@@ -40,9 +40,46 @@ const CustomerSchema = new Schema(
       default: false,
     },
 
-    properties: {
-      type: Schema.Types.ObjectId,
-      ref: "UserCustomerDetails",
+    myFlats: [
+      {
+        buildingId: {
+          type: Schema.Types.ObjectId,
+          ref: "Building",
+          required: true,
+        },
+        floorId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+        },
+        unitId: {
+          type: Schema.Types.ObjectId,
+          required: true,
+        },
+        unitNumber: {
+          type: String,
+          required: true,
+        },
+        assignedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        bookingId: {
+          type: Schema.Types.ObjectId,
+          ref: "Booking",
+        }
+      },
+    ],
+
+    // Booking References
+    bookings: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Booking",
+      },
+    ],
+
+    qrCodeData: {
+      type: String,
       required: false,
     },
   },
@@ -51,4 +88,4 @@ const CustomerSchema = new Schema(
   }
 );
 
-export const Customer = models.User || model("User", CustomerSchema);
+export const Customer = models.Customers || model("Customers", CustomerSchema);

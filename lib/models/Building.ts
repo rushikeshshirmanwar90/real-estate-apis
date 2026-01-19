@@ -1,7 +1,6 @@
 import { models, model, Schema } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
-import { EmbeddedLaborSchema } from "./Xsite/Labor";
 
 const SectionSchema = new Schema(
   {
@@ -45,20 +44,37 @@ const UnitSchema = new Schema({
     default: false,
   },
   customerInfo: {
+    customerId: {
+      type: String,
+      required: false,
+    },
     name: {
       type: String,
       required: false,
-      default: null,
     },
     phone: {
       type: String,
       required: false,
-      default: null,
     },
     email: {
       type: String,
       required: false,
-      default: null,
+    },
+    originalPrice: {
+      type: Number,
+      required: false,
+    },
+    discountPrice: {
+      type: Number,
+      required: false,
+    },
+    finalPrice: {
+      type: Number,
+      required: false,
+    },
+    assignedBy: {
+      type: String,
+      required: false,
     },
   },
   bookingDate: {
@@ -155,6 +171,12 @@ const buildingSchema = new Schema(
       require: true,
     },
 
+    clientId: {
+      type: Schema.Types.ObjectId,
+      ref: "Client",
+      required: false,
+    },
+
     description: {
       type: String,
       required: false,
@@ -209,11 +231,6 @@ const buildingSchema = new Schema(
 
     MaterialUsed: {
       type: [MaterialSchema],
-      required: false,
-    },
-
-    Labors: {
-      type: [EmbeddedLaborSchema],
       required: false,
     },
 
