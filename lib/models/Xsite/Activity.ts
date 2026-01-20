@@ -108,6 +108,11 @@ const ActivitySchema = new Schema(
         "staff_removed",
         "staff_added",
 
+        // Labor activities
+        "labor_added",
+        "labor_updated",
+        "labor_removed",
+
         // Other activities
         "other",
       ],

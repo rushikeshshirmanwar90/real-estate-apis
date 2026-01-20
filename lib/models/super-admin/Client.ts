@@ -32,14 +32,19 @@ const clientSchema = new Schema(
       type: String,
       required: true,
     },
-    staffs : {
-      type : [String],
-      required : false
-    }, 
+    staffs: {
+      type: [String],
+      required: false
+    },
     logo: {
       type: String,
       required: false, // Changed to false since it's optional in the form
     },
+    license: {
+      type: Number,
+      required: false,
+      default: 0
+    }
   },
   {
     timestamps: true,
