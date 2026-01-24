@@ -34,6 +34,15 @@ export const MaterialSchema = new Schema(
       min: 0,
     },
 
+    cost: {
+      type: Number,
+      required: false,
+      min: 0,
+      default: function() {
+        return this.totalCost || 0;
+      }
+    },
+
     sectionId: {
       type: String,
       required: false,
@@ -81,6 +90,21 @@ const MaterialActivitySchema = new Schema({
   projectId: {
     type: String,
     required: true,
+  },
+
+  projectName: {
+    type: String,
+    required: false,
+  },
+
+  sectionName: {
+    type: String,
+    required: false,
+  },
+
+  miniSectionName: {
+    type: String,
+    required: false,
   },
 
   materials: {

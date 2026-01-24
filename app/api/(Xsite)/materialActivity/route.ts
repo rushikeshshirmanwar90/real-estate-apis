@@ -9,6 +9,8 @@ interface MaterialItem {
   specs?: Record<string, unknown>;
   qnt: number;
   cost?: number;
+  totalCost?: number;
+  perUnitCost?: number;
   addedAt?: Date;
 }
 
@@ -220,12 +222,18 @@ export const POST = async (req: NextRequest | Request) => {
       message,
       clientId,
       projectId: reqProjectId,
+      projectName,
+      sectionName,
+      miniSectionName,
       activity,
       user,
       date,
     } = (await req.json()) as {
       clientId: string;
       projectId: string;
+      projectName?: string;
+      sectionName?: string;
+      miniSectionName?: string;
       materials: MaterialItem[];
       message?: string;
       activity: "imported" | "used";
@@ -293,13 +301,21 @@ export const POST = async (req: NextRequest | Request) => {
       activity: "imported" | "used";
       user: UserPayload;
       date: string;
+      projectName?: string;
+      sectionName?: string;
+      miniSectionName?: string;
     } = {
       clientId,
       projectId: reqProjectId,
+      projectName,
+      sectionName,
+      miniSectionName,
       materials: materials.map((material) => ({
         ...material,
         specs: material.specs || {},
-        cost: material.cost || 0,
+        cost: material.cost || material.totalCost || 0, // Ensure cost field is set for notifications
+        perUnitCost: material.perUnitCost || 0,
+        totalCost: material.totalCost || material.cost || 0,
         addedAt: material.addedAt ? new Date(material.addedAt) : new Date(),
       })),
       message: message || "",

@@ -129,6 +129,7 @@ const ActivitySchema = new Schema(
         "mini_section",
         "material",
         "staff",
+        "labor",
         "other",
       ],
       index: true,
@@ -138,7 +139,7 @@ const ActivitySchema = new Schema(
     action: {
       type: String,
       required: true,
-      enum: ["create", "update", "delete", "assign", "remove", "import", "use"],
+      enum: ["add", "create", "update", "delete", "assign", "remove", "import", "use"],
     },
 
     // Description of the activity

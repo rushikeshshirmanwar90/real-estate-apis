@@ -167,35 +167,53 @@ export const POST = async (req: NextRequest | Request) => {
       // 2. Update target project - add material or merge with existing
       toProject.MaterialAvailable = toProject.MaterialAvailable || [];
       
-      // Check if same material (name, unit, specs) exists in target project
+      // ✅ ZERO-TOLERANCE PRICE POLICY: Check if same material exists with EXACT same price
+      // Materials merge ONLY if name, unit, specs, AND price are identical
       const existingIndex = toProject.MaterialAvailable.findIndex((m: MaterialSubdoc) => {
         try {
-          return (
-            m.name === materialName &&
-            m.unit === unit &&
-            JSON.stringify(m.specs || {}) === JSON.stringify(specs)
-          );
+          const nameMatch = m.name === materialName;
+          const unitMatch = m.unit === unit;
+          const specsMatch = JSON.stringify(m.specs || {}) === JSON.stringify(specs);
+          const priceMatch = Number(m.perUnitCost || 0) === Number(perUnitCost);
+          
+          console.log('  🔍 Transfer Merge Check:');
+          console.log('    - Name match:', nameMatch, `(${m.name} vs ${materialName})`);
+          console.log('    - Unit match:', unitMatch, `(${m.unit} vs ${unit})`);
+          console.log('    - Specs match:', specsMatch);
+          console.log('    - Price match:', priceMatch, `(₹${m.perUnitCost} vs ₹${perUnitCost})`);
+          
+          // ALL criteria must match for merging (including price)
+          const perfectMatch = nameMatch && unitMatch && specsMatch && priceMatch;
+          
+          if (nameMatch && unitMatch && specsMatch && !priceMatch) {
+            console.log('    🚫 PRICE MISMATCH: Same material with different price found');
+            console.log('    📦 Will create separate entry to maintain price separation');
+          }
+          
+          return perfectMatch;
         } catch {
           return false;
         }
       });
 
       if (existingIndex >= 0) {
-        // Merge with existing material
+        // ✅ MERGE WITH IDENTICAL MATERIAL (same price, so no averaging needed)
         const existing = toProject.MaterialAvailable[existingIndex] as MaterialSubdoc;
         const oldQnt = existing.qnt || 0;
         const oldTotalCost = existing.totalCost || 0;
         const newQnt = oldQnt + quantity;
         const newTotalCost = oldTotalCost + transferCost;
-        const newPerUnitCost = newQnt > 0 ? newTotalCost / newQnt : 0;
+        // Keep the same per-unit cost (since prices are identical)
+        const samePerUnitCost = existing.perUnitCost || 0;
 
         existing.qnt = newQnt;
-        existing.perUnitCost = newPerUnitCost;
+        existing.perUnitCost = samePerUnitCost; // No price averaging - prices are identical
         existing.totalCost = newTotalCost;
 
-        console.log('  - Merging with existing material in target project');
-        console.log('  - New quantity in target:', newQnt);
-        console.log('  - New per-unit cost in target:', newPerUnitCost);
+        console.log('  ✅ Merging with identical material in target project');
+        console.log('    - New quantity in target:', newQnt);
+        console.log('    - Keeping same per-unit cost:', samePerUnitCost, '(no averaging needed)');
+        console.log('    - New total cost:', newTotalCost);
       } else {
         // Add as new material
         const newMaterial: MaterialSubdoc = {

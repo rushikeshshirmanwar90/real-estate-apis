@@ -187,15 +187,22 @@ export const POST = async (req: NextRequest | Request) => {
     await connect();
 
     const body = await req.json();
+    
+    console.log('🚀 Activity POST API called');
+    console.log('📋 Request body:', JSON.stringify(body, null, 2));
 
     // Validation
     if (!body.user || !body.user.userId || !body.user.fullName) {
+      console.error('❌ User information validation failed:', body.user);
       return errorResponse("User information is required", 400);
     }
 
     if (!body.clientId) {
+      console.error('❌ ClientId validation failed:', body.clientId);
       return errorResponse("clientId is required", 400);
     }
+
+    console.log('✅ Basic validation passed');
 
     // ✅ Validate client exists before creating activity
     try {
@@ -208,37 +215,55 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     if (!body.activityType) {
+      console.error('❌ ActivityType validation failed:', body.activityType);
       return errorResponse("activityType is required", 400);
     }
 
     if (!body.category) {
+      console.error('❌ Category validation failed:', body.category);
       return errorResponse("category is required", 400);
     }
 
     if (!body.action) {
+      console.error('❌ Action validation failed:', body.action);
       return errorResponse("action is required", 400);
     }
 
     if (!body.description) {
+      console.error('❌ Description validation failed:', body.description);
       return errorResponse("description is required", 400);
     }
+
+    console.log('✅ All field validation passed');
 
     // Ensure `date` exists and is a valid ISO string (model requires it)
     const dateStr = body.date ? String(body.date) : new Date().toISOString();
     if (Number.isNaN(Date.parse(dateStr))) {
+      console.error('❌ Date validation failed:', body.date, 'parsed as:', dateStr);
       return errorResponse("date must be a valid ISO date string", 400);
     }
 
+    console.log('✅ Date validation passed:', dateStr);
+
     const doc = { ...body, date: dateStr };
+
+    console.log('🚀 Creating new Activity with doc:', JSON.stringify(doc, null, 2));
 
     const newActivity = new Activity(doc);
     await newActivity.save();
 
     return successResponse(newActivity, "Activity logged successfully", 201);
   } catch (error: unknown) {
+    console.error('❌ Activity POST API Error:', error);
     if (error instanceof Error) {
+      console.error('❌ Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       return errorResponse("Something went wrong", 500, error.message);
     }
+    console.error('❌ Unknown error type:', typeof error);
     return errorResponse("Unknown error occurred", 500);
   }
 };

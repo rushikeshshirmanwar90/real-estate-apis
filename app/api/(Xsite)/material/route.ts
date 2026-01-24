@@ -49,10 +49,10 @@ export const GET = async (req: NextRequest | Request) => {
     }
 
     // Validate pagination parameters
-    if (page < 1 || limit < 1 || limit > 100) {
+    if (page < 1 || limit < 1 || limit > 1000) {
       return NextResponse.json(
         {
-          message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-100",
+          message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-1000",
         },
         {
           status: 400,
@@ -241,14 +241,29 @@ export const POST = async (req: NextRequest | Request) => {
     await connect();
     const raw = await req.json();
 
-    const items: AddMaterialStockItem[] = Array.isArray(raw) ? raw : [raw];
+    console.log('\n🚀 MATERIAL API POST REQUEST RECEIVED:');
+    console.log('Raw request data:', JSON.stringify(raw, null, 2));
 
-    if (items.length === 0) {
+    const materialItems: AddMaterialStockItem[] = Array.isArray(raw) ? raw : [raw];
+
+    if (materialItems.length === 0) {
       return NextResponse.json(
         { success: false, error: "No materials provided" },
         { status: 400 }
       );
     }
+
+    console.log('📋 Processing', materialItems.length, 'material items:');
+    materialItems.forEach((item, index) => {
+      console.log(`  Item ${index + 1}:`, {
+        materialName: item.materialName,
+        unit: item.unit,
+        qnt: item.qnt,
+        perUnitCost: item.perUnitCost,
+        specs: item.specs,
+        mergeIfExists: item.mergeIfExists
+      });
+    });
 
     const results: Array<{
       input: Partial<AddMaterialStockItem>;
@@ -259,7 +274,7 @@ export const POST = async (req: NextRequest | Request) => {
       error?: string;
     }> = [];
 
-    for (const item of items) {
+    for (const item of materialItems) {
       const {
         projectId,
         materialName,
@@ -308,7 +323,19 @@ export const POST = async (req: NextRequest | Request) => {
         continue;
       }
 
-      // Find project
+      console.log('\n🔍 DETAILED MERGE DECISION PROCESS:');
+      console.log('========================================');
+      console.log('Input Material Details:');
+      console.log('  - Name:', materialName);
+      console.log('  - Unit:', unit);
+      console.log('  - Quantity:', qnt);
+      console.log('  - Per Unit Cost:', perUnitCost);
+      console.log('  - Total Cost:', totalCost);
+      console.log('  - Specs:', JSON.stringify(specs));
+      console.log('  - Merge If Exists:', mergeIfExists);
+      console.log('  - Project ID:', projectId);
+      
+      // Find project and log current materials
       const project = await Projects.findById(projectId);
       if (!project) {
         results.push({ ...resultBase, error: "project not found" });
@@ -316,70 +343,143 @@ export const POST = async (req: NextRequest | Request) => {
       }
 
       project.MaterialAvailable = project.MaterialAvailable || [];
+      const availableArr = project.MaterialAvailable as MaterialSubdoc[];
+      
+      console.log('\nCurrent Materials in Database:');
+      console.log('  - Total materials:', availableArr.length);
+      availableArr.forEach((material, index) => {
+        console.log(`  ${index + 1}. ${material.name}`);
+        console.log(`     - Unit: ${material.unit}`);
+        console.log(`     - Quantity: ${material.qnt}`);
+        console.log(`     - Per Unit Cost: ₹${material.perUnitCost}`);
+        console.log(`     - Total Cost: ₹${material.totalCost}`);
+        console.log(`     - Specs: ${JSON.stringify(material.specs || {})}`);
+      });
 
+      // ✅ FINAL BULLETPROOF SOLUTION: Zero-tolerance price difference policy
+      // If ANY price difference exists, NEVER merge - create separate entries
+      
+      let shouldMerge = false;
+      let mergeIndex = -1;
+      
       if (mergeIfExists) {
+        console.log('\n🔒 ZERO-TOLERANCE PRICE POLICY ACTIVE');
+        console.log('=====================================');
+        console.log('Rule: Materials merge ONLY if ALL criteria are IDENTICAL:');
+        console.log('  ✓ Same name');
+        console.log('  ✓ Same unit'); 
+        console.log('  ✓ Same specifications');
+        console.log('  ✓ EXACT same price (zero tolerance)');
+        console.log('');
+        
         const availableArr = project.MaterialAvailable as MaterialSubdoc[];
-        const existingIndex = availableArr.findIndex((m: MaterialSubdoc) => {
-          try {
-            return (
-              m.name === materialName &&
-              m.unit === unit &&
-              JSON.stringify(m.specs || {}) === JSON.stringify(specs)
-            );
-          } catch {
-            return false;
-          }
-        });
-
-        if (existingIndex >= 0) {
-          // Mutate the mongoose document directly to avoid arrayFilters and undefined _id issues
-          const existing = (project.MaterialAvailable as MaterialSubdoc[])[
-            existingIndex
-          ];
-          const oldQnt = Number(existing.qnt || 0);
-          const oldPerUnitCost = Number(existing.perUnitCost || 0);
-          const oldTotalCost = Number(existing.totalCost || 0);
-          const newQnt = oldQnt + qnt;
+        console.log('Checking new material against', availableArr.length, 'existing materials:');
+        console.log('  New Material:', materialName, `(${qnt} ${unit} @ ₹${perUnitCost})`);
+        console.log('  Specs:', JSON.stringify(specs));
+        
+        // Find exact match: name + unit + specs + price must ALL be identical
+        let exactMatchIndex = -1;
+        
+        for (let i = 0; i < availableArr.length; i++) {
+          const existing = availableArr[i];
           
-          // Calculate weighted average per-unit cost
-          const newTotalCost = oldTotalCost + totalCost;
-          const newPerUnitCost = newQnt > 0 ? newTotalCost / newQnt : 0;
-
-          console.log('\n💰 MERGE COST CALCULATION:');
-          console.log('  - Material:', materialName);
-          console.log('  - Old quantity:', oldQnt, '@ ₹', oldPerUnitCost, 'per unit = ₹', oldTotalCost);
-          console.log('  - New quantity:', qnt, '@ ₹', perUnitCost, 'per unit = ₹', totalCost);
-          console.log('  - Combined quantity:', newQnt, '@ ₹', newPerUnitCost.toFixed(2), 'per unit = ₹', newTotalCost);
-          console.log('  - Adding to spent:', totalCost);
-
-          // update fields on the document and save
-          existing.qnt = newQnt;
-          existing.perUnitCost = newPerUnitCost; // Store weighted average per-unit cost
-          existing.totalCost = newTotalCost; // Store total cost
-          project.spent = (project.spent || 0) + totalCost; // Add only the new total cost
-
-          const saved = await project.save();
-
-          if (saved) {
-            const updatedMaterial = (saved.MaterialAvailable || []).find((m: MaterialSubdoc) =>
-              m.name === materialName &&
-              m.unit === unit &&
-              JSON.stringify(m.specs || {}) === JSON.stringify(specs)
-            );
-
-            results.push({
-              ...resultBase,
-              success: true,
-              action: "merged",
-              message: `Merged ${qnt} ${unit} of ${materialName}. Total now: ${newQnt} ${unit}`,
-              material: updatedMaterial as MaterialSubdoc,
-            });
+          // Check each criteria individually for detailed logging
+          const nameMatch = existing.name === materialName;
+          const unitMatch = existing.unit === unit;
+          const specsMatch = JSON.stringify(existing.specs || {}) === JSON.stringify(specs);
+          const priceMatch = Number(existing.perUnitCost || 0) === Number(perUnitCost);
+          
+          console.log(`\n  Existing Material ${i + 1}: ${existing.name}`);
+          console.log(`    Name match: ${nameMatch} (${existing.name} vs ${materialName})`);
+          console.log(`    Unit match: ${unitMatch} (${existing.unit} vs ${unit})`);
+          console.log(`    Specs match: ${specsMatch}`);
+          console.log(`    Price match: ${priceMatch} (₹${existing.perUnitCost} vs ₹${perUnitCost})`);
+          
+          // ALL criteria must match for merging
+          if (nameMatch && unitMatch && specsMatch && priceMatch) {
+            console.log(`    🎯 PERFECT MATCH FOUND! All criteria identical.`);
+            exactMatchIndex = i;
+            break; // Found exact match, no need to continue
+          } else if (nameMatch && unitMatch && specsMatch && !priceMatch) {
+            console.log(`    🚫 PRICE MISMATCH DETECTED!`);
+            console.log(`       Same name/unit/specs but different price: ₹${existing.perUnitCost} ≠ ₹${perUnitCost}`);
+            console.log(`       ZERO-TOLERANCE POLICY: Will create separate entry`);
           } else {
-            results.push({ ...resultBase, success: false, error: "Failed to merge material" });
+            console.log(`    ❌ No match (different name/unit/specs)`);
           }
-          continue;
         }
+        
+        if (exactMatchIndex >= 0) {
+          console.log('\n✅ MERGE APPROVED: Found material with identical name, unit, specs, AND price');
+          shouldMerge = true;
+          mergeIndex = exactMatchIndex;
+        } else {
+          console.log('\n🚫 MERGE DENIED: No material found with identical name, unit, specs, AND price');
+          console.log('   Creating new entry to maintain separation');
+          shouldMerge = false;
+        }
+        
+      } else {
+        console.log('\n📦 MERGE DISABLED BY SETTING - CREATING NEW ENTRY');
+        shouldMerge = false;
       }
+      
+      console.log('\n🎯 FINAL MERGE DECISION:');
+      console.log('  - Should Merge:', shouldMerge);
+      console.log('  - Merge Index:', mergeIndex);
+      console.log('  - Reason:', shouldMerge ? 'Exact price match found' : 'Price differences detected or no matches');
+      console.log('========================================\n');
+      
+      // Execute merge or create based on the decision above
+      if (shouldMerge && mergeIndex >= 0) {
+        console.log('\n✅ EXECUTING MERGE (Prices are identical)');
+        
+        const existing = (project.MaterialAvailable as MaterialSubdoc[])[mergeIndex];
+        const oldQnt = Number(existing.qnt || 0);
+        const oldPerUnitCost = Number(existing.perUnitCost || 0);
+        const oldTotalCost = Number(existing.totalCost || 0);
+        const newQnt = oldQnt + qnt;
+        const newTotalCost = oldTotalCost + totalCost;
+
+        console.log('💰 MERGE CALCULATION:');
+        console.log('  - Old:', oldQnt, 'units @', oldPerUnitCost, '= ₹', oldTotalCost);
+        console.log('  - Adding:', qnt, 'units @', perUnitCost, '= ₹', totalCost);
+        console.log('  - Total:', newQnt, 'units @', oldPerUnitCost, '= ₹', newTotalCost);
+
+        // Update the existing material
+        existing.qnt = newQnt;
+        existing.perUnitCost = oldPerUnitCost; // Keep original price (they're the same anyway)
+        existing.totalCost = newTotalCost;
+        project.spent = (project.spent || 0) + totalCost;
+
+        const saved = await project.save();
+
+        if (saved) {
+          const updatedMaterial = (saved.MaterialAvailable || []).find((m: MaterialSubdoc) =>
+            m.name === materialName &&
+            m.unit === unit &&
+            JSON.stringify(m.specs || {}) === JSON.stringify(specs) &&
+            Number(m.perUnitCost || 0) === Number(perUnitCost)
+          );
+
+          results.push({
+            ...resultBase,
+            success: true,
+            action: "merged",
+            message: `Merged ${qnt} ${unit} of ${materialName}. Total now: ${newQnt} ${unit}`,
+            material: updatedMaterial as MaterialSubdoc,
+          });
+        } else {
+          results.push({ ...resultBase, success: false, error: "Failed to merge material" });
+        }
+        
+        console.log('✅ MERGE COMPLETED - MOVING TO NEXT MATERIAL');
+        continue; // Skip to next material
+      }
+      
+      // If we reach here, we're creating a new material entry
+      console.log('\n📦 CREATING NEW MATERIAL ENTRY');
+      console.log('  - Reason:', shouldMerge ? 'Merge failed' : 'Price differences detected or merge disabled');
 
       // Create new batch using findByIdAndUpdate
       // Assign an explicit _id to material subdocuments so other APIs can reference them reliably
