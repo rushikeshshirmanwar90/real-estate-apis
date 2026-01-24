@@ -46,13 +46,13 @@ export const GET = async (req: NextRequest) => {
 
         // Add activity filter
         if (activity && activity !== 'all') {
-            if (activity === 'imported' || activity === 'used') {
+            if (activity === 'imported' || activity === 'used' || activity === 'transferred') {
                 query.activity = activity;
             } else {
                 return NextResponse.json(
                     {
                         success: false,
-                        error: "activity must be 'imported', 'used', or 'all'",
+                        error: "activity must be 'imported', 'used', 'transferred', or 'all'",
                     },
                     { status: 400 }
                 );

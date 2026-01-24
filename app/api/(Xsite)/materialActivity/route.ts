@@ -12,6 +12,10 @@ interface MaterialItem {
   totalCost?: number;
   perUnitCost?: number;
   addedAt?: Date;
+  transferDetails?: {
+    fromProject: { id: string; name: string };
+    toProject: { id: string; name: string };
+  };
 }
 
 interface UserPayload {
@@ -228,6 +232,7 @@ export const POST = async (req: NextRequest | Request) => {
       activity,
       user,
       date,
+      transferDetails,
     } = (await req.json()) as {
       clientId: string;
       projectId: string;
@@ -236,9 +241,13 @@ export const POST = async (req: NextRequest | Request) => {
       miniSectionName?: string;
       materials: MaterialItem[];
       message?: string;
-      activity: "imported" | "used";
+      activity: "imported" | "used" | "transferred";
       user: UserPayload;
       date?: string;
+      transferDetails?: {
+        fromProject: { id: string; name: string };
+        toProject: { id: string; name: string };
+      };
     };
 
     // Validation
@@ -250,9 +259,9 @@ export const POST = async (req: NextRequest | Request) => {
       return errorResponse("projectId is required", 406);
     }
 
-    if (!activity || (activity !== "imported" && activity !== "used")) {
+    if (!activity || (activity !== "imported" && activity !== "used" && activity !== "transferred")) {
       return errorResponse(
-        "activity is required and must be 'imported' or 'used'",
+        "activity is required and must be 'imported', 'used', or 'transferred'",
         406
       );
     }
@@ -298,12 +307,16 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     const payload: ImportedMaterialPayload & {
-      activity: "imported" | "used";
+      activity: "imported" | "used" | "transferred";
       user: UserPayload;
       date: string;
       projectName?: string;
       sectionName?: string;
       miniSectionName?: string;
+      transferDetails?: {
+        fromProject: { id: string; name: string };
+        toProject: { id: string; name: string };
+      };
     } = {
       clientId,
       projectId: reqProjectId,
@@ -322,6 +335,7 @@ export const POST = async (req: NextRequest | Request) => {
       activity,
       date: dateStr,
       user,
+      ...(activity === "transferred" && transferDetails ? { transferDetails } : {}),
     };
 
     const newImportedMaterial = new MaterialActivity(payload);

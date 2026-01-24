@@ -120,8 +120,24 @@ const MaterialActivitySchema = new Schema({
   activity: {
     type: String,
     required: true,
-    enum: ["imported", "used"],
+    enum: ["imported", "used", "transferred"],
   },
+
+  // Transfer details (only for transferred activities)
+  transferDetails: {
+    type: {
+      fromProject: {
+        id: { type: String, required: false },
+        name: { type: String, required: false }
+      },
+      toProject: {
+        id: { type: String, required: false },
+        name: { type: String, required: false }
+      }
+    },
+    required: false
+  },
+
   date: {
     type: String,
     required: true,
