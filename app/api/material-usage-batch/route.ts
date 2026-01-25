@@ -3,6 +3,7 @@ import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
+import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
 
 // Local types matching MaterialSchema
 type Specs = Record<string, unknown>;
@@ -411,6 +412,12 @@ export const POST = async (req: NextRequest | Request) => {
       const savedActivity = await materialActivity.save();
       
       console.log(`✅ MATERIAL ACTIVITY SAVED SUCCESSFULLY!`);
+
+      // Send notification to project admins (async, don't wait for it)
+      notifyMaterialActivityCreated(savedActivity).catch(error => {
+        console.error('Failed to send material activity notification:', error);
+      });
+
       console.log(`========================================`);
       console.log(`📊 SAVED ACTIVITY DETAILS:`);
       console.log(`  - Activity ID: ${savedActivity._id}`);

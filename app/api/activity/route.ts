@@ -3,6 +3,7 @@ import { Activity } from "@/lib/models/Xsite/Activity";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import { notifyActivityCreated } from "@/lib/services/notificationService";
 
 // GET: Fetch activities with filters
 export const GET = async (req: NextRequest | Request) => {
@@ -251,6 +252,15 @@ export const POST = async (req: NextRequest | Request) => {
 
     const newActivity = new Activity(doc);
     await newActivity.save();
+
+    console.log('✅ Activity created successfully:', newActivity._id);
+
+    // Send notification to project admins (async, don't wait for it)
+    if (newActivity.projectId) {
+      notifyActivityCreated(newActivity).catch(error => {
+        console.error('Failed to send activity notification:', error);
+      });
+    }
 
     return successResponse(newActivity, "Activity logged successfully", 201);
   } catch (error: unknown) {

@@ -2,6 +2,7 @@ import connect from "@/lib/db";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { NextRequest } from "next/server";
+import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
 
 interface MaterialItem {
   name: string;
@@ -340,6 +341,13 @@ export const POST = async (req: NextRequest | Request) => {
 
     const newImportedMaterial = new MaterialActivity(payload);
     await newImportedMaterial.save();
+
+    console.log('✅ Material activity created successfully:', newImportedMaterial._id);
+
+    // Send notification to project admins (async, don't wait for it)
+    notifyMaterialActivityCreated(newImportedMaterial).catch(error => {
+      console.error('Failed to send material activity notification:', error);
+    });
 
     return successResponse(
       newImportedMaterial,
