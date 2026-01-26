@@ -295,29 +295,82 @@ export async function notifyMaterialActivityCreated(materialActivity: any): Prom
       return;
     }
 
+    console.log('🔔 Processing material activity notification...');
+    console.log('   - Activity ID:', materialActivity._id);
+    console.log('   - Project ID:', materialActivity.projectId);
+    console.log('   - Client ID:', materialActivity.clientId);
+    console.log('   - Activity Type:', materialActivity.activity);
+
     // Create notification payload
     const payload = createMaterialActivityNotification(materialActivity);
 
-    // Send to main project admins
-    const mainResult = await PushNotificationService.sendToProjectAdmins(
-      materialActivity.projectId,
-      payload.title,
-      payload.body,
-      payload.data,
-      {
-        sound: payload.sound || 'default',
-        priority: 'high',
-        ttl: 3600,
+    // ✅ FIX: Use the notification recipients API instead of project assignedStaff
+    // This will get the correct user IDs from Admin and Staff collections
+    try {
+      console.log('📋 Getting notification recipients from API...');
+      
+      // Import axios here to avoid circular dependencies
+      const axios = (await import('axios')).default;
+      
+      // Get recipients using our working API
+      const recipientsResponse = await axios.get(`http://localhost:8080/api/notifications/recipients`, {
+        params: { 
+          clientId: materialActivity.clientId,
+          projectId: materialActivity.projectId 
+        },
+        timeout: 5000
+      });
+
+      if (recipientsResponse.data.success) {
+        const recipients = recipientsResponse.data.data.recipients;
+        console.log(`✅ Found ${recipients.length} notification recipients`);
+        
+        if (recipients.length > 0) {
+          // Extract user IDs from recipients
+          const userIds = recipients.map((r: any) => r.userId);
+          console.log('📱 Sending notifications to user IDs:', userIds);
+
+          // Send using the push notification service
+          const result = await PushNotificationService.sendToUsers(
+            userIds,
+            payload.title,
+            payload.body,
+            payload.data,
+            {
+              sound: payload.sound || 'default',
+              priority: 'high',
+              ttl: 3600,
+            }
+          );
+
+          if (result.success) {
+            console.log(`✅ Material activity notification sent: ${result.messagesSent} messages for activity ${materialActivity._id}`);
+          } else {
+            console.error('❌ Material activity notification failed:', result.errors);
+          }
+
+          if (result.errors.length > 0) {
+            console.warn('⚠️ Some material activity notifications failed:', result.errors);
+          }
+        } else {
+          console.log('📭 No recipients found for notification');
+        }
+      } else {
+        console.error('❌ Failed to get notification recipients:', recipientsResponse.data.message);
+        // Fallback to old method
+        await sendNotificationFallback(materialActivity, payload);
       }
-    );
+    } catch (apiError) {
+      console.error('❌ Error calling recipients API:', apiError);
+      // Fallback to old method
+      await sendNotificationFallback(materialActivity, payload);
+    }
 
-    let totalMessagesSent = mainResult.messagesSent;
-    const allErrors = [...mainResult.errors];
-
-    // For transferred materials, also notify admins of the source project
+    // Handle transferred materials to source project
     if (materialActivity.activity === 'transferred' && materialActivity.transferDetails?.fromProject?.id) {
       const sourceProjectId = materialActivity.transferDetails.fromProject.id;
       if (sourceProjectId !== materialActivity.projectId) {
+        console.log('🔄 Handling transfer notification for source project...');
         
         // Create modified payload for source project
         const sourcePayload = {
@@ -326,32 +379,70 @@ export async function notifyMaterialActivityCreated(materialActivity: any): Prom
           body: payload.body.replace('transferred', 'transferred out to ' + materialActivity.transferDetails.toProject?.name),
         };
 
-        const sourceResult = await PushNotificationService.sendToProjectAdmins(
-          sourceProjectId,
-          sourcePayload.title,
-          sourcePayload.body,
-          sourcePayload.data,
-          {
-            sound: payload.sound || 'default',
-            priority: 'high',
-            ttl: 3600,
+        // Try to get recipients for source project
+        try {
+          const axios = (await import('axios')).default;
+          const sourceRecipientsResponse = await axios.get(`http://localhost:8080/api/notifications/recipients`, {
+            params: { 
+              clientId: materialActivity.clientId, // Same client, different project
+              projectId: sourceProjectId 
+            },
+            timeout: 5000
+          });
+
+          if (sourceRecipientsResponse.data.success) {
+            const sourceRecipients = sourceRecipientsResponse.data.data.recipients;
+            if (sourceRecipients.length > 0) {
+              const sourceUserIds = sourceRecipients.map((r: any) => r.userId);
+              
+              const sourceResult = await PushNotificationService.sendToUsers(
+                sourceUserIds,
+                sourcePayload.title,
+                sourcePayload.body,
+                sourcePayload.data,
+                {
+                  sound: payload.sound || 'default',
+                  priority: 'high',
+                  ttl: 3600,
+                }
+              );
+
+              console.log(`✅ Source project notification sent: ${sourceResult.messagesSent} messages`);
+            }
           }
-        );
-
-        totalMessagesSent += sourceResult.messagesSent;
-        allErrors.push(...sourceResult.errors);
+        } catch (sourceError) {
+          console.error('❌ Error sending source project notification:', sourceError);
+        }
       }
-    }
-
-    if (mainResult.success) {
-      console.log(`✅ Material activity notification sent: ${totalMessagesSent} messages for activity ${materialActivity._id}`);
-    }
-
-    if (allErrors.length > 0) {
-      console.warn('⚠️ Some material activity notifications failed:', allErrors);
     }
 
   } catch (error) {
     console.error('Error sending material activity notification:', error);
+  }
+}
+
+/**
+ * Fallback method using the old project assignedStaff approach
+ */
+async function sendNotificationFallback(materialActivity: any, payload: any): Promise<void> {
+  console.log('🔄 Using fallback notification method...');
+  
+  // Send to main project admins using old method
+  const mainResult = await PushNotificationService.sendToProjectAdmins(
+    materialActivity.projectId,
+    payload.title,
+    payload.body,
+    payload.data,
+    {
+      sound: payload.sound || 'default',
+      priority: 'high',
+      ttl: 3600,
+    }
+  );
+
+  if (mainResult.success) {
+    console.log(`✅ Fallback notification sent: ${mainResult.messagesSent} messages for activity ${materialActivity._id}`);
+  } else {
+    console.error('❌ Fallback notification failed:', mainResult.errors);
   }
 }
