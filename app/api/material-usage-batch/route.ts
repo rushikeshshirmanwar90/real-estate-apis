@@ -414,9 +414,20 @@ export const POST = async (req: NextRequest | Request) => {
       console.log(`✅ MATERIAL ACTIVITY SAVED SUCCESSFULLY!`);
 
       // Send notification to project admins (async, don't wait for it)
-      notifyMaterialActivityCreated(savedActivity).catch(error => {
-        console.error('Failed to send material activity notification:', error);
-      });
+      notifyMaterialActivityCreated(savedActivity)
+        .then(result => {
+          if (result.success) {
+            console.log(`✅ Material activity notification completed: ${result.deliveredCount}/${result.recipientCount} delivered (${result.processingTimeMs}ms)`);
+          } else {
+            console.error(`❌ Material activity notification failed: ${result.errors.length} errors, ${result.failedCount} failed deliveries`);
+            result.errors.forEach(error => {
+              console.error(`   - ${error.type}: ${error.message}`);
+            });
+          }
+        })
+        .catch(error => {
+          console.error('Critical error in material activity notification:', error);
+        });
 
       console.log(`========================================`);
       console.log(`📊 SAVED ACTIVITY DETAILS:`);

@@ -1,4 +1,5 @@
 import { PushToken } from "@/lib/models/PushToken";
+import { PushTokenManager } from "./pushTokenManager";
 
 // TypeScript interfaces for better type safety
 interface ProjectDocument {
@@ -37,17 +38,25 @@ export interface PushNotificationResult {
   messagesSent: number;
   errors: string[];
   results?: any[];
+  tokenValidationStats?: {
+    totalTokens: number;
+    validTokens: number;
+    invalidTokens: number;
+    tokensMarkedInactive: number;
+  };
 }
 
 /**
- * Send push notifications using Expo Push Notification service
+ * Enhanced Push Notification Service with robust token management
+ * Implements Requirements 3.1, 3.2, 3.3, 3.5, 3.6
  */
 export class PushNotificationService {
   private static readonly EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
   private static readonly MAX_BATCH_SIZE = 100; // Expo's limit
 
   /**
-   * Send push notifications to multiple users
+   * Enhanced send to users with comprehensive token validation and management
+   * Implements Requirements 3.1, 3.5, 3.6
    */
   static async sendToUsers(
     userIds: string[],
@@ -62,43 +71,44 @@ export class PushNotificationService {
     }
   ): Promise<PushNotificationResult> {
     try {
-      console.log('📱 Sending push notifications to users:', userIds);
+      console.log('📱 Enhanced push notification sending to users:', userIds);
 
-      // Get active push tokens for these users
-      const pushTokens = await PushToken.find({
-        userId: { $in: userIds },
-        isActive: true,
-      }).select('token userId platform') as PushTokenDocument[];
+      // Use enhanced token manager to get validated active tokens
+      const tokenResult = await PushTokenManager.getActiveTokensForUsers(userIds);
 
-      if (pushTokens.length === 0) {
-        console.log('📭 No active push tokens found for users:', userIds);
-        return {
-          success: true,
-          messagesSent: 0,
-          errors: ['No active push tokens found'],
-        };
-      }
+      const result: PushNotificationResult = {
+        success: false,
+        messagesSent: 0,
+        errors: [],
+        tokenValidationStats: {
+          totalTokens: tokenResult.tokens.length + tokenResult.invalidTokens.length,
+          validTokens: tokenResult.tokens.length,
+          invalidTokens: tokenResult.invalidTokens.length,
+          tokensMarkedInactive: tokenResult.invalidTokens.length,
+        },
+      };
 
-      console.log(`📱 Found ${pushTokens.length} active push tokens`);
-
-      // Validate tokens before sending
-      const validTokens = pushTokens.filter(tokenDoc => 
-        this.isValidExpoPushToken(tokenDoc.token)
-      );
-
-      if (validTokens.length === 0) {
+      if (tokenResult.tokens.length === 0) {
         console.log('📭 No valid push tokens found for users:', userIds);
-        return {
-          success: true,
-          messagesSent: 0,
-          errors: ['No valid push tokens found'],
-        };
+        result.success = true; // Not an error condition
+        result.errors.push('No valid push tokens found');
+        
+        // Log missing users for debugging
+        if (tokenResult.missingUsers.length > 0) {
+          console.log('👤 Users with no tokens:', tokenResult.missingUsers);
+          result.errors.push(`Users with no tokens: ${tokenResult.missingUsers.join(', ')}`);
+        }
+        
+        return result;
       }
 
-      console.log(`📱 Found ${validTokens.length} valid push tokens`);
+      console.log(`📱 Found ${tokenResult.tokens.length} validated tokens (${tokenResult.invalidTokens.length} invalid tokens filtered out)`);
 
-      // Create messages
-      const messages: ExpoPushMessage[] = validTokens.map(tokenDoc => ({
+      // Sort tokens by validation score (highest first) for better delivery success
+      const sortedTokens = tokenResult.tokens.sort((a, b) => b.validationScore - a.validationScore);
+
+      // Create messages with enhanced metadata
+      const messages: ExpoPushMessage[] = sortedTokens.map(tokenDoc => ({
         to: tokenDoc.token,
         title,
         body,
@@ -106,6 +116,8 @@ export class PushNotificationService {
           ...data,
           userId: tokenDoc.userId,
           platform: tokenDoc.platform,
+          deviceId: tokenDoc.deviceId,
+          validationScore: tokenDoc.validationScore,
         },
         sound: options?.sound || 'default',
         badge: options?.badge,
@@ -113,43 +125,116 @@ export class PushNotificationService {
         ttl: options?.ttl || 3600, // 1 hour default
       }));
 
-      // Send in batches
-      const results = await this.sendInBatches(messages);
+      // Send in batches with enhanced error handling
+      const sendResult = await this.sendInBatches(messages);
+      
+      result.success = sendResult.success;
+      result.messagesSent = sendResult.messagesSent;
+      result.errors = sendResult.errors;
+      result.results = sendResult.results;
 
-      // Update last used timestamp for successful tokens
-      if (results.results && results.results.length > 0) {
-        const successfulTokens = results.results
-          .map((result: any, index: number) => {
-            if (result.status === 'ok' && validTokens[index]) {
-              return validTokens[index].token;
-            }
-            return null;
-          })
-          .filter(Boolean);
+      // Update token usage and health based on delivery results
+      await this.updateTokenHealthFromResults(sortedTokens, sendResult.results || []);
 
-        if (successfulTokens.length > 0) {
-          await PushToken.updateMany(
-            { token: { $in: successfulTokens } },
-            { lastUsed: new Date() }
-          );
-        }
-      }
-
-      console.log('✅ Push notification results:', {
-        messagesSent: results.messagesSent,
-        errors: results.errors.length,
+      console.log('✅ Enhanced push notification results:', {
+        messagesSent: result.messagesSent,
+        errors: result.errors.length,
+        validationStats: result.tokenValidationStats,
       });
 
-      return results;
+      return result;
 
     } catch (error) {
-      console.error('❌ Error sending push notifications:', error);
+      console.error('❌ Error in enhanced push notification sending:', error);
       return {
         success: false,
         messagesSent: 0,
         errors: [error instanceof Error ? error.message : 'Unknown error'],
       };
     }
+  }
+
+  /**
+   * Update token health metrics based on delivery results
+   * Implements Requirement 3.2: Automatic token health monitoring
+   */
+  private static async updateTokenHealthFromResults(
+    tokens: any[],
+    results: any[]
+  ): Promise<void> {
+    try {
+      const updatePromises = tokens.map(async (token, index) => {
+        const result = results[index];
+        
+        if (!result) return;
+
+        try {
+          if (result.status === 'ok') {
+            // Successful delivery - update last used and improve health
+            await PushToken.updateOne(
+              { token: token.token },
+              {
+                lastUsed: new Date(),
+                lastValidated: new Date(),
+                $inc: { 'healthMetrics.successCount': 1 },
+                'healthMetrics.lastSuccess': new Date(),
+                'healthMetrics.isHealthy': true,
+              }
+            );
+          } else if (result.status === 'error') {
+            // Failed delivery - record error and potentially deactivate
+            const errorMessage = result.message || result.details?.error || 'Unknown delivery error';
+            
+            await PushToken.updateOne(
+              { token: token.token },
+              {
+                $push: {
+                  validationErrors: {
+                    error: `Delivery failed: ${errorMessage}`,
+                    timestamp: new Date(),
+                  }
+                },
+                $inc: { 'healthMetrics.failureCount': 1 },
+                'healthMetrics.lastFailure': new Date(),
+              }
+            );
+
+            // Check if token should be deactivated based on error type
+            if (this.shouldDeactivateToken(result)) {
+              await PushTokenManager.markTokenInvalid(
+                token.token,
+                `Delivery error: ${errorMessage}`
+              );
+            }
+          }
+        } catch (updateError) {
+          console.error(`❌ Error updating token health for ${token.token}:`, updateError);
+        }
+      });
+
+      await Promise.all(updatePromises);
+    } catch (error) {
+      console.error('❌ Error updating token health from results:', error);
+    }
+  }
+
+  /**
+   * Determine if a token should be deactivated based on delivery error
+   */
+  private static shouldDeactivateToken(result: any): boolean {
+    const errorMessage = result.message || result.details?.error || '';
+    
+    // Deactivate for these specific error types
+    const deactivationErrors = [
+      'DeviceNotRegistered',
+      'InvalidCredentials',
+      'MessageTooBig',
+      'MessageRateExceeded',
+      'MismatchSenderId',
+      'InvalidPackageName',
+    ];
+
+    return deactivationErrors.some(error => errorMessage.includes(error));
   }
 
   /**
@@ -318,9 +403,18 @@ export class PushNotificationService {
   }
 
   /**
-   * Validate Expo push token format
+   * Enhanced token validation using PushTokenManager
+   * Implements Requirement 3.1: Comprehensive format checking
    */
-  static isValidExpoPushToken(token: string): boolean {
+  static async isValidExpoPushToken(token: string): Promise<boolean> {
+    const validation = await PushTokenManager.validateToken(token);
+    return validation.isValid;
+  }
+
+  /**
+   * Legacy synchronous validation for backward compatibility
+   */
+  static isValidExpoPushTokenSync(token: string): boolean {
     if (!token || typeof token !== 'string') {
       return false;
     }
@@ -336,30 +430,65 @@ export class PushNotificationService {
   }
 
   /**
-   * Clean up invalid or expired tokens
+   * Enhanced cleanup using PushTokenManager
+   * Implements Requirement 3.4: Clean up inactive push tokens older than 30 days
    */
   static async cleanupInvalidTokens(): Promise<number> {
     try {
-      console.log('🧹 Cleaning up invalid push tokens...');
+      console.log('🧹 Starting enhanced token cleanup...');
+      
+      const cleanupResult = await PushTokenManager.cleanupInvalidTokens();
+      
+      console.log(`🧹 Enhanced cleanup complete:`, {
+        processed: cleanupResult.totalProcessed,
+        deactivated: cleanupResult.tokensDeactivated,
+        deleted: cleanupResult.tokensDeleted,
+        errors: cleanupResult.errors.length,
+      });
 
-      // Deactivate tokens that haven't been used in 30 days
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      const result = await PushToken.updateMany(
-        {
-          isActive: true,
-          lastUsed: { $lt: thirtyDaysAgo }
-        },
-        { isActive: false }
-      );
-
-      console.log(`🧹 Deactivated ${result.modifiedCount} old push tokens`);
-      return result.modifiedCount;
-
+      return cleanupResult.tokensDeactivated + cleanupResult.tokensDeleted;
     } catch (error) {
-      console.error('❌ Error cleaning up push tokens:', error);
+      console.error('❌ Enhanced cleanup error:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Enhanced token health monitoring
+   * Implements Requirement 3.2: Automatic token health monitoring
+   */
+  static async refreshTokenHealth(): Promise<{
+    totalTokens: number;
+    healthyTokens: number;
+    unhealthyTokens: number;
+    tokensRefreshed: number;
+  }> {
+    try {
+      console.log('🔄 Starting enhanced token health refresh...');
+      
+      const healthResult = await PushTokenManager.refreshTokenHealth();
+      
+      console.log(`✅ Enhanced health refresh complete:`, {
+        total: healthResult.totalTokens,
+        healthy: healthResult.healthyTokens,
+        unhealthy: healthResult.unhealthyTokens,
+        refreshed: healthResult.tokensRefreshed,
+      });
+
+      return {
+        totalTokens: healthResult.totalTokens,
+        healthyTokens: healthResult.healthyTokens,
+        unhealthyTokens: healthResult.unhealthyTokens,
+        tokensRefreshed: healthResult.tokensRefreshed,
+      };
+    } catch (error) {
+      console.error('❌ Enhanced health refresh error:', error);
+      return {
+        totalTokens: 0,
+        healthyTokens: 0,
+        unhealthyTokens: 0,
+        tokensRefreshed: 0,
+      };
     }
   }
 

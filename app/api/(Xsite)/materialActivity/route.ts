@@ -345,9 +345,20 @@ export const POST = async (req: NextRequest | Request) => {
     console.log('✅ Material activity created successfully:', newImportedMaterial._id);
 
     // Send notification to project admins (async, don't wait for it)
-    notifyMaterialActivityCreated(newImportedMaterial).catch(error => {
-      console.error('Failed to send material activity notification:', error);
-    });
+    notifyMaterialActivityCreated(newImportedMaterial)
+      .then(result => {
+        if (result.success) {
+          console.log(`✅ Material activity notification completed: ${result.deliveredCount}/${result.recipientCount} delivered (${result.processingTimeMs}ms)`);
+        } else {
+          console.error(`❌ Material activity notification failed: ${result.errors.length} errors, ${result.failedCount} failed deliveries`);
+          result.errors.forEach(error => {
+            console.error(`   - ${error.type}: ${error.message}`);
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Critical error in material activity notification:', error);
+      });
 
     return successResponse(
       newImportedMaterial,
