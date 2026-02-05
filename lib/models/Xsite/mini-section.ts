@@ -22,6 +22,7 @@ const SectionSchema = new Schema(
     },
 
     mainSectionDetails: {
+      // project section
       sectionName: {
         type: String,
         required: false,
@@ -38,8 +39,13 @@ const SectionSchema = new Schema(
       type: [MaterialSchema],
       required: false,
     },
+
+    isCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export const MiniSection =

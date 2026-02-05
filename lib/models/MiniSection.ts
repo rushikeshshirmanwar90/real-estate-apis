@@ -2,30 +2,30 @@ import { model, models, Schema } from "mongoose";
 import { MaterialSchema } from "./Xsite/materials-activity";
 import { EmbeddedLaborSchema } from "./Xsite/Labor";
 
-const OtherSectionSchema = new Schema({
+const MiniSectionSchema = new Schema({
   name: {
     type: String,
-    require: true,
+    required: true,
+  },
+
+  sectionId: {
+    type: String,
+    required: true,
   },
 
   projectId: {
     type: String,
-    require: true,
-  },
-
-  images: {
-    type: [String],
-    require: false,
-  },
-
-  area: {
-    type: Number,
-    require: false,
+    required: true,
   },
 
   description: {
     type: String,
-    require: false,
+    required: false,
+  },
+
+  images: {
+    type: [String],
+    required: false,
   },
 
   MaterialUsed: {
@@ -42,7 +42,18 @@ const OtherSectionSchema = new Schema({
     type: Boolean,
     default: false,
   },
+
+  completedAt: {
+    type: Date,
+    required: false,
+  },
+
+  completedBy: {
+    type: String,
+    required: false,
+  },
+}, {
+  timestamps: true,
 });
 
-export const OtherSection =
-  models.OtherSection || model("OtherSection", OtherSectionSchema);
+export const MiniSection = models.MiniSection || model("MiniSection", MiniSectionSchema);

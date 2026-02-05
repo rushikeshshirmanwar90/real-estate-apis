@@ -219,3 +219,61 @@ export const POST = async (req: NextRequest) => {
 };
 
 // DELETE and PUT methods moved to /api/project/[id]/route.ts for proper dynamic routing
+
+export const PATCH = async (req: NextRequest) => {
+  try {
+    await connect();
+    const body = await req.json();
+    const { id, isCompleted, clientId, staffId } = body;
+
+    // Validation
+    if (!id || typeof isCompleted !== 'boolean') {
+      return errorResponse("Missing required fields: id, isCompleted", 400);
+    }
+
+    if (!isValidObjectId(id)) {
+      return errorResponse("Invalid project ID format", 400);
+    }
+
+    const updatedProject = await Projects.findByIdAndUpdate(
+      id,
+      { isCompleted },
+      { new: true }
+    );
+
+    if (!updatedProject) {
+      return errorResponse("Project not found", 404);
+    }
+
+    // Log activity
+    if (clientId && staffId) {
+      try {
+        await logActivity({
+          clientId,
+          staffId,
+          activityType: 'other' as any,
+          description: `Project ${isCompleted ? 'marked as completed' : 'reopened'}`,
+          projectId: id,
+          metadata: {
+            previousStatus: !isCompleted,
+            newStatus: isCompleted,
+            itemType: 'project',
+            itemId: id
+          }
+        });
+      } catch (logError) {
+        console.error('Failed to log project completion activity:', logError);
+        // Don't fail the request if logging fails
+      }
+    }
+
+    return successResponse(
+      updatedProject,
+      "Project completion status updated successfully"
+    );
+
+  } catch (error) {
+    console.error('Error updating project completion status:', error);
+    return errorResponse("Failed to update project completion status", 500);
+  }
+};

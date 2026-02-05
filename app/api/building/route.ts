@@ -351,3 +351,83 @@ export const PUT = async (req: NextRequest) => {
     return errorResponse("Failed to update building", 500);
   }
 };
+
+export const PATCH = async (req: NextRequest) => {
+  try {
+    await connect();
+    const body = await req.json();
+    const { id, isCompleted, clientId, staffId } = body;
+
+    // Validation
+    if (!id || typeof isCompleted !== 'boolean') {
+      return errorResponse("Missing required fields: id, isCompleted", 400);
+    }
+
+    if (!isValidObjectId(id)) {
+      return errorResponse("Invalid building ID format", 400);
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const updatedBuilding = await Building.findByIdAndUpdate(
+        id,
+        { isCompleted },
+        { new: true, session }
+      );
+
+      if (!updatedBuilding) {
+        await session.abortTransaction();
+        return errorResponse("Building not found", 404);
+      }
+
+      // Also update the section in the project
+      await Projects.updateOne(
+        { "section.sectionId": id },
+        { $set: { "section.$.isCompleted": isCompleted } },
+        { session }
+      );
+
+      // Log activity
+      if (clientId && staffId) {
+        try {
+          await logActivity({
+            clientId,
+            staffId,
+            activityType: 'other' as any,
+            description: `Building ${isCompleted ? 'marked as completed' : 'reopened'}`,
+            projectId: updatedBuilding.projectId,
+            sectionId: id,
+            metadata: {
+              previousStatus: !isCompleted,
+              newStatus: isCompleted,
+              itemType: 'building',
+              itemId: id
+            }
+          });
+        } catch (logError) {
+          console.error('Failed to log building completion activity:', logError);
+          // Don't fail the request if logging fails
+        }
+      }
+
+      await session.commitTransaction();
+
+      return successResponse(
+        updatedBuilding,
+        "Building completion status updated successfully"
+      );
+
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
+    }
+
+  } catch (error) {
+    console.error('Error updating building completion status:', error);
+    return errorResponse("Failed to update building completion status", 500);
+  }
+};

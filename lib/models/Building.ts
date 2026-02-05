@@ -244,6 +244,11 @@ const buildingSchema = new Schema(
       type: Boolean,
       default: true,
     },
+
+    isCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,

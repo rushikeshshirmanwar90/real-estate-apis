@@ -257,3 +257,56 @@ export const PUT = async (req: NextRequest | Request) => {
     );
   }
 };
+
+export const PATCH = async (req: NextRequest | Request) => {
+  try {
+    await connect();
+    const body = await req.json();
+    const { id, isCompleted, clientId, staffId } = body;
+
+    // Validation
+    if (!id || typeof isCompleted !== 'boolean') {
+      return NextResponse.json(
+        { message: "Missing required fields: id, isCompleted" },
+        { status: 400 }
+      );
+    }
+
+    const updatedOtherSection = await OtherSection.findByIdAndUpdate(
+      id,
+      { isCompleted },
+      { new: true }
+    );
+
+    if (!updatedOtherSection) {
+      return NextResponse.json(
+        { message: "Other section not found" },
+        { status: 404 }
+      );
+    }
+
+    // Also update the section in the project
+    await Projects.updateOne(
+      { "section.sectionId": id },
+      { $set: { "section.$.isCompleted": isCompleted } }
+    );
+
+    return NextResponse.json(
+      {
+        data: updatedOtherSection,
+        message: "Other section completion status updated successfully"
+      },
+      { status: 200 }
+    );
+
+  } catch (error) {
+    console.error('Error updating other section completion status:', error);
+    return NextResponse.json(
+      {
+        message: "Failed to update other section completion status",
+        error: error,
+      },
+      { status: 500 }
+    );
+  }
+};

@@ -19,6 +19,10 @@ const SectionSchema = new Schema(
     },
     materialUsed: [MaterialSchema],
     MaterialAvailable: [MaterialSchema],
+    isCompleted: {
+      type: Boolean,
+      default: false,
+    },
   },
   { _id: true }
 );
@@ -186,6 +190,11 @@ const projectSchema = new Schema(
     Labors: {
       type: [EmbeddedLaborSchema],
       required: false,
+    },
+
+    isCompleted: {
+      type: Boolean,
+      default: false,
     },
   },
   {
