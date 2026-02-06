@@ -16,11 +16,13 @@ interface ActivityLogData {
   activityType: 
     | "project_created" | "project_updated" | "project_deleted"
     | "section_created" | "section_updated" | "section_deleted"
+    | "section_completed" | "section_reopened"
     | "mini_section_created" | "mini_section_updated" | "mini_section_deleted"
+    | "mini_section_completed" | "mini_section_reopened"
     | "staff_assigned" | "staff_removed" | "staff_added"
     | "other";
   category: "project" | "section" | "mini_section" | "material" | "staff" | "other";
-  action: "create" | "update" | "delete" | "assign" | "remove" | "import" | "use";
+  action: "create" | "update" | "delete" | "assign" | "remove" | "import" | "use" | "complete" | "reopen";
   description: string;
   message?: string;
   changedData?: Array<{

@@ -390,15 +390,18 @@ export const PATCH = async (req: NextRequest) => {
       );
 
       // Log activity
-      if (clientId && staffId) {
+      const userInfo = extractUserInfo(req, body);
+      if (userInfo) {
         try {
           await logActivity({
-            clientId,
-            staffId,
-            activityType: 'other' as any,
-            description: `Building ${isCompleted ? 'marked as completed' : 'reopened'}`,
+            user: userInfo,
+            clientId: clientId || 'unknown',
             projectId: updatedBuilding.projectId,
             sectionId: id,
+            activityType: 'other',
+            category: 'other',
+            action: 'update',
+            description: `Building ${isCompleted ? 'marked as completed' : 'reopened'}`,
             metadata: {
               previousStatus: !isCompleted,
               newStatus: isCompleted,

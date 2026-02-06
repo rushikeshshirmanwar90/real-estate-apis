@@ -80,7 +80,7 @@ export const PATCH = async (req: NextRequest) => {
         }
 
         // Update the specific section using array index
-        const updateQuery = {};
+        const updateQuery: { [key: string]: any } = {};
         updateQuery[`section.${sectionIndex}.isCompleted`] = newCompletionState;
 
         console.log('🔍 API PATCH: Update query:', updateQuery);
@@ -206,7 +206,7 @@ export const PATCH = async (req: NextRequest) => {
         return errorResponse("Invalid update type", 400);
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ API PATCH: Error updating completion status:', error);
     console.error('❌ API PATCH: Error details:', {
       name: error?.name,
@@ -335,7 +335,7 @@ export const GET = async (req: NextRequest) => {
 
     return successResponse(document, `${updateType} completion status retrieved successfully`);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ API GET: Error fetching completion status:', error);
     console.error('❌ API GET: Error details:', {
       name: error?.name,

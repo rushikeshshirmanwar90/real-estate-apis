@@ -2,6 +2,8 @@ import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
+import { Client } from "@/lib/models/super-admin/Client";
+import { assignStaffToProject, removeStaffFromProject } from "@/lib/utils/staffProjectUtils";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
@@ -61,12 +63,18 @@ export const GET = async (req: NextRequest) => {
       if (getAllProjects === "true") {
         console.log('🌟 Getting ALL projects for staff user:', id);
         
-        // Find staff by ID without client restriction
-        const staffData = await Staff.findOne({ _id: id }).populate({
-          path: 'assignedProjects.projectId',
-          model: 'Projects',
-          select: 'name _id address assignedStaff budget spent MaterialAvailable MaterialUsed section location type status createdAt updatedAt'
-        });
+        // Find staff by ID without client restriction and populate clients
+        const staffData = await Staff.findOne({ _id: id })
+          .populate({
+            path: 'assignedProjects.projectId',
+            model: 'Projects',
+            select: 'name _id address assignedStaff budget spent MaterialAvailable MaterialUsed section location type status createdAt updatedAt'
+          })
+          .populate({
+            path: 'clients.clientId',
+            model: 'Client',
+            select: 'name companyName'
+          });
         
         if (!staffData) {
           return errorResponse("Staff member not found", 404);
@@ -75,14 +83,60 @@ export const GET = async (req: NextRequest) => {
         // Convert to object and transform assignedProjects to include ALL populated project data
         const staffObj = staffData.toObject();
         
+        console.log('🔍 Raw staff data from DB:', {
+          _id: staffObj._id,
+          firstName: staffObj.firstName,
+          lastName: staffObj.lastName,
+          assignedProjectsCount: staffObj.assignedProjects?.length || 0,
+          clientsCount: staffObj.clients?.length || 0
+        });
+        
         // Transform ALL assignedProjects to include populated project data (no clientId filtering)
         if (staffObj.assignedProjects && staffObj.assignedProjects.length > 0) {
-          staffObj.assignedProjects = staffObj.assignedProjects.map((assignment: any) => ({
-            ...assignment,
-            projectData: assignment.projectId // This will contain the populated project data
-          }));
+          console.log('🔍 Raw assignedProjects from DB:', JSON.stringify(staffObj.assignedProjects, null, 2));
+          console.log('🔍 Staff clients array:', JSON.stringify(staffObj.clients, null, 2));
+          
+          staffObj.assignedProjects = staffObj.assignedProjects.map((assignment: any, index: number) => {
+            console.log(`🔍 Processing assignment ${index}:`, {
+              projectId: assignment.projectId?._id,
+              projectName: assignment.projectName,
+              clientId: assignment.clientId,
+              clientName: assignment.clientName,
+              hasProjectData: !!assignment.projectId,
+              assignedAt: assignment.assignedAt
+            });
+            
+            // Check if clientName is missing and try to get it from populated clients array
+            let finalClientName = assignment.clientName;
+            if (!finalClientName || finalClientName === 'Unknown Client') {
+              console.log('⚠️ ClientName missing or unknown, trying to find from populated clients array...');
+              
+              // Try to find client name from staff's populated clients array
+              const clientInfo = staffObj.clients?.find((client: any) => {
+                const clientId = client.clientId._id || client.clientId;
+                return clientId.toString() === assignment.clientId.toString();
+              });
+              
+              if (clientInfo && clientInfo.clientId) {
+                // Get name from populated client data
+                finalClientName = clientInfo.clientId.name || clientInfo.clientId.companyName || clientInfo.clientName || 'Unknown Client';
+                console.log('✅ Found clientName from populated clients array:', finalClientName);
+              } else {
+                console.log('❌ Could not find clientName in populated clients array either');
+                // Keep as 'Unknown Client' - we'll fix this with the sync function
+                finalClientName = 'Unknown Client';
+              }
+            }
+            
+            return {
+              ...assignment,
+              clientName: finalClientName, // Use the resolved client name
+              projectData: assignment.projectId // This will contain the populated project data
+            };
+          });
           
           console.log(`✅ Returning ${staffObj.assignedProjects.length} projects from ALL clients for staff user`);
+          console.log('🔍 Final assignment structure:', JSON.stringify(staffObj.assignedProjects[0], null, 2));
         } else {
           console.log('⚠️ Staff has no assigned projects');
         }
@@ -211,6 +265,84 @@ export const POST = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action");
 
+    // Handle sync action to fix missing clientNames
+    if (action === "sync-client-names") {
+      console.log('🔄 Starting sync of client names for staff assignments...');
+      
+      try {
+        // Get all staff members with populated clients
+        const allStaff = await Staff.find({}).populate({
+          path: 'clients.clientId',
+          model: 'Client',
+          select: 'name companyName'
+        });
+        
+        let updatedCount = 0;
+        
+        for (const staff of allStaff) {
+          let hasUpdates = false;
+          const updatedAssignments = [];
+          
+          for (const assignment of staff.assignedProjects || []) {
+            let clientName = assignment.clientName;
+            
+            // If clientName is missing or 'Unknown Client', try to find it
+            if (!clientName || clientName === 'Unknown Client') {
+              console.log(`🔍 Fixing clientName for staff ${staff.firstName} ${staff.lastName}, assignment ${assignment.projectName}`);
+              
+              // Try to find from staff's populated clients array
+              const clientInfo = staff.clients?.find((client: any) => {
+                const clientId = client.clientId._id || client.clientId;
+                return clientId.toString() === assignment.clientId.toString();
+              });
+              
+              if (clientInfo && clientInfo.clientId) {
+                clientName = clientInfo.clientId.name || clientInfo.clientId.companyName || clientInfo.clientName;
+                hasUpdates = true;
+                console.log(`✅ Fixed clientName from populated clients: ${clientName}`);
+              } else {
+                // Fallback: fetch directly from Client collection
+                try {
+                  const clientDoc = await Client.findById(assignment.clientId);
+                  if (clientDoc) {
+                    clientName = clientDoc.name || clientDoc.companyName || 'Unknown Client';
+                    hasUpdates = true;
+                    console.log(`✅ Fixed clientName from Client collection: ${clientName}`);
+                  }
+                } catch (clientFetchError) {
+                  console.error('❌ Error fetching client:', clientFetchError);
+                }
+              }
+            }
+            
+            updatedAssignments.push({
+              ...assignment.toObject(),
+              clientName: clientName || 'Unknown Client'
+            });
+          }
+          
+          if (hasUpdates) {
+            await Staff.findByIdAndUpdate(
+              staff._id,
+              { assignedProjects: updatedAssignments },
+              { new: true }
+            );
+            updatedCount++;
+            console.log(`✅ Updated staff ${staff.firstName} ${staff.lastName}`);
+          }
+        }
+        
+        return successResponse(
+          { updatedStaffCount: updatedCount },
+          `Sync completed. Updated ${updatedCount} staff members.`,
+          200
+        );
+      } catch (syncError) {
+        console.error('❌ Error during sync:', syncError);
+        return errorResponse("Failed to sync client names", 500, syncError);
+      }
+    }
+
     // Handle staff assignment action
     if (action === "assign" && data.staffId && data.projectId) {
       if (!isValidObjectId(data.staffId)) {
@@ -234,8 +366,6 @@ export const POST = async (req: NextRequest) => {
       }
 
       // Use the utility function to assign staff to project
-      const { assignStaffToProject } = await import("../../../../lib/utils/staffProjectUtils");
-      
       try {
         await assignStaffToProject(
           data.staffId,
@@ -533,8 +663,6 @@ export const DELETE = async (req: NextRequest) => {
       }
 
       // Remove staff from project's assignedStaff array using utility function
-      const { removeStaffFromProject } = await import("../../../../lib/utils/staffProjectUtils");
-      
       try {
         await removeStaffFromProject(id, projectId);
 

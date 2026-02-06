@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import  connect  from "@/lib/db";
+import { Staff } from "@/lib/models/users/Staff";
+import { Projects } from "@/lib/models/Project";
 import { syncStaffProjectAssignments } from "@/lib/utils/staffProjectUtils";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 
@@ -29,9 +31,6 @@ export const POST = async (req: NextRequest) => {
 export const GET = async (req: NextRequest) => {
   try {
     await connect();
-    
-    const { Staff } = await import("../../../../lib/models/users/Staff");
-    const { Projects } = await import("../../../../lib/models/Project");
     
     // Get stats about current assignments
     const totalStaff = await Staff.countDocuments();

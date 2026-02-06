@@ -92,16 +92,22 @@ const ActivitySchema = new Schema(
         "project_created",
         "project_updated",
         "project_deleted",
+        "project_completed",
+        "project_reopened",
 
         // Section activities
         "section_created",
         "section_updated",
         "section_deleted",
+        "section_completed",
+        "section_reopened",
 
         // Mini-section activities
         "mini_section_created",
         "mini_section_updated",
         "mini_section_deleted",
+        "mini_section_completed",
+        "mini_section_reopened",
 
         // Staff activities
         "staff_assigned",
@@ -130,6 +136,7 @@ const ActivitySchema = new Schema(
         "material",
         "staff",
         "labor",
+        "completion",
         "other",
       ],
       index: true,
@@ -139,7 +146,7 @@ const ActivitySchema = new Schema(
     action: {
       type: String,
       required: true,
-      enum: ["add", "create", "update", "delete", "assign", "remove", "import", "use"],
+      enum: ["add", "create", "update", "delete", "assign", "remove", "import", "use", "complete", "reopen"],
     },
 
     // Description of the activity

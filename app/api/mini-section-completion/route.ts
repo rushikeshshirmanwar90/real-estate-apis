@@ -3,7 +3,7 @@ import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import { logActivity } from "@/lib/utils/activity-logger";
+import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 
 export const PATCH = async (req: NextRequest) => {
   try {
@@ -36,21 +36,25 @@ export const PATCH = async (req: NextRequest) => {
     }
 
     // Log activity
-    if (clientId && staffId) {
+    const userInfo = extractUserInfo(req, body);
+    if (userInfo) {
       try {
         await logActivity({
-          clientId,
-          staffId,
-          activityType: isCompleted ? 'mini_section_completed' : 'mini_section_reopened',
-          description: `Mini-section "${updatedMiniSection.name}" ${isCompleted ? 'marked as completed' : 'reopened'}`,
+          user: userInfo,
+          clientId: clientId || 'unknown',
           projectId: updatedMiniSection.projectId,
           sectionId: updatedMiniSection.sectionId,
           miniSectionId: miniSectionId,
+          miniSectionName: updatedMiniSection.name,
+          activityType: isCompleted ? 'mini_section_completed' : 'mini_section_reopened',
+          category: 'mini_section',
+          action: isCompleted ? 'complete' : 'reopen',
+          description: `Mini-section "${updatedMiniSection.name}" ${isCompleted ? 'marked as completed' : 'reopened'}`,
           metadata: {
             miniSectionName: updatedMiniSection.name,
             previousStatus: !isCompleted,
             newStatus: isCompleted,
-            completedBy: completedBy || staffId
+            completedBy: completedBy || userInfo.userId
           }
         });
       } catch (logError) {
@@ -132,16 +136,20 @@ export const POST = async (req: NextRequest) => {
     const savedMiniSection = await newMiniSection.save();
 
     // Log activity
-    if (clientId && staffId) {
+    const userInfo = extractUserInfo(req, body);
+    if (userInfo) {
       try {
         await logActivity({
-          clientId,
-          staffId,
-          activityType: 'mini_section_created',
-          description: `Mini-section "${name}" created`,
+          user: userInfo,
+          clientId: clientId || 'unknown',
           projectId,
           sectionId,
           miniSectionId: savedMiniSection._id.toString(),
+          miniSectionName: name,
+          activityType: 'mini_section_created',
+          category: 'mini_section',
+          action: 'create',
+          description: `Mini-section "${name}" created`,
           metadata: {
             miniSectionName: name,
             description: description || ''

@@ -11,11 +11,23 @@ export const POST = async (req: NextRequest | Request) => {
 
     const isUser = await LoginUser.findOne({ email });
 
+    // ✅ FIX: Check if user exists first
+    if (!isUser) {
+      return NextResponse.json(
+        {
+          message: "User not found with this email address",
+        },
+        { status: 404 }
+      );
+    }
+
+    // Check if user has password set (verified)
     if (
       isUser.password == "" ||
       isUser.password == null ||
       isUser.password == undefined
     ) {
+      // User exists but password not set - needs verification
       return NextResponse.json(
         {
           isUser,
@@ -24,6 +36,7 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
+    // User exists and has password - verified user
     return NextResponse.json(
       {
         isUser,
