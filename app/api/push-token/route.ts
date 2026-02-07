@@ -101,6 +101,10 @@ function sanitizeInput(data: any): any {
         .replace(/javascript:/gi, '')
         .replace(/data:text\/html/gi, '')
         .replace(/on\w+\s*=/gi, '') // Remove event handlers
+        .replace(/\$\{.*?\}/gi, '') // Remove template literals
+        .replace(/DROP\s+TABLE/gi, '') // Remove SQL injection attempts
+        .replace(/\.\.\/\.\.\//gi, '') // Remove path traversal attempts
+        .replace(/jndi:/gi, '') // Remove JNDI injection attempts
         .trim();
     }
   }

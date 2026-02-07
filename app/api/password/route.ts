@@ -1,6 +1,7 @@
 import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { Customer } from "@/lib/models/users/Customer";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
@@ -118,7 +119,31 @@ export const POST = async (req: NextRequest) => {
       await session.commitTransaction();
       console.log('✅ Transaction committed successfully');
 
-      return successResponse(null, "Password updated successfully");
+      // Generate JWT token for the user after successful password update
+      const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
+      const jwtToken = jwt.sign(
+        {
+          id: updatedUser._id,
+          email: updatedUser.email,
+          userType: normalizedUserType,
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+        },
+        jwtSecret,
+        { algorithm: 'HS256' }
+      );
+
+      return successResponse(
+        {
+          user: {
+            id: updatedUser._id,
+            email: updatedUser.email,
+            userType: normalizedUserType,
+          },
+          token: jwtToken, // JWT token for immediate login after password setup
+        },
+        "Password updated successfully"
+      );
     } catch (error) {
       await session.abortTransaction();
       console.error('❌ Transaction error:', error);

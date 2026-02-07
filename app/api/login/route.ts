@@ -1,6 +1,7 @@
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
@@ -95,7 +96,21 @@ export const POST = async (req: NextRequest) => {
     // Clear failed attempts on successful login
     failedAttempts.delete(email);
 
-    // Success response (exclude password)
+    // Generate JWT token for production
+    const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
+    const jwtToken = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        userType: user.userType,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+      },
+      jwtSecret,
+      { algorithm: 'HS256' }
+    );
+
+    // Success response with JWT token
     return successResponse(
       {
         user: {
@@ -103,8 +118,7 @@ export const POST = async (req: NextRequest) => {
           email: user.email,
           userType: user.userType,
         },
-        // TODO: Generate and return JWT token here
-        token: user.email, // Placeholder - implement JWT
+        token: jwtToken, // Real JWT token for production
       },
       "Login successful"
     );
