@@ -10,8 +10,16 @@ const PushTokenSchema = new Schema({
   userType: {
     type: String,
     required: true,
-    enum: ['client', 'staff', 'admin'],
+    enum: ['client', 'staff', 'admin', 'client-admin'],
     default: 'client',
+  },
+  
+  // ✅ Add clientId for proper notification grouping
+  clientId: {
+    type: Schema.Types.ObjectId,
+    ref: 'Client',
+    required: false, // Optional for super-admins
+    index: true,
   },
   
   token: {
@@ -119,6 +127,9 @@ PushTokenSchema.index({ isActive: 1, lastUsed: 1 });
 PushTokenSchema.index({ isActive: 1, validationScore: 1 });
 PushTokenSchema.index({ userId: 1, platform: 1, isActive: 1 });
 PushTokenSchema.index({ 'healthMetrics.isHealthy': 1, isActive: 1 });
+// ✅ Add clientId indexes for notification grouping
+PushTokenSchema.index({ clientId: 1, isActive: 1 });
+PushTokenSchema.index({ clientId: 1, userType: 1, isActive: 1 });
 
 // Update lastUsed when token is accessed
 PushTokenSchema.methods.updateLastUsed = function() {
@@ -171,6 +182,16 @@ PushTokenSchema.statics.findHealthyTokensForUsers = function(userIds: string[]) 
     isActive: true,
     'healthMetrics.isHealthy': true,
     validationScore: { $gte: 50 },
+  });
+};
+
+// ✅ Static method to find tokens by clientId and userType
+PushTokenSchema.statics.findByClientAndUserType = function(clientId: string, userTypes: string[]) {
+  return this.find({
+    clientId,
+    userType: { $in: userTypes },
+    isActive: true,
+    'healthMetrics.isHealthy': true,
   });
 };
 

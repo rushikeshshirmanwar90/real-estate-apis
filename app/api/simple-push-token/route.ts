@@ -1,9 +1,11 @@
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
+import { Staff } from "@/lib/models/users/Staff";
+import { Client } from "@/lib/models/super-admin/Client";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 
-// Simple push token registration without complex security
+// Simple push token registration with clientId support
 export const POST = async (req: NextRequest) => {
   try {
     await connect();
@@ -15,6 +17,8 @@ export const POST = async (req: NextRequest) => {
       platform,
       deviceId,
       deviceName,
+      // ✅ Add clientId for proper notification grouping
+      clientId,
     } = await req.json();
 
     console.log('📤 Simple push token registration:', {
@@ -22,11 +26,42 @@ export const POST = async (req: NextRequest) => {
       userType,
       platform,
       deviceId,
+      clientId,
     });
 
     // Basic validation
     if (!userId || !token || !userType) {
       return errorResponse("Missing required fields", 400);
+    }
+
+    // ✅ Determine clientId if not provided
+    let targetClientId = clientId;
+
+    if (!targetClientId && userType === 'staff') {
+      // For staff, get clientId from their assignments
+      try {
+        const staff = await Staff.findById(userId).select('clients assignedProjects');
+        if (staff && staff.clients && staff.clients.length > 0) {
+          targetClientId = staff.clients[0].clientId; // Use first client
+          console.log(`📋 Found clientId for staff from assignments: ${targetClientId}`);
+        } else if (staff && staff.assignedProjects && staff.assignedProjects.length > 0) {
+          targetClientId = staff.assignedProjects[0].clientId; // Use first project's client
+          console.log(`📋 Found clientId for staff from projects: ${targetClientId}`);
+        }
+      } catch (error) {
+        console.error('❌ Error fetching staff clientId:', error);
+      }
+    } else if (!targetClientId && (userType === 'admin' || userType === 'client-admin')) {
+      // For admins, they might be the client themselves
+      try {
+        const client = await Client.findById(userId);
+        if (client) {
+          targetClientId = userId; // Admin is the client
+          console.log(`📋 Admin is client: ${targetClientId}`);
+        }
+      } catch (error) {
+        console.error('❌ Error checking if admin is client:', error);
+      }
     }
 
     // Check if token already exists
@@ -39,17 +74,19 @@ export const POST = async (req: NextRequest) => {
       existingToken.platform = platform;
       existingToken.deviceId = deviceId;
       existingToken.deviceName = deviceName;
+      existingToken.clientId = targetClientId; // ✅ Update clientId
       existingToken.isActive = true;
       existingToken.lastUsed = new Date();
 
       await existingToken.save();
 
-      console.log('✅ Updated existing push token');
+      console.log('✅ Updated existing push token with clientId:', targetClientId);
 
       return successResponse(
         {
           tokenId: existingToken._id,
           isNew: false,
+          clientId: targetClientId,
         },
         "Push token updated successfully",
         200
@@ -60,7 +97,7 @@ export const POST = async (req: NextRequest) => {
     if (deviceId) {
       await PushToken.updateMany(
         { userId, deviceId, isActive: true },
-        { isActive: false }
+        { isActive: false, deactivationReason: 'New device token registered' }
       );
     }
 
@@ -72,18 +109,20 @@ export const POST = async (req: NextRequest) => {
       platform,
       deviceId,
       deviceName,
+      clientId: targetClientId, // ✅ Include clientId
       isActive: true,
       lastUsed: new Date(),
     });
 
     await newToken.save();
 
-    console.log('✅ Created new push token');
+    console.log('✅ Created new push token with clientId:', targetClientId);
 
     return successResponse(
       {
         tokenId: newToken._id,
         isNew: true,
+        clientId: targetClientId,
       },
       "Push token registered successfully",
       201
@@ -105,12 +144,19 @@ export const GET = async (req: NextRequest) => {
 
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
+    const clientId = searchParams.get("clientId");
 
     if (!userId) {
       return errorResponse("userId is required", 400);
     }
 
-    const tokens = await PushToken.find({ userId, isActive: true })
+    // ✅ Build query with optional clientId filter
+    const query: any = { userId, isActive: true };
+    if (clientId) {
+      query.clientId = clientId;
+    }
+
+    const tokens = await PushToken.find(query)
       .select('-token') // Don't return the actual token
       .sort({ lastUsed: -1 });
 
@@ -118,6 +164,7 @@ export const GET = async (req: NextRequest) => {
       {
         tokens,
         count: tokens.length,
+        clientId,
       },
       "Push tokens retrieved successfully",
       200
