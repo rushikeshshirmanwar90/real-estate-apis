@@ -146,8 +146,8 @@ export const POST = async (req: NextRequest) => {
           clientId: targetClientId,
           timestamp: Date.now(),
           // ✅ Add navigation data
-          route: 'notification', // Navigate to notification page
-          screen: 'notification',
+          route: 'notifications', // Navigate to notifications page
+          screen: 'notifications',
         },
         priority: 'high',
         channelId: 'project-updates', // Use the project-updates channel
