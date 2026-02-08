@@ -52,15 +52,23 @@ export const POST = async (req: NextRequest) => {
         console.error('❌ Error fetching staff clientId:', error);
       }
     } else if (!targetClientId && (userType === 'admin' || userType === 'client-admin')) {
-      // For admins, they might be the client themselves
+      // For admins, get their clientId from Admin model
       try {
-        const client = await Client.findById(userId);
-        if (client) {
-          targetClientId = userId; // Admin is the client
-          console.log(`📋 Admin is client: ${targetClientId}`);
+        const { Admin } = await import('@/lib/models/users/Admin');
+        const admin = await Admin.findById(userId).select('clientId');
+        if (admin && admin.clientId) {
+          targetClientId = admin.clientId;
+          console.log(`📋 Found clientId for admin from Admin model: ${targetClientId}`);
+        } else {
+          // Fallback: check if admin is the client themselves
+          const client = await Client.findById(userId);
+          if (client) {
+            targetClientId = userId; // Admin is the client
+            console.log(`📋 Admin is client (fallback): ${targetClientId}`);
+          }
         }
       } catch (error) {
-        console.error('❌ Error checking if admin is client:', error);
+        console.error('❌ Error fetching admin clientId:', error);
       }
     }
 
