@@ -27,7 +27,8 @@ export const POST = async (req: NextRequest) => {
       data,
       // ✅ New fields for proper grouping
       clientId,
-      staffId, // ID of the staff member performing the action
+      staffId, // ID of the staff member performing the action (legacy)
+      performerId, // ID of the user performing the action (new field)
     } = await req.json();
 
     console.log('📤 Notification request:', {
@@ -38,6 +39,7 @@ export const POST = async (req: NextRequest) => {
       messageLength: message?.length,
       clientId,
       staffId,
+      performerId,
     });
 
     // Basic validation
@@ -94,10 +96,21 @@ export const POST = async (req: NextRequest) => {
     }
 
     // ✅ Filter out the user who performed the action (no self-notification)
-    if (staffId) {
+    const actionPerformerId = performerId || staffId; // Use performerId first, fallback to staffId
+    if (actionPerformerId) {
       const originalCount = recipients.length;
-      recipients = recipients.filter(recipient => recipient.userId !== staffId);
-      console.log(`🚫 Filtered out action performer: ${originalCount} → ${recipients.length} recipients`);
+      recipients = recipients.filter(recipient => {
+        // Handle both populated and non-populated userId
+        const recipientUserId = recipient.userId?._id || recipient.userId;
+        const isActionPerformer = recipientUserId?.toString() === actionPerformerId.toString();
+        
+        if (isActionPerformer) {
+          console.log(`🚫 Filtering out action performer: ${recipientUserId} (${recipient.userType})`);
+        }
+        
+        return !isActionPerformer;
+      });
+      console.log(`🚫 Self-notification filter: ${originalCount} → ${recipients.length} recipients`);
     }
 
     if (recipients.length === 0) {
@@ -115,13 +128,17 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Log recipient details (without sensitive info)
+    console.log(`👥 Recipients found for client ${targetClientId}:`);
     recipients.forEach((recipient, index) => {
+      const recipientUserId = recipient.userId?._id || recipient.userId;
       console.log(`👤 Recipient ${index + 1}:`, {
+        userId: recipientUserId?.toString(),
         userType: recipient.userType,
         clientId: recipient.clientId,
         hasToken: !!recipient.token,
         tokenValid: Expo.isExpoPushToken(recipient.token),
         isActive: recipient.isActive,
+        isActionPerformer: recipientUserId?.toString() === (performerId || staffId)?.toString(),
       });
     });
 
@@ -221,7 +238,7 @@ export const POST = async (req: NextRequest) => {
         type,
         projectId,
         clientId: targetClientId,
-        filteredSelfNotification: !!staffId,
+        filteredSelfNotification: !!(performerId || staffId),
         errorDetails: errors.length > 0 ? errors : undefined,
       },
       `Sent ${totalSent} notifications successfully to client ${targetClientId}`,
