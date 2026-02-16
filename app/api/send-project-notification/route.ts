@@ -50,20 +50,35 @@ export const POST = async (req: NextRequest) => {
 
     // ✅ Get project details to determine clientId if not provided
     let targetClientId = clientId;
-    if (!targetClientId && projectId) {
+    
+    // If clientId is explicitly provided, use it (for staff operations)
+    if (targetClientId) {
+      console.log(`📋 Using explicitly provided clientId: ${targetClientId}`);
+    } 
+    // Otherwise, try to get clientId from projectId
+    else if (projectId) {
       try {
-        const project = await Projects.findById(projectId).select('clientId');
+        console.log(`🔍 Looking up project ${projectId} to get clientId...`);
+        const project = await Projects.findById(projectId).select('clientId name');
         if (project) {
           targetClientId = project.clientId.toString();
-          console.log(`📋 Found clientId from project: ${targetClientId}`);
+          console.log(`📋 Found clientId from project "${project.name}": ${targetClientId}`);
+        } else {
+          // ✅ If project not found, projectId might actually be a clientId (for staff operations)
+          console.log(`⚠️ Project ${projectId} not found, treating as clientId for staff operations`);
+          targetClientId = projectId;
         }
       } catch (error) {
         console.error('❌ Error fetching project:', error);
+        // ✅ Fallback: treat projectId as clientId
+        console.log(`🔄 Fallback: treating projectId as clientId: ${projectId}`);
+        targetClientId = projectId;
       }
     }
 
     if (!targetClientId) {
       console.error('❌ No clientId found for notification grouping');
+      console.error('❌ Debug info:', { projectId, clientId, type, recipientType });
       return errorResponse("ClientId is required for notification grouping", 400);
     }
 
@@ -71,26 +86,41 @@ export const POST = async (req: NextRequest) => {
     let recipients: any[] = [];
 
     console.log(`🔍 Looking for ${recipientType} recipients for clientId: ${targetClientId}...`);
+    console.log(`🔍 Query parameters:`, {
+      recipientType,
+      targetClientId,
+      projectId,
+      actionPerformerId: performerId || staffId,
+    });
 
     if (recipientType === 'admins') {
       // Get admins for this specific client only
-      recipients = await PushToken.find({
+      // ✅ Include 'client' userType since admins might be registered as 'client'
+      const query = {
         clientId: targetClientId,
-        userType: { $in: ['admin', 'client-admin'] },
+        userType: { $in: ['admin', 'client-admin', 'client'] },
         isActive: true,
         'healthMetrics.isHealthy': true,
-      }).populate('userId');
+      };
+      
+      console.log(`🔍 Admin query:`, query);
+      
+      recipients = await PushToken.find(query).populate('userId');
       
       console.log(`📋 Found ${recipients.length} admin recipients for client ${targetClientId}`);
       
     } else if (recipientType === 'staff') {
       // Get staff assigned to this specific client's projects
-      recipients = await PushToken.find({
+      const query = {
         clientId: targetClientId,
         userType: 'staff',
         isActive: true,
         'healthMetrics.isHealthy': true,
-      }).populate('userId');
+      };
+      
+      console.log(`🔍 Staff query:`, query);
+      
+      recipients = await PushToken.find(query).populate('userId');
       
       console.log(`📋 Found ${recipients.length} staff recipients for client ${targetClientId}`);
     }
