@@ -42,10 +42,10 @@ export const POST = async (req: NextRequest) => {
       performerId,
     });
 
-    // Basic validation
-    if (!projectId || !type || !title || !message || !recipientType) {
-      console.error('❌ Missing required fields:', { projectId, type, title, message, recipientType });
-      return errorResponse("Missing required fields", 400);
+    // Basic validation - either projectId OR clientId must be provided
+    if ((!projectId && !clientId) || !type || !title || !message || !recipientType) {
+      console.error('❌ Missing required fields:', { projectId, clientId, type, title, message, recipientType });
+      return errorResponse("Missing required fields (need projectId OR clientId)", 400);
     }
 
     // ✅ Get project details to determine clientId if not provided
@@ -65,7 +65,7 @@ export const POST = async (req: NextRequest) => {
           console.log(`📋 Found clientId from project "${project.name}": ${targetClientId}`);
         } else {
           // ✅ If project not found, projectId might actually be a clientId (for staff operations)
-          console.log(`⚠️ Project ${projectId} not found, treating as clientId for staff operations`);
+          console.log(`⚠️ Project ${projectId} not found, treating projectId as clientId for staff operations`);
           targetClientId = projectId;
         }
       } catch (error) {
