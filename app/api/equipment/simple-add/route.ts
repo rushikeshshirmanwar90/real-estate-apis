@@ -96,7 +96,7 @@ export const POST = async (req: NextRequest) => {
                 projectUpdate: {
                   method: 'direct',
                   previousSpent: currentSpent,
-                  newSpent: verifyProject.spent,
+                  newSpent: verifyProject?.spent,
                   equipmentCost
                 }
               },

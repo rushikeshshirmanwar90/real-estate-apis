@@ -64,8 +64,8 @@ export const GET = async (req: NextRequest) => {
     // Get schema information
     const schemaInfo = {
       modelName: Equipment.modelName,
-      requiredFields: [],
-      allFields: [],
+      requiredFields: [] as string[],
+      allFields: [] as string[],
       schemaOptions: Equipment.schema.options
     };
     

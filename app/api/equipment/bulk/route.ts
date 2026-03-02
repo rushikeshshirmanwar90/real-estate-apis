@@ -205,11 +205,10 @@ export const POST = async (req: NextRequest) => {
           const { _id, createdAt, updatedAt, ...equipmentData } = equipment;
           return {
             ...equipmentData,
-            entityId: data.targetEntityId,
-            entityType: data.targetEntityType,
+            projectSectionId: data.targetEntityId,
             projectId: data.targetProjectId || equipment.projectId,
             addedBy: data.addedBy,
-            notes: `Duplicated from ${equipment.entityType} ${equipment.entityId}${equipment.notes ? ` - ${equipment.notes}` : ''}`
+            notes: `Duplicated from ${equipment.projectSectionName || 'section'} ${equipment.projectSectionId}${equipment.notes ? ` - ${equipment.notes}` : ''}`
           };
         });
 

@@ -76,7 +76,7 @@ export const GET = async (req: NextRequest) => {
     
     const client = await Client.findById(clientId)
       .select("license licenseExpiryDate isLicenseActive name email")
-      .lean();
+      .lean() as any;
     
     if (!client) {
       return errorResponse("Client not found", 404);
