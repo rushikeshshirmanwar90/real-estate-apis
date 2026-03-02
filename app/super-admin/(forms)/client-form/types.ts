@@ -7,6 +7,7 @@ export interface ClientFormProps {
   state: string;
   address: string;
   logo: string;
+  licenseDays?: number; // New field for license days input
   createdAt?: string;
   agency?: string;
 }

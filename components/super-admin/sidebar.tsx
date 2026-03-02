@@ -11,6 +11,7 @@ import {
     UserCircle2,
     Receipt,
     Layers2,
+    Calendar,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -43,6 +44,7 @@ export function AdminSidebar() {
         { name: "Dashboard", href: "/super-admin", icon: LayoutDashboard },
         { name: "Client", href: "/super-admin/clients", icon: Receipt },
         { name: "Agency", href: "/super-admin/agency", icon: Layers2 },
+        { name: "License Management", href: "/super-admin/license-management", icon: Calendar },
     ]
 
     return (

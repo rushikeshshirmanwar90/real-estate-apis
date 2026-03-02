@@ -44,6 +44,14 @@ const clientSchema = new Schema(
       type: Number,
       required: false,
       default: 0
+    },
+    licenseExpiryDate: {
+      type: Date,
+      required: false,
+    },
+    isLicenseActive: {
+      type: Boolean,
+      default: true,
     }
   },
   {

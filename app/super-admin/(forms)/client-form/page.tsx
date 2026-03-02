@@ -6,7 +6,7 @@ import { ClientFormProps } from './types'
 import { Field } from '@/components/types/editable-card'
 import TopHeader from '@/components/TopHeader'
 import { EditableSectionCard } from '@/components/homepage/editable-cards/editable-info-card'
-import { ImagePlus, Loader2, MapPin, UserCheck } from 'lucide-react'
+import { ImagePlus, Loader2, MapPin, UserCheck, Calendar } from 'lucide-react'
 import Image from 'next/image'
 import axios from 'axios'
 import domain from '@/components/utils/domain'
@@ -25,6 +25,7 @@ const Page = () => {
         name: "",
         phoneNumber: "",
         state: "",
+        licenseDays: 0,
     });
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -42,7 +43,8 @@ const Page = () => {
                     // Convert phoneNumber to string if it's a number
                     setFormData({
                         ...data,
-                        phoneNumber: data.phoneNumber?.toString() || ""
+                        phoneNumber: data.phoneNumber?.toString() || "",
+                        licenseDays: data.license || 0
                     });
                 } catch (error) {
                     console.error("Error fetching client data:", error);
@@ -110,6 +112,7 @@ const Page = () => {
                     name: "",
                     phoneNumber: "",
                     state: "",
+                    licenseDays: 0,
                 });
             }
 
@@ -205,6 +208,15 @@ const Page = () => {
         }
     ]
 
+    const license: Field[] = [
+        {
+            key: "licenseDays",
+            label: "License Days",
+            value: formData.licenseDays?.toString() || "0",
+            type: "number"
+        }
+    ]
+
     const address: Field[] = [
         {
             key: "city",
@@ -241,6 +253,13 @@ const Page = () => {
                         title="Client Details"
                         fields={details}
                         icon={<UserCheck size={20} color="#073B3A" />}
+                        onFieldChange={handleInputChange}
+                    />
+
+                    <EditableSectionCard
+                        title="License Configuration"
+                        fields={license}
+                        icon={<Calendar size={20} color="#073B3A" />}
                         onFieldChange={handleInputChange}
                     />
 

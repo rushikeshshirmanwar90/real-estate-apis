@@ -13,7 +13,7 @@ export const handleImageUpload = async (
 
         try {
             const response = await fetch(
-                `https://api.cloudinary.com/v1_1/dlcq8i2sc/image/upload`,
+                `https://api.cloudinary.com/v1_1/do6v48jbp/image/upload`,
                 {
                     method: 'POST',
                     body: formData,

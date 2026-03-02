@@ -109,6 +109,19 @@ export const POST = async (req: NextRequest) => {
       data.password = await bcrypt.hash(data.password, SALT_ROUNDS);
     }
 
+    // Handle license days if provided
+    if (data.licenseDays && data.licenseDays > 0) {
+      const currentDate = new Date();
+      const expiryDate = new Date(currentDate.getTime() + (data.licenseDays * 24 * 60 * 60 * 1000));
+      
+      data.license = data.licenseDays;
+      data.licenseExpiryDate = expiryDate;
+      data.isLicenseActive = true;
+    }
+    
+    // Remove licenseDays from data as it's not part of the schema
+    delete data.licenseDays;
+
     // Use transaction for atomicity
     await connect();
     const session = await mongoose.startSession();
@@ -221,6 +234,19 @@ export const PUT = async (req: NextRequest) => {
 
     // Don't allow password updates through this endpoint
     delete updateData.password;
+
+    // Handle license days if provided
+    if (updateData.licenseDays && updateData.licenseDays > 0) {
+      const currentDate = new Date();
+      const expiryDate = new Date(currentDate.getTime() + (updateData.licenseDays * 24 * 60 * 60 * 1000));
+      
+      updateData.license = updateData.licenseDays;
+      updateData.licenseExpiryDate = expiryDate;
+      updateData.isLicenseActive = true;
+    }
+    
+    // Remove licenseDays from updateData as it's not part of the schema
+    delete updateData.licenseDays;
 
     // Validate email if being updated
     if (updateData.email) {
