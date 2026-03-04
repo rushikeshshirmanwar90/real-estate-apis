@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, BarChart3 } from 'lucide-react';
 import axios from "axios"
 import TopHeader from '@/components/TopHeader';
 import ProjectCard from '@/components/ProjectCard';
 import { projectProps } from './types/project-props';
 import domain from '@/components/utils/domain';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
 
 export default function Page() {
     const [projectData, setProjectData] = useState<projectProps[]>([]);
@@ -43,13 +45,34 @@ export default function Page() {
 
     return (
         <div>
-            <TopHeader
-                buttonText='Add Project'
-                tagTitle='Featured Properties'
-                title='Our Featured Properties'
-                TagIcon={Plus}
-                link="/project-form"
-            />
+            {/* Custom Header with Analytics Button */}
+            <div className='flex items-center justify-between mt-2 p-2'>
+                <div className='flex flex-col gap-2'>
+                    <div className='w-fit'>
+                        <div className='bg-[#FCC608] text-black px-3 py-1 rounded-full text-sm font-medium'>
+                            Featured Properties
+                        </div>
+                    </div>
+                    <p className='text-3xl font-semibold'>
+                        Our Featured Properties
+                    </p>
+                </div>
+                <div className='flex gap-3'>
+                    <Link href="/projects/analytics">
+                        <Button variant="outline" className='border-[#FCC608] text-[#FCC608] hover:bg-[#FCC608] hover:text-black'>
+                            <BarChart3 className="mr-2 h-4 w-4" />
+                            <span className='text-lg font-medium px-2'>Analytics</span>
+                        </Button>
+                    </Link>
+                    <Link href="/project-form">
+                        <Button variant={'ghost'} className='bg-[#FCC608] hover:bg-[#fcc708de]'>
+                            <span className='text-lg font-medium px-4'>Add Project</span>
+                            <Plus className="ml-2 h-4 w-4" />
+                        </Button>
+                    </Link>
+                </div>
+            </div>
+            
             <div className='flex flex-col items-center justify-center my-5 gap-5'>
                 {isProjectLoading ? (
                     <div className="flex flex-col items-center gap-4">

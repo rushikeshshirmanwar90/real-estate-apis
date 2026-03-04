@@ -11,7 +11,8 @@ import {
     Settings,
     Users,
     UserCircle2,
-    UserSearch
+    UserSearch,
+    BarChart3
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -45,6 +46,8 @@ export function AdminSidebar() {
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Staff", href: "/staff", icon: UserCircle2 },
         { name: "Projects", href: "/projects", icon: Building2 },
+        { name: "Project Analytics", href: "/projects/analytics", icon: BarChart3 },
+        { name: "Analysis", href: "/analysis", icon: BarChart3 },
         { name: "Reference", href: "/reference", icon: UserSearch },
     ]
 
