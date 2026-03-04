@@ -142,11 +142,12 @@ export default function SingleProjectAnalysisPage() {
         if (showLoading) setLoading(true)
         setRefreshing(true)
         
+        // Declare clientId at function level so it's accessible in catch block
+        let clientId = localStorage.getItem('clientId') || 
+                      sessionStorage.getItem('clientId') ||
+                      localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!)?.clientId : null
+        
         try {
-            let clientId = localStorage.getItem('clientId') || 
-                          sessionStorage.getItem('clientId') ||
-                          localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!)?.clientId : null
-            
             if (!clientId) {
                 const userData = localStorage.getItem('user')
                 if (userData) {

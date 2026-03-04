@@ -71,7 +71,6 @@ const PieChart: React.FC<PieChartProps> = ({
                                 d={pathData}
                                 fill={item.color || colors[index % colors.length]}
                                 className="hover:opacity-80 transition-opacity cursor-pointer"
-                                title={`${item.name}: ${formatValue(item.value)} (${percentage.toFixed(1)}%)`}
                                 stroke="white"
                                 strokeWidth="2"
                             />
