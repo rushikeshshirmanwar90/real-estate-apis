@@ -834,7 +834,7 @@ async function resolveRecipientsWithFallback(
     
     // Get recipients using the enhanced API with timeout
     const recipientsResponse = await Promise.race([
-      axios.get(`http://localhost:8080/api/notifications/recipients`, {
+      axios.get(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
         params: { 
           clientId: materialActivity.clientId,
           projectId: materialActivity.projectId 
@@ -1174,7 +1174,7 @@ export class RecipientCacheManager {
     try {
       const axios = (await import('axios')).default;
       
-      const response = await axios.delete(`http://localhost:8080/api/notifications/recipients`, {
+      const response = await axios.delete(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
         params: { clientId },
         timeout: 3000
       });
@@ -1194,7 +1194,7 @@ export class RecipientCacheManager {
     try {
       const axios = (await import('axios')).default;
       
-      const response = await axios.delete(`http://localhost:8080/api/notifications/recipients`, {
+      const response = await axios.delete(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
         timeout: 3000
       });
       
@@ -1213,7 +1213,7 @@ export class RecipientCacheManager {
     try {
       const axios = (await import('axios')).default;
       
-      const response = await axios.head(`http://localhost:8080/api/notifications/recipients`, {
+      const response = await axios.head(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
         timeout: 3000
       });
       
@@ -1231,7 +1231,7 @@ export class RecipientCacheManager {
     try {
       const axios = (await import('axios')).default;
       
-      const response = await axios.get(`http://localhost:8080/api/notifications/recipients`, {
+      const response = await axios.get(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
         params: { 
           clientId,
           projectId,

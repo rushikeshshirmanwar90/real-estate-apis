@@ -26,7 +26,7 @@ const http = require('http');
 
 // Configuration
 const config = {
-  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080',
+  baseUrl: process.env.NEXT_PUBLIC_API_URL || 'https://real-estate-optimize-apis-f9c2h2o6g.vercel.app',
   cronSecret: process.env.CRON_SECRET || 'default-secret',
   timeout: 300000, // 5 minutes
 };

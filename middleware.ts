@@ -7,6 +7,7 @@ function applyCorsHeaders(response: NextResponse, request: NextRequest) {
 
   const allowedOrigins = [
     "https://real-estate-web-pied.vercel.app",
+    "https://real-estate-optimize-apis.vercel.app",
     "http://localhost:8080",
     "http://localhost:8000",
     "http://localhost:3000",
@@ -18,7 +19,7 @@ function applyCorsHeaders(response: NextResponse, request: NextRequest) {
   } else {
     response.headers.set(
       "Access-Control-Allow-Origin",
-      "https://real-estate-web-pied.vercel.app"
+      "https://real-estate-optimize-apis-f9c2h2o6g.vercel.app"
     );
   }
 
@@ -41,9 +42,19 @@ export function middleware(request: NextRequest) {
   // ----- Allow free access to specific public pages -----
   const publicRoutes = [
     "/privacy-and-policy",
+    "/analysis",
+    "/analysis/setup",
+    "/analysis/debug",
+    "/analysis/simple",
+    "/analysis/test",
   ];
 
-  if (publicRoutes.includes(pathname)) {
+  // Check if the current path or any parent path is public
+  const isPublicRoute = publicRoutes.some(route => 
+    pathname === route || pathname.startsWith(route + "/")
+  );
+
+  if (isPublicRoute) {
     return NextResponse.next();
   }
 
