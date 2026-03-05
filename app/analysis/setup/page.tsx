@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,7 @@ export default function AnalysisSetupPage() {
     const setupClientId = () => {
         if (clientId.trim()) {
             localStorage.setItem('clientId', clientId.trim())
+            setCurrentClientId(clientId.trim())
             toast.success('Client ID saved successfully!')
             
             // Redirect to analytics after a short delay
@@ -27,11 +28,19 @@ export default function AnalysisSetupPage() {
         localStorage.removeItem('clientId')
         localStorage.removeItem('user')
         sessionStorage.clear()
+        setCurrentClientId(null)
+        setCurrentUser(null)
         toast.success('Storage cleared!')
     }
 
-    const currentClientId = localStorage.getItem('clientId')
-    const currentUser = localStorage.getItem('user')
+    const [currentClientId, setCurrentClientId] = useState<string | null>(null)
+    const [currentUser, setCurrentUser] = useState<string | null>(null)
+
+    // Use useEffect to access localStorage only on client side
+    React.useEffect(() => {
+        setCurrentClientId(localStorage.getItem('clientId'))
+        setCurrentUser(localStorage.getItem('user'))
+    }, [])
 
     return (
         <div className="container mx-auto p-6 max-w-2xl">
