@@ -8,6 +8,9 @@ const EmbeddedLaborSchema = new Schema(
       required: true,
       // Labor types from the modal categories
       enum: [
+        // Multitask Labor (versatile workers)
+        'Multitask Labor',
+        
         // Civil / Structural Works
         'Mason (Raj Mistri)',
         'Helper / Unskilled Labour',
@@ -198,6 +201,9 @@ const LaborSchema = new Schema(
       required: true,
       // Labor types from the modal categories
       enum: [
+        // Multitask Labor (versatile workers)
+        'Multitask Labor',
+        
         // Civil / Structural Works
         'Mason (Raj Mistri)',
         'Helper / Unskilled Labour',
