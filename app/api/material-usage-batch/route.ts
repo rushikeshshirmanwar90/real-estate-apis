@@ -1,6 +1,8 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
+import { MiniSection } from "@/lib/models/MiniSection";
+import { Section } from "@/lib/models/Section";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
@@ -373,6 +375,68 @@ export const POST = async (req: NextRequest | Request) => {
     console.log('========================================');
     
     try {
+      // ✅ NEW: Fetch section and mini-section names from database
+      let sectionName = '';
+      let miniSectionName = '';
+      let projectName = '';
+      
+      console.log('🔍 Fetching section and mini-section names...');
+      console.log(`  - Mini-section ID: ${miniSectionId}`);
+      console.log(`  - Section ID: ${sectionId}`);
+      console.log(`  - Project ID: ${projectId}`);
+      
+      // Get project name
+      try {
+        const projectDoc = await Projects.findById(projectId).select('name');
+        if (projectDoc) {
+          projectName = projectDoc.name;
+          console.log(`  - Project name: ${projectName}`);
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not fetch project name:', error);
+      }
+      
+      // Get mini-section name if miniSectionId is provided
+      if (miniSectionId) {
+        try {
+          const miniSectionDoc = await MiniSection.findById(miniSectionId).select('name sectionId');
+          if (miniSectionDoc) {
+            miniSectionName = miniSectionDoc.name;
+            console.log(`  - Mini-section name: ${miniSectionName}`);
+            
+            // If we don't have sectionId but mini-section has it, use it
+            if (!sectionId && miniSectionDoc.sectionId) {
+              sectionId = miniSectionDoc.sectionId;
+              console.log(`  - Section ID from mini-section: ${sectionId}`);
+            }
+          } else {
+            console.warn(`⚠️ Mini-section not found for ID: ${miniSectionId}`);
+          }
+        } catch (error) {
+          console.error('❌ Error fetching mini-section:', error);
+        }
+      }
+      
+      // Get section name if sectionId is provided
+      if (sectionId) {
+        try {
+          const sectionDoc = await Section.findById(sectionId).select('name');
+          if (sectionDoc) {
+            sectionName = sectionDoc.name;
+            console.log(`  - Section name: ${sectionName}`);
+          } else {
+            console.warn(`⚠️ Section not found for ID: ${sectionId}`);
+          }
+        } catch (error) {
+          console.error('❌ Error fetching section:', error);
+        }
+      }
+      
+      console.log('✅ Names fetched successfully:');
+      console.log(`  - Project: ${projectName || 'Not found'}`);
+      console.log(`  - Section: ${sectionName || 'Not found'}`);
+      console.log(`  - Mini-section: ${miniSectionName || 'Not found'}`);
+      
       // Prepare materials for activity logging (match MaterialActivity schema)
       const activityMaterials = usedMaterials.map(material => ({
         name: material.name,
@@ -387,9 +451,17 @@ export const POST = async (req: NextRequest | Request) => {
       console.log('📦 ACTIVITY MATERIALS PREPARED:');
       console.log(JSON.stringify(activityMaterials, null, 2));
 
-      const activityMessage = `Used ${usedMaterials.length} material${usedMaterials.length > 1 ? 's' : ''} in ${miniSectionId ? 'mini-section' : 'section'}${totalCostOfUsedMaterials > 0 ? ` (₹${totalCostOfUsedMaterials.toLocaleString('en-IN')})` : ''}`;
+      // ✅ ENHANCED: Create better activity message with actual names
+      let activityMessage = '';
+      if (miniSectionName) {
+        activityMessage = `Used ${usedMaterials.length} material${usedMaterials.length > 1 ? 's' : ''} in ${miniSectionName}${totalCostOfUsedMaterials > 0 ? ` (₹${totalCostOfUsedMaterials.toLocaleString('en-IN')})` : ''}`;
+      } else if (sectionName) {
+        activityMessage = `Used ${usedMaterials.length} material${usedMaterials.length > 1 ? 's' : ''} in ${sectionName}${totalCostOfUsedMaterials > 0 ? ` (₹${totalCostOfUsedMaterials.toLocaleString('en-IN')})` : ''}`;
+      } else {
+        activityMessage = `Used ${usedMaterials.length} material${usedMaterials.length > 1 ? 's' : ''} in mini-section${totalCostOfUsedMaterials > 0 ? ` (₹${totalCostOfUsedMaterials.toLocaleString('en-IN')})` : ''}`;
+      }
 
-      // Create activity log entry
+      // ✅ ENHANCED: Create activity log entry with proper section names
       const materialActivityPayload = {
         user: {
           userId: user.userId,
@@ -397,13 +469,16 @@ export const POST = async (req: NextRequest | Request) => {
         },
         clientId: clientId,
         projectId: projectId,
+        projectName: projectName || undefined, // Only include if we have it
+        sectionName: sectionName || undefined, // Only include if we have it
+        miniSectionName: miniSectionName || undefined, // Only include if we have it
         materials: activityMaterials,
         message: activityMessage,
         activity: "used",
         date: new Date().toISOString()
       };
 
-      console.log('📋 MATERIAL ACTIVITY PAYLOAD:');
+      console.log('📋 ENHANCED MATERIAL ACTIVITY PAYLOAD:');
       console.log(JSON.stringify(materialActivityPayload, null, 2));
 
       const materialActivity = new MaterialActivity(materialActivityPayload);
@@ -435,6 +510,9 @@ export const POST = async (req: NextRequest | Request) => {
       console.log(`  - User: ${savedActivity.user.fullName} (${savedActivity.user.userId})`);
       console.log(`  - Client ID: ${savedActivity.clientId}`);
       console.log(`  - Project ID: ${savedActivity.projectId}`);
+      console.log(`  - Project Name: ${savedActivity.projectName || 'Not set'}`);
+      console.log(`  - Section Name: ${savedActivity.sectionName || 'Not set'}`);
+      console.log(`  - Mini-Section Name: ${savedActivity.miniSectionName || 'Not set'}`);
       console.log(`  - Materials count: ${savedActivity.materials.length}`);
       console.log(`  - Activity type: ${savedActivity.activity}`);
       console.log(`  - Date: ${savedActivity.date}`);

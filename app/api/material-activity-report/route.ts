@@ -1,6 +1,8 @@
 import connect from "@/lib/db";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Projects } from "@/lib/models/Project";
+import { MiniSection } from "@/lib/models/MiniSection";
+import { Section } from "@/lib/models/Section";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: NextRequest) => {
@@ -29,7 +31,7 @@ export const GET = async (req: NextRequest) => {
             return NextResponse.json(
                 {
                     success: false,
-                    error: "clientId is required",
+                    error: 'Client ID is required'
                 },
                 { status: 400 }
             );
@@ -37,180 +39,93 @@ export const GET = async (req: NextRequest) => {
 
         // Build query
         const query: any = { clientId };
-
-        // Add project filter
-        if (projectId && projectId !== 'all') {
-            query.projectId = projectId;
-            console.log('  - Filtering by project ID:', projectId);
+        
+        // Add date range filter
+        if (startDate && endDate) {
+            query.date = {
+                $gte: startDate,
+                $lte: endDate
+            };
         }
-
+        
         // Add activity filter
         if (activity && activity !== 'all') {
-            if (activity === 'imported' || activity === 'used' || activity === 'transferred') {
+            if (['imported', 'used', 'transferred'].includes(activity)) {
                 query.activity = activity;
             } else {
                 return NextResponse.json(
                     {
                         success: false,
-                        error: "activity must be 'imported', 'used', 'transferred', or 'all'",
+                        error: 'Invalid activity filter. Must be: imported, used, transferred, or all'
                     },
                     { status: 400 }
                 );
             }
         }
-
-        // Add date range filter
-        if (startDate || endDate) {
-            query.date = {};
-            
-            if (startDate) {
-                // Parse start date and set to beginning of day in UTC
-                const start = new Date(startDate + 'T00:00:00.000Z');
-                query.date.$gte = start.toISOString();
-                console.log('  - Date filter (>=):', start.toISOString());
-            }
-            
-            if (endDate) {
-                // Parse end date and set to end of day in UTC
-                const end = new Date(endDate + 'T23:59:59.999Z');
-                query.date.$lte = end.toISOString();
-                console.log('  - Date filter (<=):', end.toISOString());
-            }
+        
+        // Add project filter
+        if (projectId) {
+            query.projectId = projectId;
         }
 
-        console.log('📋 MongoDB Query:', JSON.stringify(query, null, 2));
+        console.log('📋 Database Query:', JSON.stringify(query, null, 2));
 
-        // Fetch material activities
+        // Fetch activities
         const activities = await MaterialActivity.find(query)
-            .sort({ date: -1 }) // Latest first
+            .sort({ date: -1 })
             .lean();
 
-        console.log('✅ Found Activities:', activities.length);
+        console.log(`✅ Found Activities: ${activities.length}`);
         
-        // Debug: Show sample activity dates if any found
+        // Log sample activity dates for debugging
         if (activities.length > 0) {
             console.log('📅 Sample activity dates:');
             activities.slice(0, 3).forEach((activity, index) => {
-                console.log(`  ${index + 1}. ${activity.date} (${activity.activity})`);
+                console.log(`${index + 1}. ${activity.date} (${activity.activity})`);
             });
-        } else if (startDate || endDate) {
-            console.log('⚠️ No activities found in date range. Checking recent activities...');
-            
-            // Check if there are any activities at all for this client
-            const recentActivities = await MaterialActivity.find({ clientId })
-                .sort({ date: -1 })
-                .limit(5)
-                .lean();
-                
-            if (recentActivities.length > 0) {
-                console.log('📅 Recent activities (any date):');
-                recentActivities.forEach((activity, index) => {
-                    console.log(`  ${index + 1}. ${activity.date} (${activity.activity})`);
-                });
-            } else {
-                console.log('❌ No activities found for this client at all');
-            }
         }
 
-        // Get unique project IDs and filter out invalid ObjectIds
-        const projectIds = [...new Set(activities.map((a: any) => a.projectId))]
-            .filter((id: string) => {
-                // Check if it's a valid MongoDB ObjectId (24 character hex string)
-                if (!id || typeof id !== 'string' || id.length !== 24) {
-                    console.warn(`⚠️ Skipping invalid project ID: ${id}`);
-                    return false;
-                }
-                // Check if it's a valid hex string
-                if (!/^[0-9a-fA-F]{24}$/.test(id)) {
-                    console.warn(`⚠️ Skipping non-hex project ID: ${id}`);
-                    return false;
-                }
-                return true;
-            });
-            
+        // Get unique project IDs from activities
+        const projectIds = [...new Set(activities.map(activity => activity.projectId))].filter(id => id);
         console.log('📋 Valid Project IDs:', projectIds);
         console.log('📋 Total valid project IDs:', projectIds.length);
 
-        // Fetch project details for valid project IDs only
-        let projects: any[] = [];
-        if (projectIds.length > 0) {
-            try {
-                projects = await Projects.find({ 
-                    _id: { $in: projectIds } 
-                }).lean();
-                console.log('📋 Found Projects:', projects.length);
-            } catch (projectError: any) {
-                console.error('❌ Error fetching projects:', projectError?.message || projectError);
-                // Continue without project details if there's an error
-                projects = [];
-            }
-        } else {
-            console.log('📋 No valid project IDs found, skipping project lookup');
-        }
+        // Fetch project details for all unique project IDs
+        const projects = await Projects.find({ 
+            _id: { $in: projectIds } 
+        }).select('name').lean();
+        
+        console.log('📋 Found Projects:', projects.length);
 
-        // Create a map of project details for quick lookup
+        // Create a map for quick project lookup
         const projectMap = new Map();
-        projects.forEach((project: any) => {
-            projectMap.set(project._id.toString(), {
-                name: project.name || project.title || 'Unknown Project',
-                sections: project.sections || []
-            });
+        projects.forEach(project => {
+            projectMap.set((project._id as any).toString(), project);
         });
 
-        // Log activity breakdown with corrected cost calculation
-        const importedCount = activities.filter((a: any) => a.activity === 'imported').length;
-        const usedCount = activities.filter((a: any) => a.activity === 'used').length;
-        const totalMaterials = activities.reduce((sum: number, activity: any) => 
-            sum + (activity.materials?.length || 0), 0
-        );
-        
-        // ✅ FIXED: Only include IMPORTED materials in total cost calculation
-        // Business Logic: We only spend money when importing materials, not when using them
-        const totalCost = activities.reduce((sum: number, activity: any) => {
-            try {
-                // ✅ CRITICAL: Only count imported materials, skip used materials
-                if (activity.activity !== 'imported') {
-                    console.log(`  Activity ${activity._id}: ${activity.activity} - SKIPPED (not imported)`);
-                    return sum; // Skip used materials - they don't add to total cost
-                }
-                
-                const activityCost = (activity.materials || []).reduce((matSum: number, material: any) => {
-                    try {
-                        // ✅ NEW: Use perUnitCost and totalCost if available
-                        if (material.totalCost !== undefined) {
-                            const materialTotalCost = Number(material.totalCost) || 0;
-                            console.log(`    Material: ${material.name}, Total Cost: ₹${materialTotalCost} (from totalCost field)`);
-                            return matSum + materialTotalCost;
-                        } else if (material.perUnitCost !== undefined) {
-                            const perUnitCost = Number(material.perUnitCost) || 0;
-                            const quantity = Number(material.qnt) || 0;
-                            const materialTotalCost = perUnitCost * quantity;
-                            console.log(`    Material: ${material.name}, Qty: ${quantity}, Per-Unit: ₹${perUnitCost}, Total: ₹${materialTotalCost} (calculated from perUnitCost)`);
-                            return matSum + materialTotalCost;
-                        } else if (material.cost !== undefined) {
-                            // ✅ LEGACY: For imported materials, cost field contains PER-UNIT cost
-                            const costValue = Number(material.cost) || 0;
-                            const quantity = Number(material.qnt) || 0;
-                            const materialTotalCost = costValue * quantity;
-                            console.log(`    Material: ${material.name}, Qty: ${quantity}, Per-Unit: ₹${costValue}, Total: ₹${materialTotalCost} (legacy imported)`);
-                            return matSum + materialTotalCost;
-                        }
-                        
-                        console.log(`    Material: ${material.name} - No cost information available`);
-                        return matSum;
-                    } catch (materialError: any) {
-                        console.error(`    Error processing material ${material.name}:`, materialError?.message || materialError);
-                        return matSum; // Skip this material but continue
-                    }
-                }, 0);
-                
-                console.log(`  Activity ${activity._id}: ${activity.activity} - ${activity.materials?.length || 0} materials - Total: ₹${activityCost} (IMPORTED - COUNTED)`);
-                return sum + activityCost;
-            } catch (activityError: any) {
-                console.error(`  Error processing activity ${activity._id}:`, activityError?.message || activityError);
-                return sum; // Skip this activity but continue
+        // Calculate summary statistics
+        let importedCount = 0;
+        let usedCount = 0;
+        let totalMaterials = 0;
+        let totalCost = 0;
+
+        activities.forEach(activity => {
+            if (activity.activity === 'imported') {
+                importedCount++;
+                // Only count imported materials in total cost
+                activity.materials?.forEach((material: any) => {
+                    totalMaterials++;
+                    const materialCost = Number(material.totalCost) || 0;
+                    totalCost += materialCost;
+                    console.log(`Material: ${material.name}, Total Cost: ₹${materialCost} (from totalCost field)`);
+                });
+                console.log(`Activity ${activity._id}: ${activity.activity} - ${activity.materials?.length || 0} materials - Total: ₹${activity.materials?.reduce((sum: number, m: any) => sum + (Number(m.totalCost) || 0), 0)} (IMPORTED - COUNTED)`);
+            } else if (activity.activity === 'used') {
+                usedCount++;
+                console.log(`Activity ${activity._id}: ${activity.activity} - SKIPPED (not imported)`);
+                // Don't count used materials in total cost - they're already counted when imported
             }
-        }, 0);
+        });
 
         console.log('📊 Activity Breakdown:');
         console.log(`  - Imported: ${importedCount}`);
@@ -218,8 +133,8 @@ export const GET = async (req: NextRequest) => {
         console.log(`  - Total Materials: ${totalMaterials}`);
         console.log(`  - Total Cost: ₹${totalCost.toLocaleString('en-IN')}`);
 
-        // Process activities to ensure proper data structure
-        const processedActivities = activities.map((activity: any) => {
+        // Process activities to match the expected format
+        const processedActivities = await Promise.all(activities.map(async (activity: any) => {
             // Get project details (handle invalid project IDs gracefully)
             let projectDetails = { name: 'Unknown Project', sections: [] };
             
@@ -235,26 +150,101 @@ export const GET = async (req: NextRequest) => {
                 console.warn(`⚠️ Invalid project ID in activity: ${activity.projectId}`);
             }
             
-            // Extract section/mini-section info from message if available
+            // Extract section/mini-section info from database fields first (for new activities)
             let sectionName = activity.sectionName || '';
             let miniSectionName = activity.miniSectionName || '';
             
-            // Try to parse section info from message
-            if (activity.message && !sectionName && !miniSectionName) {
-                // Message format: "Used X materials in mini-section (₹Y)" or "Used in ProjectName - SectionName"
-                const messageStr = activity.message;
-                
-                // Check for "mini-section" pattern
-                if (messageStr.includes('mini-section')) {
-                    miniSectionName = 'Mini-section'; // Generic since we don't have specific name
-                }
-                
-                // Check for "Used in ProjectName - SectionName" pattern
-                const sectionMatch = messageStr.match(/Used in .+ - (.+)$/);
-                if (sectionMatch) {
-                    sectionName = sectionMatch[1];
+            console.log(`🔍 Activity ${activity._id} initial names:`);
+            console.log(`  - Section Name: "${sectionName}"`);
+            console.log(`  - Mini-Section Name: "${miniSectionName}"`);
+            console.log(`  - Has miniSectionId: ${!!activity.miniSectionId}`);
+            console.log(`  - Has sectionId: ${!!activity.sectionId}`);
+            
+            // ✅ NEW: If we don't have miniSectionName but have miniSectionId, fetch from database
+            if ((!miniSectionName || miniSectionName === 'Mini-section') && activity.miniSectionId) {
+                console.log(`  - 🔍 Fetching mini-section name from database for ID: ${activity.miniSectionId}`);
+                try {
+                    const miniSectionDoc = await MiniSection.findById(activity.miniSectionId).select('name');
+                    if (miniSectionDoc && miniSectionDoc.name) {
+                        miniSectionName = miniSectionDoc.name;
+                        console.log(`  - ✅ Found mini-section name from DB: "${miniSectionName}"`);
+                    } else {
+                        console.log(`  - ❌ Mini-section not found in DB for ID: ${activity.miniSectionId}`);
+                    }
+                } catch (error) {
+                    console.error(`  - ❌ Error fetching mini-section from DB:`, error);
                 }
             }
+            
+            // ✅ NEW: If we don't have sectionName but have sectionId, fetch from database
+            if ((!sectionName || sectionName === 'Section') && activity.sectionId) {
+                console.log(`  - 🔍 Fetching section name from database for ID: ${activity.sectionId}`);
+                try {
+                    const sectionDoc = await Section.findById(activity.sectionId).select('name');
+                    if (sectionDoc && sectionDoc.name) {
+                        sectionName = sectionDoc.name;
+                        console.log(`  - ✅ Found section name from DB: "${sectionName}"`);
+                    } else {
+                        console.log(`  - ❌ Section not found in DB for ID: ${activity.sectionId}`);
+                    }
+                } catch (error) {
+                    console.error(`  - ❌ Error fetching section from DB:`, error);
+                }
+            }
+            
+            // ✅ ONLY parse message if we still don't have meaningful names (for old activities)
+            if (activity.message && (!miniSectionName || miniSectionName === 'Mini-section') && activity.activity === 'used') {
+                const messageStr = activity.message.trim();
+                console.log(`  - 🔍 Parsing message as fallback: "${messageStr}"`);
+                
+                // Look for actual mini-section names in the message (not generic terms)
+                const specificPatterns = [
+                    // Specific slab patterns
+                    /(?:used|in)\s+(?:\d+\s+)?(?:materials?\s+)?(?:in\s+)?(first[-\s]?slab|second[-\s]?slab|third[-\s]?slab|fourth[-\s]?slab|ground[-\s]?slab|top[-\s]?slab)/i,
+                    // Floor patterns
+                    /(?:used|in)\s+(?:\d+\s+)?(?:materials?\s+)?(?:in\s+)?(ground[-\s]?floor|first[-\s]?floor|second[-\s]?floor|third[-\s]?floor|basement[-\s]?floor)/i,
+                    // Construction areas
+                    /(?:used|in)\s+(?:\d+\s+)?(?:materials?\s+)?(?:in\s+)?(foundation|basement|terrace|roof|balcony|staircase|entrance|parking)/i,
+                    // Room patterns
+                    /(?:used|in)\s+(?:\d+\s+)?(?:materials?\s+)?(?:in\s+)?(living[-\s]?room|dining[-\s]?room|bed[-\s]?room|bath[-\s]?room|kitchen|hall|lobby)/i
+                ];
+                
+                let foundSpecificName = false;
+                for (const pattern of specificPatterns) {
+                    const match = messageStr.match(pattern);
+                    if (match && match[1]) {
+                        const candidate = match[1].trim();
+                        console.log(`    - Specific pattern match: "${candidate}"`);
+                        
+                        // Clean up the name
+                        miniSectionName = candidate.replace(/[-\s]+/g, '-').toLowerCase();
+                        miniSectionName = miniSectionName.charAt(0).toUpperCase() + miniSectionName.slice(1);
+                        foundSpecificName = true;
+                        console.log(`    - ✅ Using specific name: "${miniSectionName}"`);
+                        break;
+                    }
+                }
+                
+                if (!foundSpecificName) {
+                    console.log(`    - ❌ No specific mini-section name found in message`);
+                    miniSectionName = ''; // Reset so we don't use generic terms
+                }
+            }
+            
+            // ✅ FINAL: Only provide fallback if this is a USED activity and we have no meaningful name
+            if (activity.activity === 'used' && (!miniSectionName || miniSectionName === 'Mini-section' || miniSectionName === '')) {
+                console.log(`  - 🔍 No meaningful mini-section name found, using descriptive fallback`);
+                miniSectionName = 'Construction Area';
+                console.log(`  - ✅ Final fallback: "${miniSectionName}"`);
+            }
+            
+            console.log(`  - 🎯 Final names for activity ${activity._id}:`);
+            console.log(`    - Section: "${sectionName || 'None'}"`);
+            console.log(`    - Mini-Section: "${miniSectionName || 'None'}"`);
+            console.log(`    - Activity: ${activity.activity}`);
+            console.log(`    - Message: "${activity.message || 'No message'}"`);
+            console.log('');
+            
             
             return {
                 _id: activity._id,
@@ -278,29 +268,60 @@ export const GET = async (req: NextRequest) => {
                         qnt: quantity,
                     };
                     
-                    // Add cost fields based on what's available
-                    if (material.perUnitCost !== undefined) {
-                        materialData.perUnitCost = Number(material.perUnitCost) || 0;
+                    // Handle cost structure (new vs legacy)
+                    if (material.perUnitCost !== undefined && material.totalCost !== undefined) {
+                        // New structure: both fields available
+                        materialData.perUnitCost = Number(material.perUnitCost);
+                        materialData.totalCost = Number(material.totalCost);
+                    } else if (material.perUnitCost !== undefined) {
+                        // Only perUnitCost available: calculate totalCost
+                        materialData.perUnitCost = Number(material.perUnitCost);
+                        materialData.totalCost = materialData.perUnitCost * quantity;
+                    } else if (material.totalCost !== undefined) {
+                        // Only totalCost available: calculate perUnitCost
+                        materialData.totalCost = Number(material.totalCost);
+                        materialData.perUnitCost = quantity > 0 ? materialData.totalCost / quantity : 0;
+                    } else if (material.cost !== undefined) {
+                        // ✅ LEGACY: Handle old cost field
+                        const costValue = Number(material.cost) || 0;
+                        
+                        if (activity.activity === 'imported') {
+                            // For IMPORTED: cost field contains per-unit cost
+                            materialData.perUnitCost = costValue;
+                            materialData.totalCost = costValue * quantity;
+                        } else {
+                            // For USED: cost field contains total cost
+                            materialData.totalCost = costValue;
+                            materialData.perUnitCost = quantity > 0 ? costValue / quantity : 0;
+                        }
+                    } else {
+                        // No cost information available
+                        materialData.perUnitCost = 0;
+                        materialData.totalCost = 0;
                     }
                     
-                    if (material.totalCost !== undefined) {
-                        materialData.totalCost = Number(material.totalCost) || 0;
-                    }
-                    
-                    // ✅ LEGACY: Keep cost field for backward compatibility
-                    if (material.cost !== undefined) {
-                        materialData.cost = Number(material.cost) || 0;
-                    }
+                    // Ensure costs are valid numbers
+                    materialData.perUnitCost = Number(materialData.perUnitCost) || 0;
+                    materialData.totalCost = Number(materialData.totalCost) || 0;
                     
                     return materialData;
                 }),
-                message: activity.message || '',
+                message: activity.message,
                 activity: activity.activity,
+                transferDetails: activity.transferDetails,
                 date: activity.date || activity.createdAt || new Date().toISOString()
             };
-        });
+        }));
 
         console.log('========================================\n');
+        
+        console.log(`✅ API Response prepared with ${processedActivities.length} activities`);
+        console.log('📊 USED Activities with mini-section info:');
+        processedActivities.forEach((activity, index) => {
+            if (activity.activity === 'used') {
+                console.log(`  ${index + 1}. USED - Mini-section: "${activity.miniSectionName || 'Not found'}" - Message: "${activity.message || 'No message'}"`);
+            }
+        });
 
         return NextResponse.json(
             {
@@ -317,25 +338,26 @@ export const GET = async (req: NextRequest) => {
                             start: startDate,
                             end: endDate
                         },
-                        activityFilter: activity || 'all',
-                        projectFilter: projectId || 'all'
+                        filters: {
+                            activity,
+                            projectId
+                        }
                     }
-                },
-                message: `Found ${activities.length} material activities`
+                }
             },
             { status: 200 }
         );
 
-    } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        console.error("❌ Error in material-activity-report API:", msg);
+    } catch (error: any) {
+        console.error("❌ Material Activity Report API Error:", error);
+        console.error("Error message:", error.message);
         console.error("Stack trace:", error);
         
         return NextResponse.json(
             {
                 success: false,
-                error: "Failed to fetch material activity report",
-                details: msg
+                error: error.message || 'Internal server error',
+                details: process.env.NODE_ENV === 'development' ? error.stack : undefined
             },
             { status: 500 }
         );
