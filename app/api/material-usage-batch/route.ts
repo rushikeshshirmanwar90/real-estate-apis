@@ -46,7 +46,8 @@ export const POST = async (req: NextRequest | Request) => {
   try {
     await connect();
     const body = await req.json();
-    const { projectId, materialUsages, miniSectionId, sectionId, clientId, user } = body;
+    const { projectId, materialUsages, miniSectionId, clientId, user } = body;
+    let { sectionId } = body;
 
     console.log('\n========================================');
     console.log('📝 BATCH MATERIAL USAGE API - REQUEST RECEIVED');
