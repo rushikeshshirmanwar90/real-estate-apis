@@ -15,6 +15,7 @@ export const GET = async (req: NextRequest) => {
     const id = searchParams.get("id");
     const clientId = searchParams.get("clientId");
     const staffId = searchParams.get("staffId"); // Add staffId parameter for filtering
+    const excludeMaterials = searchParams.get("excludeMaterials") === "true"; // ✅ NEW: Option to exclude materials
 
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
@@ -41,6 +42,12 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("Client validation failed", 404);
     }
 
+    // ✅ NEW: Build projection to exclude materials if requested
+    const projection = excludeMaterials ? {
+      MaterialAvailable: 0,
+      MaterialUsed: 0
+    } : {};
+
     if (id) {
       if (!isValidObjectId(id)) {
         return errorResponse("Invalid project ID format", 400);
@@ -57,7 +64,7 @@ export const GET = async (req: NextRequest) => {
         projectQuery["assignedStaff._id"] = staffId;
       }
 
-      const project = await Projects.findOne(projectQuery).lean();
+      const project = await Projects.findOne(projectQuery, projection).lean();
 
       if (!project) {
         return errorResponse("Project not found or not assigned to this staff member", 404);
@@ -75,15 +82,15 @@ export const GET = async (req: NextRequest) => {
       console.log(`🔍 Filtering projects for staff ID: ${staffId}`);
     }
 
-    const projects = await Projects.find(projectsQuery)
+    const projects = await Projects.find(projectsQuery, projection)
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}`);
+    console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
 
     return successResponse(
       projects,
-      `Retrieved ${projects.length} project(s) successfully`
+      `Retrieved ${projects.length} project(s) successfully${excludeMaterials ? ' (optimized - materials excluded)' : ''}`
     );
   } catch (error: unknown) {
     logger.error("Error fetching projects", error);

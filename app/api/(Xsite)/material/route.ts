@@ -60,6 +60,9 @@ export const GET = async (req: NextRequest | Request) => {
     const clientId     = searchParams.get("clientId");
     const sortBy       = searchParams.get("sortBy")             || "createdAt";
     const sortOrder    = searchParams.get("sortOrder")          || "desc";
+    const sectionId    = searchParams.get("sectionId");         // ✅ NEW: Section filtering
+    const page         = parseInt(searchParams.get("page") || "1");
+    const limit        = Math.min(parseInt(searchParams.get("limit") || "20"), 100); // ✅ NEW: Pagination with max 100
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -76,11 +79,19 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
+    // Validate pagination parameters
+    if (page < 1 || limit < 1) {
+      return NextResponse.json(
+        { message: "Page and limit must be positive integers" },
+        { status: 400 }
+      );
+    }
+
     // Add basic client validation (optional - you might want to implement checkValidClient here too)
     // await checkValidClient(req);
 
-    // ── 1. Try Redis cache ──────────────────────────────────────────────────
-    const cacheKey = `materials:${projectId}:${clientId}:${sortBy}:${sortOrder}`;
+    // ── 1. Try Redis cache with pagination ──────────────────────────────────────────────────
+    const cacheKey = `materials:${projectId}:${clientId}:${sortBy}:${sortOrder}:${sectionId || 'all'}:${page}:${limit}`;
 
     const cached = await safeRedisGet(cacheKey);
     if (cached) {
@@ -91,6 +102,7 @@ export const GET = async (req: NextRequest | Request) => {
 
     await connect();
 
+    // ✅ NEW: Enhanced pipeline with pagination and section filtering
     const pipeline: any[] = [
       {
         $match: {
@@ -103,23 +115,38 @@ export const GET = async (req: NextRequest | Request) => {
           path: "$MaterialAvailable",
           preserveNullAndEmptyArrays: false,
         },
-      },
-      {
-        $addFields: {
-          "MaterialAvailable.sortField": {
-            $cond: {
-              if:   { $eq: [sortBy, "createdAt"] },
-              then: { $ifNull: ["$MaterialAvailable.createdAt", new Date()] },
-              else: {
-                $cond: {
-                  if:   { $eq: [sortBy, "name"] },
-                  then: "$MaterialAvailable.name",
-                  else: {
-                    $cond: {
-                      if:   { $eq: [sortBy, "totalCost"] },
-                      then: "$MaterialAvailable.totalCost",
-                      else: "$MaterialAvailable.qnt",
-                    },
+      }
+    ];
+
+    // ✅ NEW: Add section filtering if provided
+    if (sectionId && sectionId !== 'all-sections') {
+      pipeline.push({
+        $match: {
+          $or: [
+            { "MaterialAvailable.sectionId": sectionId },
+            { "MaterialAvailable.sectionId": { $exists: false } }, // Include global materials
+            { "MaterialAvailable.sectionId": null }
+          ]
+        }
+      } as any);
+    }
+
+    // Add sorting field
+    pipeline.push({
+      $addFields: {
+        "MaterialAvailable.sortField": {
+          $cond: {
+            if:   { $eq: [sortBy, "createdAt"] },
+            then: { $ifNull: ["$MaterialAvailable.createdAt", new Date()] },
+            else: {
+              $cond: {
+                if:   { $eq: [sortBy, "name"] },
+                then: "$MaterialAvailable.name",
+                else: {
+                  $cond: {
+                    if:   { $eq: [sortBy, "totalCost"] },
+                    then: "$MaterialAvailable.totalCost",
+                    else: "$MaterialAvailable.qnt",
                   },
                 },
               },
@@ -127,17 +154,64 @@ export const GET = async (req: NextRequest | Request) => {
           },
         },
       },
-      { $sort: { "MaterialAvailable.sortField": sortOrder === "asc" ? 1 : -1 } },
+    });
+
+    // Sort materials
+    pipeline.push({ $sort: { "MaterialAvailable.sortField": sortOrder === "asc" ? 1 : -1 } });
+
+    // ✅ NEW: Add pagination
+    const skip = (page - 1) * limit;
+    if (skip > 0) {
+      pipeline.push({ $skip: skip });
+    }
+    pipeline.push({ $limit: limit });
+
+    // Group results
+    pipeline.push({
+      $group: {
+        _id:        "$_id",
+        materials:  { $push: "$MaterialAvailable" },
+      },
+    });
+
+    // ✅ NEW: Get total count for pagination (separate query for accurate count)
+    const countPipeline = [
       {
-        $group: {
-          _id:        "$_id",
-          totalCount: { $sum: 1 },
-          materials:  { $push: "$MaterialAvailable" },
+        $match: {
+          _id:      new Types.ObjectId(projectId),
+          clientId: new Types.ObjectId(clientId),
         },
       },
+      {
+        $unwind: {
+          path: "$MaterialAvailable",
+          preserveNullAndEmptyArrays: false,
+        },
+      }
     ];
 
-    const result = await Projects.aggregate(pipeline);
+    // Add same section filtering for count
+    if (sectionId && sectionId !== 'all-sections') {
+      countPipeline.push({
+        $match: {
+          $or: [
+            { "MaterialAvailable.sectionId": sectionId },
+            { "MaterialAvailable.sectionId": { $exists: false } },
+            { "MaterialAvailable.sectionId": null }
+          ]
+        }
+      } as any);
+    }
+
+    countPipeline.push({ $count: "total" } as any);
+
+    const [result, countResult] = await Promise.all([
+      Projects.aggregate(pipeline),
+      Projects.aggregate(countPipeline)
+    ]);
+
+    const totalItems = countResult.length > 0 ? countResult[0].total : 0;
+    const totalPages = Math.ceil(totalItems / limit);
 
     if (!result || result.length === 0) {
       const projectExists = await Projects.findOne({
@@ -151,9 +225,16 @@ export const GET = async (req: NextRequest | Request) => {
 
       const emptyResponse = {
         success:           true,
-        message:           "No materials found for this project",
+        message:           sectionId ? "No materials found for the specified section" : "No materials found for this project",
         MaterialAvailable: [],
-        totalCount: 0,
+        pagination: {
+          currentPage: page,
+          totalPages: 0,
+          totalItems: 0,
+          itemsPerPage: limit,
+          hasNextPage: false,
+          hasPrevPage: false
+        }
       };
 
       // Cache the empty result too so repeated requests don't hammer DB
@@ -171,7 +252,14 @@ export const GET = async (req: NextRequest | Request) => {
       success:           true,
       message:           "Material available fetched successfully",
       MaterialAvailable: data.materials || [],
-      totalCount: data.totalCount,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      }
     };
 
     // ── 3. Store result in Redis ─────────────────────────────────────────────

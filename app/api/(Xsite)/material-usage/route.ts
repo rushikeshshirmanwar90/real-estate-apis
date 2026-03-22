@@ -18,7 +18,7 @@ type MaterialSubdoc = {
   miniSectionId?: string;
 };
 
-// GET: Fetch MaterialUsed for a project with filtering
+// GET: Fetch MaterialUsed for a project with filtering and pagination
 export const GET = async (req: NextRequest | Request) => {
   try {
     const { searchParams } = new URL(req.url);
@@ -28,6 +28,8 @@ export const GET = async (req: NextRequest | Request) => {
     const miniSectionId = searchParams.get("miniSectionId");
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") || "desc";
+    const page = parseInt(searchParams.get("page") || "1");
+    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100); // ✅ NEW: Pagination with max 100
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -37,6 +39,14 @@ export const GET = async (req: NextRequest | Request) => {
         {
           status: 400,
         }
+      );
+    }
+
+    // Validate pagination parameters
+    if (page < 1 || limit < 1) {
+      return NextResponse.json(
+        { message: "Page and limit must be positive integers" },
+        { status: 400 }
       );
     }
 
@@ -51,6 +61,8 @@ export const GET = async (req: NextRequest | Request) => {
     console.log('Mini Section ID:', miniSectionId);
     console.log('Sort By:', sortBy);
     console.log('Sort Order:', sortOrder);
+    console.log('Page:', page);
+    console.log('Limit:', limit);
     console.log('========================================\n');
 
     // Build match conditions for filtering
@@ -130,16 +142,50 @@ export const GET = async (req: NextRequest | Request) => {
       }
     });
 
-    // Group back to get all results
+    // ✅ NEW: Add pagination
+    const skip = (page - 1) * limit;
+    if (skip > 0) {
+      pipeline.push({ $skip: skip });
+    }
+    pipeline.push({ $limit: limit });
+
+    // Group back to get results
     pipeline.push({
       $group: {
         _id: "$_id",
-        totalCount: { $sum: 1 },
         materials: { $push: "$MaterialUsed" }
       }
     });
 
-    const result = await Projects.aggregate(pipeline);
+    // ✅ NEW: Get total count for pagination (separate query for accurate count)
+    const countPipeline = [
+      {
+        $match: matchConditions
+      },
+      {
+        $unwind: {
+          path: "$MaterialUsed",
+          preserveNullAndEmptyArrays: false
+        }
+      }
+    ];
+
+    // Apply same filters for count
+    if (Object.keys(materialUsedFilters).length > 0) {
+      countPipeline.push({
+        $match: materialUsedFilters
+      });
+    }
+
+    countPipeline.push({ $count: "total" } as any);
+
+    const [result, countResult] = await Promise.all([
+      Projects.aggregate(pipeline),
+      Projects.aggregate(countPipeline)
+    ]);
+
+    const totalItems = countResult.length > 0 ? countResult[0].total : 0;
+    const totalPages = Math.ceil(totalItems / limit);
 
     if (!result || result.length === 0) {
       // Project exists but has no used materials (or no materials matching filters)
@@ -167,7 +213,14 @@ export const GET = async (req: NextRequest | Request) => {
             ? "No used materials found for the specified filters" 
             : "No used materials found for this project",
           MaterialUsed: [],
-          totalCount: 0,
+          pagination: {
+            currentPage: page,
+            totalPages: 0,
+            totalItems: 0,
+            itemsPerPage: limit,
+            hasNextPage: false,
+            hasPrevPage: false
+          },
           filters: {
             sectionId: sectionId || null,
             miniSectionId: miniSectionId || null
@@ -182,8 +235,10 @@ export const GET = async (req: NextRequest | Request) => {
     const data = result[0];
 
     console.log('✅ MATERIAL USAGE RESULT:');
-    console.log('  - Total used materials:', data.totalCount);
+    console.log('  - Total used materials:', totalItems);
     console.log('  - Materials returned:', data.materials.length);
+    console.log('  - Current page:', page);
+    console.log('  - Total pages:', totalPages);
     console.log('  - Applied filters:', { sectionId, miniSectionId });
 
     return NextResponse.json(
@@ -191,7 +246,14 @@ export const GET = async (req: NextRequest | Request) => {
         success: true,
         message: "Material used fetched successfully",
         MaterialUsed: data.materials || [],
-        totalCount: data.totalCount,
+        pagination: {
+          currentPage: page,
+          totalPages,
+          totalItems,
+          itemsPerPage: limit,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        },
         filters: {
           sectionId: sectionId || null,
           miniSectionId: miniSectionId || null
