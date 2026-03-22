@@ -5,7 +5,7 @@ import { Client } from "@/lib/models/super-admin/Client";
 import { NextRequest } from "next/server";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { isValidEmail } from "@/lib/utils/validation";
+import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 
 const SALT_ROUNDS = 10;

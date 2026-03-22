@@ -4,7 +4,6 @@ const PushTokenSchema = new Schema({
   userId: {
     type: String,
     required: true,
-    index: true,
   },
   
   userType: {
@@ -19,7 +18,6 @@ const PushTokenSchema = new Schema({
     type: Schema.Types.ObjectId,
     ref: 'Client',
     required: false, // Optional for super-admins
-    index: true,
   },
   
   token: {

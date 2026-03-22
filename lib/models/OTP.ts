@@ -13,7 +13,6 @@ const OTPSchema: Schema = new Schema({
     type: String,
     required: true,
     lowercase: true,
-    index: true
   },
   hash: {
     type: String,

@@ -28,7 +28,6 @@ const UserCustomerDetailsSchema = new Schema<IUserCustomerDetails>({
     type: Schema.Types.ObjectId,
     ref: 'User',
     required: true,
-    index: true
   },
   property: [{
     id: {
