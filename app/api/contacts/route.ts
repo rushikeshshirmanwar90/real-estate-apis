@@ -5,10 +5,6 @@ import { Customer } from "@/lib/models/users/Customer";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
 import { logger } from "@/lib/utils/logger";
 
 export const GET = async (req: NextRequest) => {
@@ -39,22 +35,13 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("No valid query parameters provided", 400);
     }
 
-    // Pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const [contacts, total] = await Promise.all([
-      Contacts.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .lean(),
-      Contacts.countDocuments(filter),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Get all contacts without pagination
+    const contacts = await Contacts.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { contacts, meta },
+      contacts,
       `Retrieved ${contacts.length} contact(s) successfully`
     );
   } catch (error: unknown) {

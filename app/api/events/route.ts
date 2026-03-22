@@ -3,10 +3,6 @@ import { Event } from "@/lib/models/Events";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
 import { logger } from "@/lib/utils/logger";
 
 // GET all events or a specific one by ID
@@ -28,18 +24,13 @@ export const GET = async (req: NextRequest) => {
       return successResponse(event, "Event retrieved successfully");
     }
 
-    // Pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const [events, total] = await Promise.all([
-      Event.find().skip(skip).limit(limit).sort({ createdAt: -1 }).lean(),
-      Event.countDocuments(),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Get all events without pagination
+    const events = await Event.find()
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { events, meta },
+      events,
       `Retrieved ${events.length} event(s) successfully`
     );
   } catch (error: unknown) {

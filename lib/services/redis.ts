@@ -43,26 +43,13 @@ if (process.env.NODE_ENV !== "production") {
 
 // ─── Key helpers ──────────────────────────────────────────────────────────────
 
-/** Paginated GET cache: materials:available:<projectId>:<clientId>:<page>:<limit>:<sortBy>:<sortOrder> */
-export const materialPageKey = (
-  projectId: string,
-  clientId: string,
-  page: number,
-  limit: number,
-  sortBy: string,
-  sortOrder: string
-) => `materials:available:${projectId}:${clientId}:${page}:${limit}:${sortBy}:${sortOrder}`;
-
 /** Project-level cache: just MaterialAvailable + MaterialUsed fields */
 export const projectMaterialFieldsKey = (projectId: string) =>
   `project:materialFields:${projectId}`;
 
-/** Pattern to wipe ALL paginated pages for a project (used on write) */
-export const materialPagePattern = (projectId: string) =>
-  `materials:available:${projectId}:*`;
+
 
 // ─── TTL constants (seconds) ─────────────────────────────────────────────────
-export const TTL_MATERIAL_PAGE = 60;        // 1 min for paginated list
 export const TTL_PROJECT_FIELDS = 120;      // 2 min for MaterialAvailable+MaterialUsed
 
 // ─── Safe Redis operations ──────────────────────────────────────────────────

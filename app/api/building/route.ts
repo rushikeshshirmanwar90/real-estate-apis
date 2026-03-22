@@ -5,10 +5,6 @@ import mongoose from "mongoose";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 
@@ -84,22 +80,13 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("Invalid project ID format", 400);
     }
 
-    // Pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const [buildings, total] = await Promise.all([
-      Building.find(filter)
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .lean(),
-      Building.countDocuments(filter),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Get all buildings without pagination
+    const buildings = await Building.find(filter)
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { buildings, meta },
+      buildings,
       `Retrieved ${buildings.length} building(s) successfully`
     );
   } catch (error: unknown) {

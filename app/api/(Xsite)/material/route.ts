@@ -4,10 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
 import redis, {
-  materialPageKey,
-  materialPagePattern,
   projectMaterialFieldsKey,
-  TTL_MATERIAL_PAGE,
   TTL_PROJECT_FIELDS,
   safeRedisGet,
   safeRedisSet,
@@ -37,7 +34,7 @@ type MaterialSubdoc = {
 };
 
 // ─── Cache invalidation helper ────────────────────────────────────────────────
-// Deletes all paginated keys for a project AND the project-fields cache.
+// Deletes the project-fields cache.
 async function invalidateProjectMaterialCache(projectId: string): Promise<void> {
   try {
     // Check if Redis is available before attempting operations
@@ -46,56 +43,27 @@ async function invalidateProjectMaterialCache(projectId: string): Promise<void> 
       return;
     }
 
-    // Scan + delete paginated page keys (pattern-based)
-    const pattern = materialPagePattern(projectId);
-    let cursor = "0";
-    const keysToDelete: string[] = [];
-    
-    do {
-      const [nextCursor, keys] = await redis.scan(cursor, "MATCH", pattern, "COUNT", 100);
-      cursor = nextCursor;
-      keysToDelete.push(...keys);
-    } while (cursor !== "0");
-
-    // Delete all keys in batches to avoid blocking Redis
-    if (keysToDelete.length > 0) {
-      const batchSize = 50;
-      for (let i = 0; i < keysToDelete.length; i += batchSize) {
-        const batch = keysToDelete.slice(i, i + batchSize);
-        await redis.del(...batch);
-      }
-      console.log(`🗑️  Deleted ${keysToDelete.length} cache keys for project ${projectId}`);
-    }
-
     // Delete project-fields cache
     await redis.del(projectMaterialFieldsKey(projectId));
+    console.log(`🗑️  Deleted cache for project ${projectId}`);
   } catch (err) {
     // Cache invalidation failure must never break the API response
     console.error("⚠️  Redis invalidation error:", err);
   }
 }
 
-// ─── GET: Fetch MaterialAvailable with pagination ────────────────────────────
+// ─── GET: Fetch MaterialAvailable ────────────────────────────
 export const GET = async (req: NextRequest | Request) => {
   try {
     const { searchParams } = new URL(req.url);
     const projectId    = searchParams.get("projectId");
     const clientId     = searchParams.get("clientId");
-    const page         = parseInt(searchParams.get("page")      || "1");
-    const limit        = parseInt(searchParams.get("limit")     || "10");
     const sortBy       = searchParams.get("sortBy")             || "createdAt";
     const sortOrder    = searchParams.get("sortOrder")          || "desc";
 
     if (!projectId || !clientId) {
       return NextResponse.json(
         { message: "Project ID and Client ID are required" },
-        { status: 400 }
-      );
-    }
-
-    if (page < 1 || limit < 1 || limit > 1000) {
-      return NextResponse.json(
-        { message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-1000" },
         { status: 400 }
       );
     }
@@ -112,7 +80,7 @@ export const GET = async (req: NextRequest | Request) => {
     // await checkValidClient(req);
 
     // ── 1. Try Redis cache ──────────────────────────────────────────────────
-    const cacheKey = materialPageKey(projectId, clientId, page, limit, sortBy, sortOrder);
+    const cacheKey = `materials:${projectId}:${clientId}:${sortBy}:${sortOrder}`;
 
     const cached = await safeRedisGet(cacheKey);
     if (cached) {
@@ -121,7 +89,6 @@ export const GET = async (req: NextRequest | Request) => {
     }
     console.log("❌ CACHE MISS:", cacheKey);
 
- 
     await connect();
 
     const pipeline: any[] = [
@@ -168,18 +135,6 @@ export const GET = async (req: NextRequest | Request) => {
           materials:  { $push: "$MaterialAvailable" },
         },
       },
-      {
-        $project: {
-          totalCount:  1,
-          totalPages:  { $ceil: { $divide: ["$totalCount", limit] } },
-          currentPage: { $literal: page },
-          hasNextPage: { $gt: [{ $ceil: { $divide: ["$totalCount", limit] } }, page] },
-          hasPrevPage: { $gt: [page, 1] },
-          materials: {
-            $slice: ["$materials", (page - 1) * limit, limit],
-          },
-        },
-      },
     ];
 
     const result = await Projects.aggregate(pipeline);
@@ -198,18 +153,11 @@ export const GET = async (req: NextRequest | Request) => {
         success:           true,
         message:           "No materials found for this project",
         MaterialAvailable: [],
-        pagination: {
-          totalCount:   0,
-          totalPages:   0,
-          currentPage:  page,
-          hasNextPage:  false,
-          hasPrevPage:  false,
-          itemsPerPage: limit,
-        },
+        totalCount: 0,
       };
 
       // Cache the empty result too so repeated requests don't hammer DB
-      const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(emptyResponse), TTL_MATERIAL_PAGE);
+      const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(emptyResponse), TTL_PROJECT_FIELDS);
       if (cacheSet) {
         console.log("💾 Cached empty result:", cacheKey);
       }
@@ -217,26 +165,19 @@ export const GET = async (req: NextRequest | Request) => {
       return NextResponse.json(emptyResponse, { status: 200 });
     }
 
-    const paginationData = result[0];
+    const data = result[0];
 
     const responsePayload = {
       success:           true,
       message:           "Material available fetched successfully",
-      MaterialAvailable: paginationData.materials || [],
-      pagination: {
-        totalCount:   paginationData.totalCount,
-        totalPages:   paginationData.totalPages,
-        currentPage:  paginationData.currentPage,
-        hasNextPage:  paginationData.hasNextPage,
-        hasPrevPage:  paginationData.hasPrevPage,
-        itemsPerPage: limit,
-      },
+      MaterialAvailable: data.materials || [],
+      totalCount: data.totalCount,
     };
 
     // ── 3. Store result in Redis ─────────────────────────────────────────────
-    const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(responsePayload), TTL_MATERIAL_PAGE);
+    const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(responsePayload), TTL_PROJECT_FIELDS);
     if (cacheSet) {
-      console.log("💾 Cached:", cacheKey, `(TTL ${TTL_MATERIAL_PAGE}s)`);
+      console.log("💾 Cached:", cacheKey, `(TTL ${TTL_PROJECT_FIELDS}s)`);
     }
 
     return NextResponse.json(responsePayload, { status: 200 });

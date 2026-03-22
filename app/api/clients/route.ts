@@ -5,11 +5,7 @@ import { Client } from "@/lib/models/super-admin/Client";
 import { NextRequest } from "next/server";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { isValidObjectId, isValidEmail } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
+import { isValidEmail } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 
 const SALT_ROUNDS = 10;
@@ -51,23 +47,14 @@ export const GET = async (req: NextRequest) => {
       return successResponse(clientData, "Client retrieved successfully");
     }
 
-    // Get all clients with pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const [clients, total] = await Promise.all([
-      Client.find()
-        .select("-password")
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .lean(),
-      Client.countDocuments(),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Get all clients without pagination
+    const clients = await Client.find()
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { clients, meta },
+      clients,
       `Retrieved ${clients.length} client(s) successfully`
     );
   } catch (error: unknown) {

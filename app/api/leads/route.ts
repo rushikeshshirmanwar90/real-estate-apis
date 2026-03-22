@@ -3,10 +3,6 @@ import { NextRequest } from "next/server";
 import connect from "@/lib/db";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 
@@ -49,22 +45,13 @@ export const GET = async (req: NextRequest) => {
       return successResponse(lead, "Lead retrieved successfully");
     }
 
-    // Pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
-    const [leads, total] = await Promise.all([
-      Lead.find({ clientId })
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .lean(),
-      Lead.countDocuments({ clientId }),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Get all leads without pagination
+    const leads = await Lead.find({ clientId })
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { leads, meta },
+      leads,
       `Retrieved ${leads.length} lead(s) successfully`
     );
   } catch (error: unknown) {

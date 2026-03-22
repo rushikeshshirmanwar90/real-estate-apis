@@ -18,7 +18,7 @@ type MaterialSubdoc = {
   miniSectionId?: string;
 };
 
-// GET: Fetch MaterialUsed for a project with pagination and filtering
+// GET: Fetch MaterialUsed for a project with filtering
 export const GET = async (req: NextRequest | Request) => {
   try {
     const { searchParams } = new URL(req.url);
@@ -26,8 +26,6 @@ export const GET = async (req: NextRequest | Request) => {
     const clientId = searchParams.get("clientId");
     const sectionId = searchParams.get("sectionId");
     const miniSectionId = searchParams.get("miniSectionId");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "10");
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") || "desc";
 
@@ -42,29 +40,15 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
-    // Validate pagination parameters
-    if (page < 1 || limit < 1 || limit > 100) {
-      return NextResponse.json(
-        {
-          message: "Invalid pagination parameters. Page must be >= 1, limit must be 1-100",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
     await connect();
 
     console.log('\n========================================');
-    console.log('MATERIAL USAGE API - PAGINATION REQUEST');
+    console.log('MATERIAL USAGE API - REQUEST');
     console.log('========================================');
     console.log('Project ID:', projectId);
     console.log('Client ID:', clientId);
     console.log('Section ID:', sectionId);
     console.log('Mini Section ID:', miniSectionId);
-    console.log('Page:', page);
-    console.log('Limit:', limit);
     console.log('Sort By:', sortBy);
     console.log('Sort Order:', sortOrder);
     console.log('========================================\n');
@@ -75,7 +59,7 @@ export const GET = async (req: NextRequest | Request) => {
       clientId: new Types.ObjectId(clientId),
     };
 
-    // Use MongoDB aggregation for efficient pagination with filtering
+    // Use MongoDB aggregation for efficient filtering
     const pipeline: any[] = [
       // Match the project
       {
@@ -146,30 +130,12 @@ export const GET = async (req: NextRequest | Request) => {
       }
     });
 
-    // Group back to get total count and paginated results
+    // Group back to get all results
     pipeline.push({
       $group: {
         _id: "$_id",
         totalCount: { $sum: 1 },
         materials: { $push: "$MaterialUsed" }
-      }
-    });
-
-    // Add pagination info
-    pipeline.push({
-      $project: {
-        totalCount: 1,
-        totalPages: { $ceil: { $divide: ["$totalCount", limit] } },
-        currentPage: { $literal: page },
-        hasNextPage: { $gt: [{ $ceil: { $divide: ["$totalCount", limit] } }, page] },
-        hasPrevPage: { $gt: [page, 1] },
-        materials: {
-          $slice: [
-            "$materials",
-            (page - 1) * limit,
-            limit
-          ]
-        }
       }
     });
 
@@ -193,7 +159,7 @@ export const GET = async (req: NextRequest | Request) => {
         );
       }
 
-      // Return empty pagination result
+      // Return empty result
       return NextResponse.json(
         {
           success: true,
@@ -201,14 +167,7 @@ export const GET = async (req: NextRequest | Request) => {
             ? "No used materials found for the specified filters" 
             : "No used materials found for this project",
           MaterialUsed: [],
-          pagination: {
-            totalCount: 0,
-            totalPages: 0,
-            currentPage: page,
-            hasNextPage: false,
-            hasPrevPage: false,
-            itemsPerPage: limit
-          },
+          totalCount: 0,
           filters: {
             sectionId: sectionId || null,
             miniSectionId: miniSectionId || null
@@ -220,30 +179,19 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
-    const paginationData = result[0];
+    const data = result[0];
 
-    console.log('✅ MATERIAL USAGE PAGINATION RESULT:');
-    console.log('  - Total used materials:', paginationData.totalCount);
-    console.log('  - Total pages:', paginationData.totalPages);
-    console.log('  - Current page:', paginationData.currentPage);
-    console.log('  - Materials in this page:', paginationData.materials.length);
-    console.log('  - Has next page:', paginationData.hasNextPage);
-    console.log('  - Has previous page:', paginationData.hasPrevPage);
+    console.log('✅ MATERIAL USAGE RESULT:');
+    console.log('  - Total used materials:', data.totalCount);
+    console.log('  - Materials returned:', data.materials.length);
     console.log('  - Applied filters:', { sectionId, miniSectionId });
 
     return NextResponse.json(
       {
         success: true,
         message: "Material used fetched successfully",
-        MaterialUsed: paginationData.materials || [],
-        pagination: {
-          totalCount: paginationData.totalCount,
-          totalPages: paginationData.totalPages,
-          currentPage: paginationData.currentPage,
-          hasNextPage: paginationData.hasNextPage,
-          hasPrevPage: paginationData.hasPrevPage,
-          itemsPerPage: limit
-        },
+        MaterialUsed: data.materials || [],
+        totalCount: data.totalCount,
         filters: {
           sectionId: sectionId || null,
           miniSectionId: miniSectionId || null

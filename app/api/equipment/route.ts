@@ -5,10 +5,7 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
+
 
 // GET - Retrieve equipment entries
 export const GET = async (req: NextRequest) => {
@@ -66,23 +63,13 @@ export const GET = async (req: NextRequest) => {
       query.costType = costType;
     }
 
-    // Get pagination parameters
-    const { page, limit, skip } = getPaginationParams(req);
-
-    // Execute query with pagination
-    const [equipment, total] = await Promise.all([
-      Equipment.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Equipment.countDocuments(query),
-    ]);
-
-    const meta = createPaginationMeta(page, limit, total);
+    // Execute query without pagination
+    const equipment = await Equipment.find(query)
+      .sort({ createdAt: -1 })
+      .lean();
 
     return successResponse(
-      { equipment, meta },
+      equipment,
       `Retrieved ${equipment.length} equipment entries successfully`
     );
   } catch (error: unknown) {

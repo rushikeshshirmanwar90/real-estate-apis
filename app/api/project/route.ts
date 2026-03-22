@@ -4,10 +4,7 @@ import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import {
-  getPaginationParams,
-  createPaginationMeta,
-} from "@/lib/utils/pagination";
+
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
@@ -69,9 +66,6 @@ export const GET = async (req: NextRequest) => {
       return successResponse(project, "Project retrieved successfully");
     }
 
-    // Pagination
-    const { page, limit, skip } = getPaginationParams(req);
-
     // Build query for multiple projects
     const projectsQuery: any = { clientId: new Types.ObjectId(clientId) };
 
@@ -81,21 +75,14 @@ export const GET = async (req: NextRequest) => {
       console.log(`🔍 Filtering projects for staff ID: ${staffId}`);
     }
 
-    const [projects, total] = await Promise.all([
-      Projects.find(projectsQuery)
-        .skip(skip)
-        .limit(limit)
-        .sort({ createdAt: -1 })
-        .lean(),
-      Projects.countDocuments(projectsQuery),
-    ]);
+    const projects = await Projects.find(projectsQuery)
+      .sort({ createdAt: -1 })
+      .lean();
 
     console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}`);
 
-    const meta = createPaginationMeta(page, limit, total);
-
     return successResponse(
-      { projects, meta },
+      projects,
       `Retrieved ${projects.length} project(s) successfully`
     );
   } catch (error: unknown) {
