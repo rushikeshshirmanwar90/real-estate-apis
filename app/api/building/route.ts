@@ -7,6 +7,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -18,6 +19,13 @@ export const GET = async (req: NextRequest) => {
     if (id) {
       if (!isValidObjectId(id)) {
         return errorResponse("Invalid building ID format", 400);
+      }
+
+      // Check cache
+      let cacheValue = await client.get(`building:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Building retrieved successfully (cached)");
       }
 
       let building = await Building.findById(id).lean();
@@ -60,6 +68,9 @@ export const GET = async (req: NextRequest) => {
               building = await newBuilding.save();
               logger.info(`Created missing building record for ${id}`);
               
+              // Cache the building
+              await client.set(`building:${id}`, JSON.stringify(building));
+              
               return successResponse(building, "Building created and retrieved successfully");
             }
           }
@@ -69,6 +80,9 @@ export const GET = async (req: NextRequest) => {
         
         return errorResponse("Building not found", 404);
       }
+
+      // Cache the building
+      await client.set(`building:${id}`, JSON.stringify(building));
 
       return successResponse(building, "Building retrieved successfully");
     }
@@ -80,10 +94,21 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("Invalid project ID format", 400);
     }
 
+    // Check cache for buildings list
+    const cacheKey = projectId ? `buildings:project:${projectId}` : `buildings:all`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} building(s) successfully (cached)`);
+    }
+
     // Get all buildings without pagination
     const buildings = await Building.find(filter)
       .sort({ createdAt: -1 })
       .lean();
+
+    // Cache the buildings list
+    await client.set(cacheKey, JSON.stringify(buildings));
 
     return successResponse(
       buildings,
@@ -185,6 +210,14 @@ export const POST = async (req: NextRequest) => {
 
       logger.info(`Building created successfully: ${savedBuilding._id} with ${savedBuilding.floors?.length || 0} floors`);
 
+      // Invalidate cache
+      await client.del(`buildings:all`);
+      await client.del(`buildings:project:${savedBuilding.projectId}`);
+      const projectKeys = await client.keys(`project:*`);
+      if (projectKeys.length > 0) {
+        await client.del(...projectKeys);
+      }
+
       return successResponse(
         savedBuilding,
         "Building created successfully",
@@ -256,6 +289,17 @@ export const DELETE = async (req: NextRequest) => {
 
       await session.commitTransaction();
 
+      // Invalidate cache
+      await client.del(`building:${sectionId}`);
+      await client.del(`buildings:all`);
+      if (updatedProject.projectId) {
+        await client.del(`buildings:project:${updatedProject.projectId}`);
+      }
+      const projectKeys = await client.keys(`project:*`);
+      if (projectKeys.length > 0) {
+        await client.del(...projectKeys);
+      }
+
       return successResponse(deletedBuilding, "Building deleted successfully");
     } catch (error) {
       await session.abortTransaction();
@@ -321,6 +365,13 @@ export const PUT = async (req: NextRequest) => {
     const responseMessage = body.floors && Array.isArray(body.floors) 
       ? `Building updated successfully with ${body.floors.length} floors created`
       : "Building updated successfully";
+
+    // Invalidate cache
+    await client.del(`building:${id}`);
+    await client.del(`buildings:all`);
+    if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
+      await client.del(`buildings:project:${updatedBuilding.projectId}`);
+    }
 
     return successResponse(updatedBuilding, responseMessage);
   } catch (error: unknown) {
@@ -403,6 +454,13 @@ export const PATCH = async (req: NextRequest) => {
       }
 
       await session.commitTransaction();
+
+      // Invalidate cache
+      await client.del(`building:${id}`);
+      await client.del(`buildings:all`);
+      if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
+        await client.del(`buildings:project:${updatedBuilding.projectId}`);
+      }
 
       return successResponse(
         updatedBuilding,

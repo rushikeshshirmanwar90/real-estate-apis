@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { client } from "@/lib/redis";
 
 
 // GET - Retrieve equipment entries
@@ -26,10 +27,20 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid equipment ID format", 400);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`equipment:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Equipment retrieved successfully (cached)");
+      }
+
       const equipment = await Equipment.findById(id).lean();
       if (!equipment) {
         return errorResponse("Equipment not found", 404);
       }
+
+      // Cache the equipment
+      await client.set(`equipment:${id}`, JSON.stringify(equipment));
 
       return successResponse(equipment, "Equipment retrieved successfully");
     }
@@ -63,10 +74,21 @@ export const GET = async (req: NextRequest) => {
       query.costType = costType;
     }
 
+    // Build cache key based on query
+    const cacheKey = `equipment:query:${JSON.stringify(query)}`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} equipment entries successfully (cached)`);
+    }
+
     // Execute query without pagination
     const equipment = await Equipment.find(query)
       .sort({ createdAt: -1 })
       .lean();
+
+    // Cache the equipment list
+    await client.set(cacheKey, JSON.stringify(equipment));
 
     return successResponse(
       equipment,
@@ -182,6 +204,18 @@ export const POST = async (req: NextRequest) => {
       
       logger.info(`Updated project ${data.projectId} spent amount from ${currentSpent} to ${updatedProject.spent} (added ${equipmentCost}) for equipment ${equipment._id}`);
       
+      // Invalidate cache after successful creation
+      const keys = await client.keys(`equipment:query:*`);
+      if (keys.length > 0) {
+        await client.del(...keys);
+      }
+      // Invalidate project cache
+      await client.del(`project:${data.projectId}`);
+      const projectKeys = await client.keys(`projects:*`);
+      if (projectKeys.length > 0) {
+        await client.del(...projectKeys);
+      }
+      
       return successResponse(
         {
           equipment,
@@ -199,12 +233,30 @@ export const POST = async (req: NextRequest) => {
       console.error('❌ Failed to update project spent amount:', projectUpdateError);
       logger.error("Failed to update project spent amount", projectUpdateError);
       
+      // Invalidate cache even if project update fails
+      const keys = await client.keys(`equipment:query:*`);
+      if (keys.length > 0) {
+        await client.del(...keys);
+      }
+      
       return successResponse(
         equipment,
         "Equipment entry created successfully, but failed to update project spent amount",
         201
       );
     }
+
+    // Invalidate cache after successful creation
+    const keys = await client.keys(`equipment:query:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+
+    return successResponse(
+      equipment,
+      "Equipment entry created successfully",
+      201
+    );
   } catch (error: unknown) {
     logger.error("Error creating equipment entry", error);
 
@@ -285,6 +337,19 @@ export const PUT = async (req: NextRequest) => {
       }
     }
 
+    // Invalidate cache
+    await client.del(`equipment:${id}`);
+    const keys = await client.keys(`equipment:query:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+    // Invalidate project cache
+    await client.del(`project:${originalEquipment.projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
+    }
+
     return successResponse(updatedEquipment, "Equipment updated successfully and project spent amount adjusted");
   } catch (error: unknown) {
     logger.error("Error updating equipment", error);
@@ -345,6 +410,19 @@ export const DELETE = async (req: NextRequest) => {
     } catch (projectUpdateError) {
       logger.error("Failed to update project spent amount", projectUpdateError);
       // Don't fail the equipment deletion if project update fails
+    }
+
+    // Invalidate cache
+    await client.del(`equipment:${id}`);
+    const keys = await client.keys(`equipment:query:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+    // Invalidate project cache
+    await client.del(`project:${projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
     }
 
     return successResponse(deletedEquipment, "Equipment deleted successfully and project spent amount updated");

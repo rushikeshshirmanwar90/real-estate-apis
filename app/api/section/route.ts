@@ -2,6 +2,7 @@ import connect from "@/lib/db";
 import { Section } from "@/lib/models/Section";
 import { NextRequest, NextResponse } from "next/server";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { client } from "@/lib/redis"
 
 export const GET = async (req: NextRequest | Request) => {
   const { searchParams } = new URL(req.url);
@@ -9,11 +10,43 @@ export const GET = async (req: NextRequest | Request) => {
 
   try {
     await connect();
-
     let data;
+    if (!id) {
+      let cachvalue = await client.get(`section`);
+      if (cachvalue) {
+        cachvalue = JSON.parse(cachvalue);
+        return NextResponse.json(
+          {
+            cachvalue
+          },
+          { status: 200 }
+        );
+      }
 
-    if (!id) data = await Section.find();
-    else data = await Section.findById(id);
+      data = await Section.find();
+
+      await client.set(`section`, JSON.stringify(data));
+      await client.expire("section", 86400);
+
+    }
+    else {
+
+      let cachvalue = await client.get(`section:${id}`);
+
+      if (cachvalue) {
+        cachvalue = JSON.parse(cachvalue);
+        return NextResponse.json(
+          {
+            cachvalue
+          },
+          { status: 200 }
+        );
+      }
+
+      data = await Section.findById(id);
+      await client.set(`section:${id}`, JSON.stringify(data));
+      await client.expire(`section:${id}`, 86400)
+    }
 
     if (!data) {
       return NextResponse.json(
@@ -51,7 +84,7 @@ export const POST = async (req: NextRequest | Request) => {
     const data = await req.json();
 
     await connect();
-    
+
     // ✅ FIX: Actually save the section to database
     const newSection = new Section(data);
     await newSection.save();
@@ -66,6 +99,9 @@ export const POST = async (req: NextRequest | Request) => {
         }
       );
     }
+
+    // ✅ Invalidate cache after creating new section
+    await client.del(`section`);
 
     // ✅ Log activity for section creation (consistent format)
     const userInfo = extractUserInfo(req, data);
@@ -134,6 +170,10 @@ export const DELETE = async (req: NextRequest | Request) => {
       );
     }
 
+    // ✅ Invalidate cache after deleting section
+    await client.del(`section`);
+    await client.del(`section:${sectionId}`);
+
     return NextResponse.json({
       message: "section deleted Successfully !",
       deletedData: deletedSection,
@@ -174,6 +214,10 @@ export const PUT = async (req: NextRequest | Request) => {
         }
       );
     }
+
+    // ✅ Invalidate cache after updating section
+    await client.del(`section`);
+    await client.del(`section:${sectionId}`);
 
     return NextResponse.json(
       {

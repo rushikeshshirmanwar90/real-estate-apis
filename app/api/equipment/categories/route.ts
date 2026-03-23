@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { successResponse } from "@/lib/utils/api-response";
+import { client } from "@/lib/redis";
 
 // Equipment categories and types data
 const equipmentCategories = {
@@ -390,16 +391,26 @@ export const GET = async (req: NextRequest) => {
     const category = searchParams.get("category");
     const format = searchParams.get("format") || "detailed";
 
+    // Build cache key
+    const cacheKey = `equipment:categories:${category || 'all'}:${format}`;
+    
+    // Check cache first
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, "Equipment categories retrieved successfully (cached)");
+    }
+
+    let responseData;
+
     if (category) {
       // Return specific category
       const categoryData = equipmentCategories[category as keyof typeof equipmentCategories];
       if (!categoryData) {
         return successResponse(null, "Category not found", 404);
       }
-      return successResponse(categoryData, `${category} equipment retrieved successfully`);
-    }
-
-    if (format === "simple") {
+      responseData = categoryData;
+    } else if (format === "simple") {
       // Return simplified list for dropdowns
       const simpleCategories = Object.keys(equipmentCategories).map(categoryName => ({
         name: categoryName,
@@ -410,11 +421,16 @@ export const GET = async (req: NextRequest) => {
         }))
       }));
       
-      return successResponse(simpleCategories, "Equipment categories retrieved successfully");
+      responseData = simpleCategories;
+    } else {
+      // Return all categories with full details
+      responseData = equipmentCategories;
     }
 
-    // Return all categories with full details
-    return successResponse(equipmentCategories, "All equipment categories retrieved successfully");
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(responseData));
+
+    return successResponse(responseData, category ? `${category} equipment retrieved successfully` : "Equipment categories retrieved successfully");
   } catch (error: unknown) {
     return successResponse(equipmentCategories, "Equipment categories retrieved successfully");
   }

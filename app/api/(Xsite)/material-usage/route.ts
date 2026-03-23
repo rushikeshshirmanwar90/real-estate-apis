@@ -2,6 +2,7 @@ import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
+import { client } from "@/lib/redis";
 
 // Local types matching MaterialSchema
 type Specs = Record<string, unknown>;
@@ -64,6 +65,15 @@ export const GET = async (req: NextRequest | Request) => {
     console.log('Page:', page);
     console.log('Limit:', limit);
     console.log('========================================\n');
+
+    // Check cache first
+    const cacheKey = `material-usage:${projectId}:${clientId}:${sectionId || 'all'}:${miniSectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return NextResponse.json(cacheValue, { status: 200 });
+    }
 
     // Build match conditions for filtering
     const matchConditions: any = {
@@ -241,28 +251,28 @@ export const GET = async (req: NextRequest | Request) => {
     console.log('  - Total pages:', totalPages);
     console.log('  - Applied filters:', { sectionId, miniSectionId });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Material used fetched successfully",
-        MaterialUsed: data.materials || [],
-        pagination: {
-          currentPage: page,
-          totalPages,
-          totalItems,
-          itemsPerPage: limit,
-          hasNextPage: page < totalPages,
-          hasPrevPage: page > 1
-        },
-        filters: {
-          sectionId: sectionId || null,
-          miniSectionId: miniSectionId || null
-        }
+    const responsePayload = {
+      success: true,
+      message: "Material used fetched successfully",
+      MaterialUsed: data.materials || [],
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalItems,
+        itemsPerPage: limit,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
       },
-      {
-        status: 200,
+      filters: {
+        sectionId: sectionId || null,
+        miniSectionId: miniSectionId || null
       }
-    );
+    };
+
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(responsePayload));
+
+    return NextResponse.json(responsePayload, { status: 200 });
   } catch (error: unknown) {
     console.error('❌ Material Usage API Error:', error);
     return NextResponse.json(
@@ -483,6 +493,13 @@ export const POST = async (req: NextRequest | Request) => {
     );
 
     // FIXED: Return both MaterialAvailable AND MaterialUsed
+    
+    // Invalidate cache for this project
+    const keys = await client.keys(`material-usage:${projectId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+
     return NextResponse.json(
       {
         success: true,

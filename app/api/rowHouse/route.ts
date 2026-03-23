@@ -2,6 +2,7 @@ import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { NextRequest, NextResponse } from "next/server";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest | Request) => {
   const { searchParams } = new URL(req.url);
@@ -11,9 +12,31 @@ export const GET = async (req: NextRequest | Request) => {
     let data;
 
     if (id) {
+      // Check cache for single rowHouse
+      let cacheValue = await client.get(`rowHouse:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return NextResponse.json({ data: cacheValue }, { status: 200 });
+      }
+
       data = await RowHouse.findById(id);
+
+      // Cache the rowHouse
+      if (data) {
+        await client.set(`rowHouse:${id}`, JSON.stringify(data));
+      }
     } else {
+      // Check cache for all rowHouses
+      let cacheValue = await client.get(`rowHouse:all`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return NextResponse.json({ data: cacheValue }, { status: 200 });
+      }
+
       data = await RowHouse.find();
+
+      // Cache all rowHouses
+      await client.set(`rowHouse:all`, JSON.stringify(data));
     }
 
     if (!data) {
@@ -83,6 +106,13 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
+    // Invalidate cache
+    await client.del(`rowHouse:all`);
+    const projectKeys = await client.keys(`project:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
+    }
+
     return NextResponse.json({ newData }, { status: 200 });
   } catch (error) {
     console.log("something went wrong : ", error);
@@ -133,6 +163,14 @@ export const DELETE = async (req: NextRequest | Request) => {
       );
     }
 
+    // Invalidate cache
+    await client.del(`rowHouse:${sectionId}`);
+    await client.del(`rowHouse:all`);
+    const projectKeys = await client.keys(`project:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
+    }
+
     return NextResponse.json(
       {
         deletedRowHouse,
@@ -177,6 +215,10 @@ export const PUT = async (req: NextRequest | Request) => {
         }
       );
     }
+
+    // Invalidate cache
+    await client.del(`rowHouse:${rowHouseId}`);
+    await client.del(`rowHouse:all`);
 
     return NextResponse.json(
       {

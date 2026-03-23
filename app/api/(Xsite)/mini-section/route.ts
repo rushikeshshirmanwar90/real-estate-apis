@@ -3,6 +3,7 @@ import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { MiniSection as Section } from "@/lib/models/Xsite/mini-section";
 import { NextRequest } from "next/server";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { client } from "@/lib/redis";
 
 interface projectDetailProps {
   projectName: string;
@@ -29,6 +30,19 @@ export const GET = async (req: NextRequest | Request) => {
     await connect();
 
     if (sectionId) {
+      // Check cache first
+      const cacheKey = `miniSection:bySectionId:${sectionId}`;
+      let cacheValue = await client.get(cacheKey);
+      
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(
+          cacheValue,
+          "Section data fetched successfully (cached)",
+          200
+        );
+      }
+
       const sectionData = await Section.find({
         "mainSectionDetails.sectionId": sectionId,
       });
@@ -37,17 +51,36 @@ export const GET = async (req: NextRequest | Request) => {
         return errorResponse("data not found", 204);
       }
 
+      // Cache the result
+      await client.set(cacheKey, JSON.stringify(sectionData));
+
       return successResponse(
         sectionData,
         "Section data fetched successfully",
         200
       );
     } else if (id) {
+      // Check cache first
+      const cacheKey = `miniSection:${id}`;
+      let cacheValue = await client.get(cacheKey);
+      
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(
+          cacheValue,
+          "Section data fetched successfully (cached)",
+          200
+        );
+      }
+
       const sectionDataById = await Section.findById(id);
 
       if (!sectionDataById) {
         return errorResponse("data not found", 204);
       }
+
+      // Cache the result
+      await client.set(cacheKey, JSON.stringify(sectionDataById));
 
       return successResponse(
         sectionDataById,
@@ -102,6 +135,11 @@ export const POST = async (req: NextRequest | Request) => {
         });
       }
 
+      // Invalidate cache after creating new mini-section
+      if (data.mainSectionDetails?.sectionId) {
+        await client.del(`miniSection:bySectionId:${data.mainSectionDetails.sectionId}`);
+      }
+
       return successResponse(newSection, "section created successfully", 201);
     }
   } catch (error: unknown) {
@@ -153,6 +191,12 @@ export const PUT = async (req: NextRequest | Request) => {
       return errorResponse(`section not found with id: ${id}`, 404);
     }
 
+    // Invalidate cache after updating mini-section
+    await client.del(`miniSection:${id}`);
+    if (updatedData.mainSectionDetails?.sectionId) {
+      await client.del(`miniSection:bySectionId:${updatedData.mainSectionDetails.sectionId}`);
+    }
+
     return successResponse(updatedData, "data updated successfully", 200);
   } catch (error: unknown) {
     if (error instanceof Error) {
@@ -177,6 +221,12 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     if (!removedData) {
       return errorResponse(`data not found with this id : ${id}`, 404);
+    }
+
+    // Invalidate cache after deleting mini-section
+    await client.del(`miniSection:${id}`);
+    if (removedData.mainSectionDetails?.sectionId) {
+      await client.del(`miniSection:bySectionId:${removedData.mainSectionDetails.sectionId}`);
     }
 
     return successResponse(removedData, "data deleted successfully", 200);

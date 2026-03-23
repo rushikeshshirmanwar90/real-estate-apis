@@ -7,6 +7,7 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { client } from "@/lib/redis";
 
 const SALT_ROUNDS = 10;
 
@@ -23,10 +24,20 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid client ID format", 400);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`client:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Client retrieved successfully (cached)");
+      }
+
       const clientData = await Client.findById(id).select("-password").lean();
       if (!clientData) {
         return errorResponse("Client not found", 404);
       }
+
+      // Cache the client
+      await client.set(`client:${id}`, JSON.stringify(clientData));
 
       return successResponse(clientData, "Client retrieved successfully");
     }
@@ -37,6 +48,13 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid email format", 400);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`client:email:${email}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Client retrieved successfully (cached)");
+      }
+
       const clientData = await Client.findOne({ email })
         .select("-password")
         .lean();
@@ -44,7 +62,17 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client not found with this email", 404);
       }
 
+      // Cache the client
+      await client.set(`client:email:${email}`, JSON.stringify(clientData));
+
       return successResponse(clientData, "Client retrieved successfully");
+    }
+
+    // Check cache for all clients
+    let cacheValue = await client.get(`clients:all`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} client(s) successfully (cached)`);
     }
 
     // Get all clients without pagination
@@ -52,6 +80,9 @@ export const GET = async (req: NextRequest) => {
       .select("-password")
       .sort({ createdAt: -1 })
       .lean();
+
+    // Cache all clients
+    await client.set(`clients:all`, JSON.stringify(clients));
 
     return successResponse(
       clients,
@@ -127,6 +158,9 @@ export const POST = async (req: NextRequest) => {
       // Return client without password
       const { password: _, ...clientWithoutPassword } = addClient.toObject();
 
+      // Invalidate cache
+      await client.del(`clients:all`);
+
       return successResponse(
         clientWithoutPassword,
         "Client created successfully",
@@ -190,6 +224,13 @@ export const DELETE = async (req: NextRequest) => {
       }
 
       await session.commitTransaction();
+
+      // Invalidate cache
+      await client.del(`clients:all`);
+      if (deletedClient && !Array.isArray(deletedClient) && deletedClient._id) {
+        await client.del(`client:${deletedClient._id}`);
+      }
+      await client.del(`client:email:${email}`);
 
       return successResponse(deletedClient, "Client deleted successfully");
     } catch (error) {
@@ -281,6 +322,16 @@ export const PUT = async (req: NextRequest) => {
         { email: oldEmail },
         { email: updateData.email }
       );
+    }
+
+    // Invalidate cache
+    await client.del(`clients:all`);
+    await client.del(`client:${id}`);
+    if (oldEmail) {
+      await client.del(`client:email:${oldEmail}`);
+    }
+    if (updateData.email) {
+      await client.del(`client:email:${updateData.email}`);
     }
 
     return successResponse(updatedClient, "Client updated successfully");

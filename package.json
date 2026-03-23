@@ -48,7 +48,7 @@
     "embla-carousel-autoplay": "^8.5.2",
     "embla-carousel-react": "^8.5.2",
     "expo-server-sdk": "^4.0.0",
-    "ioredis": "^5.10.0",
+    "ioredis": "^5.10.1",
     "jimp": "^1.6.0",
     "js-cookie": "^3.0.5",
     "jsonwebtoken": "^9.0.2",

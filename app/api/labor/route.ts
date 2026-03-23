@@ -5,6 +5,7 @@ import { Building } from "@/lib/models/Building";
 import { OtherSection } from "@/lib/models/OtherSection";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { Labor } from "@/lib/models/Xsite/Labor";
+import { client } from "@/lib/redis";
 
 // POST - Add labor entries
 export async function POST(request: NextRequest) {
@@ -259,6 +260,25 @@ export async function POST(request: NextRequest) {
     console.log('📊 Updated entity:', entityName);
     console.log('💰 Total cost added to spent:', totalLaborCost);
 
+    // Invalidate cache for this entity and project
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+    // Also invalidate project-level cache if not a project entity
+    if (entityType !== 'project' && projectId) {
+      const projectKeys = await client.keys(`labor:project:${projectId}:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+      }
+    }
+    // Invalidate project cache
+    await client.del(`project:${projectId}`);
+    const projectCacheKeys = await client.keys(`projects:*`);
+    if (projectCacheKeys.length > 0) {
+      await Promise.all(projectCacheKeys.map(key => client.del(key)));
+    }
+
     return NextResponse.json({
       success: true,
       message: `Labor entries added successfully to ${entityName}`,
@@ -323,9 +343,19 @@ export async function GET(request: NextRequest) {
     const entityId = searchParams.get('entityId');
     const projectId = searchParams.get('projectId');
     const miniSectionId = searchParams.get('miniSectionId');
+    const sectionId = searchParams.get('sectionId');
     const category = searchParams.get('category');
     const status = searchParams.get('status') || 'active';
     const useStandalone = searchParams.get('useStandalone') === 'true';
+
+    // Check cache first
+    const cacheKey = `labor:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status}:${useStandalone}`;
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return NextResponse.json(cacheValue, { status: 200 });
+    }
 
     // Build query
     let query: any = {};
@@ -431,7 +461,7 @@ export async function GET(request: NextRequest) {
       return acc;
     }, {});
 
-    return NextResponse.json({
+    const responseData = {
       success: true,
       data: {
         entity: entity ? {
@@ -461,7 +491,12 @@ export async function GET(request: NextRequest) {
           useStandalone
         }
       }
-    });
+    };
+
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(responseData));
+
+    return NextResponse.json(responseData);
 
   } catch (error: any) {
     console.error('❌ Error retrieving labor entries:', error);
@@ -586,6 +621,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Invalidate cache for this entity and project
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+
     return NextResponse.json({
       success: true,
       message: "Labor entry updated successfully",
@@ -648,6 +689,18 @@ export async function DELETE(request: NextRequest) {
           projectId,
           { $inc: { spent: -laborCost } }
         );
+      }
+
+      // Invalidate cache for this entity and project
+      const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+      if (keys.length > 0) {
+        await Promise.all(keys.map(key => client.del(key)));
+      }
+      if (projectId) {
+        const projectKeys = await client.keys(`labor:project:${projectId}:*`);
+        if (projectKeys.length > 0) {
+          await Promise.all(projectKeys.map(key => client.del(key)));
+        }
       }
 
       return NextResponse.json({
@@ -760,6 +813,19 @@ export async function DELETE(request: NextRequest) {
           { success: false, message: "Invalid entity type" },
           { status: 400 }
         );
+    }
+
+    // Invalidate cache for this entity and project
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+    // Also invalidate project-level cache if not a project entity
+    if (entityType !== 'project' && currentEntity.projectId) {
+      const projectKeys = await client.keys(`labor:project:${currentEntity.projectId}:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+      }
     }
 
     return NextResponse.json({

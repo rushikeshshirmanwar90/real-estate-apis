@@ -4,6 +4,7 @@ import { Admin } from "@/lib/models/users/Admin";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import { client } from "@/lib/redis";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -56,10 +57,20 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid admin ID format", 400);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`admin:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Admin retrieved successfully (cached)");
+      }
+
       const adminData = await Admin.findById(id);
       if (!adminData) {
         return errorResponse("Admin not found", 404);
       }
+
+      // Cache the admin
+      await client.set(`admin:${id}`, JSON.stringify(adminData));
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -71,10 +82,20 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid email format", 400);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`admin:email:${email}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Admin retrieved successfully (cached)");
+      }
+
       const adminData = await Admin.findOne({ email });
       if (!adminData) {
         return errorResponse("Admin not found with this email", 404);
       }
+
+      // Cache the admin
+      await client.set(`admin:email:${email}`, JSON.stringify(adminData));
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -96,6 +117,13 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client validation failed", 404);
       }
 
+      // Check cache
+      let cacheValue = await client.get(`admin:client:${clientId}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Admin retrieved successfully (cached)");
+      }
+
       console.log('🔍 Fetching admin for clientId:', clientId);
       const adminData = await Admin.findOne({ clientId });
       console.log('📊 Admin found:', adminData ? 'Yes' : 'No');
@@ -104,13 +132,27 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Admin not found with this clientId", 404);
       }
 
+      // Cache the admin
+      await client.set(`admin:client:${clientId}`, JSON.stringify(adminData));
+
       return successResponse(adminData, "Admin retrieved successfully");
     }
 
     // Get all admins
     console.log('🔍 Fetching all admins');
+    
+    // Check cache
+    let cacheValue = await client.get(`admin:all`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} admin(s) successfully (cached)`);
+    }
+    
     const adminData = await Admin.find().sort({ createdAt: -1 });
     console.log('📊 Total admins found:', adminData.length);
+
+    // Cache all admins
+    await client.set(`admin:all`, JSON.stringify(adminData));
 
     return successResponse(
       adminData,
@@ -176,6 +218,9 @@ export const POST = async (req: NextRequest) => {
     };
     const newLoginUser = new LoginUser(loginPayload);
     await newLoginUser.save();
+
+    // Invalidate cache
+    await client.del(`admin:all`);
 
     return successResponse(savedAdmin, "Admin created successfully", 201);
   } catch (error: unknown) {
@@ -251,6 +296,16 @@ export const PUT = async (req: NextRequest) => {
       );
     }
 
+    // Invalidate cache
+    await client.del(`admin:${id}`);
+    await client.del(`admin:all`);
+    if (updatedAdmin.clientId) {
+      await client.del(`admin:client:${updatedAdmin.clientId}`);
+    }
+    if (updateData.email) {
+      await client.del(`admin:email:${updateData.email}`);
+    }
+
     return successResponse(updatedAdmin, "Admin updated successfully");
   } catch (error: unknown) {
     console.error("PUT /users/admin error:", error);
@@ -296,6 +351,14 @@ export const DELETE = async (req: NextRequest) => {
     await LoginUser.findOneAndDelete({
       $or: [{ email: adminToDelete.email }, { adminId: id }],
     });
+
+    // Invalidate cache
+    await client.del(`admin:${id}`);
+    await client.del(`admin:all`);
+    await client.del(`admin:email:${adminToDelete.email}`);
+    if (adminToDelete.clientId) {
+      await client.del(`admin:client:${adminToDelete.clientId}`);
+    }
 
     return successResponse(deletedAdmin, "Admin deleted successfully");
   } catch (error: unknown) {

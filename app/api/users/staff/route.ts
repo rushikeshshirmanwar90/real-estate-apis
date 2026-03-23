@@ -8,6 +8,7 @@ import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import { client } from "@/lib/redis";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -57,6 +58,14 @@ export const GET = async (req: NextRequest) => {
     if (id) {
       if (!isValidObjectId(id)) {
         return errorResponse("Invalid staff ID format", 400);
+      }
+
+      // Check cache
+      const cacheKey = getAllProjects === "true" ? `staff:${id}:allProjects` : `staff:${id}:client:${clientId}`;
+      let cacheValue = await client.get(cacheKey);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
       }
 
       // ✅ Handle getAllProjects parameter for staff users
@@ -141,6 +150,9 @@ export const GET = async (req: NextRequest) => {
           console.log('⚠️ Staff has no assigned projects');
         }
         
+        // Cache the staff data
+        await client.set(cacheKey, JSON.stringify(staffObj));
+        
         return successResponse(staffObj, "Staff member retrieved successfully with all projects");
       }
 
@@ -181,6 +193,14 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid email format", 400);
       }
 
+      // Check cache
+      const cacheKey = `staff:email:${email}:client:${clientId}`;
+      let cacheValue = await client.get(cacheKey);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
+      }
+
       // ✅ Find staff by email and check if they're assigned to the specified client
       const staffData = await Staff.findOne({ 
         email: email,
@@ -213,6 +233,15 @@ export const GET = async (req: NextRequest) => {
 
     // ✅ Get all staff members filtered by clientId
     console.log('🔍 Fetching all staff for clientId:', clientId);
+    
+    // Check cache
+    const cacheKey = `staff:client:${clientId}:all`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} staff member(s) successfully (cached)`);
+    }
+    
     const staffData = await Staff.find({ 'clients.clientId': clientId }).sort({ createdAt: -1 });
     console.log('📊 Found staff count:', staffData.length);
 
@@ -248,6 +277,10 @@ export const GET = async (req: NextRequest) => {
     );
 
     console.log('✅ Returning staff data:', staffWithProjects.length, 'items');
+    
+    // Cache the staff list
+    await client.set(cacheKey, JSON.stringify(staffWithProjects));
+    
     return successResponse(
       staffWithProjects,
       `Retrieved ${staffWithProjects.length} staff member(s) successfully`
@@ -484,6 +517,12 @@ export const POST = async (req: NextRequest) => {
     const newLoginUser = new LoginUser(loginPayload);
     await newLoginUser.save();
 
+    // Invalidate cache
+    const keys = await client.keys(`staff:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+
     return successResponse(
       savedStaff,
       "Staff member created successfully",
@@ -583,6 +622,12 @@ export const PUT = async (req: NextRequest) => {
         { staffId: id },
         { email: updateData.email }
       );
+    }
+
+    // Invalidate cache
+    const keys = await client.keys(`staff:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
     }
 
     return successResponse(updatedStaff, "Staff member updated successfully");
@@ -735,6 +780,12 @@ export const DELETE = async (req: NextRequest) => {
     await LoginUser.findOneAndDelete({
       $or: [{ email: staffToDelete.email }, { staffId: id }],
     });
+
+    // Invalidate cache
+    const keys = await client.keys(`staff:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
 
     return successResponse(deletedStaff, "Staff member deleted successfully");
   } catch (error: unknown) {

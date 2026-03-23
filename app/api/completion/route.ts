@@ -6,6 +6,7 @@ import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
+import { client } from "@/lib/redis";
 
 interface BodyType {
   updateType: 'minisection' | 'project' | 'project-section';
@@ -97,6 +98,9 @@ export const PATCH = async (req: NextRequest) => {
           return errorResponse("Failed to update section completion", 500);
         }
 
+        // Invalidate cache for this project-section
+        await client.del(`completion:project-section:${projectId}:${id}`);
+
         return successResponse(
           { isCompleted: newCompletionState },
           `Section ${newCompletionState ? 'completed' : 'reopened'} successfully`
@@ -145,6 +149,9 @@ export const PATCH = async (req: NextRequest) => {
         if (!updatedDocument) {
           return errorResponse("Project not found", 404);
         }
+
+        // Invalidate cache for this project
+        await client.del(`completion:project:${id}`);
 
         return successResponse(
           { isCompleted: projectCompletionState },
@@ -197,6 +204,9 @@ export const PATCH = async (req: NextRequest) => {
           return errorResponse("Mini section not found", 404);
         }
 
+        // Invalidate cache for this mini-section
+        await client.del(`completion:minisection:${id}`);
+
         return successResponse(
           { isCompleted: miniSectionCompletionState },
           `Mini section ${miniSectionCompletionState ? 'completed' : 'reopened'} successfully`
@@ -229,6 +239,7 @@ export const PATCH = async (req: NextRequest) => {
 export const GET = async (req: NextRequest) => {
   try {
     await connect();
+
     const { searchParams } = new URL(req.url);
     const updateType = searchParams.get("updateType");
     const id = searchParams.get("id");
@@ -240,6 +251,15 @@ export const GET = async (req: NextRequest) => {
 
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid ID format", 400);
+    }
+
+    // Check cache first
+    const cacheKey = `completion:${updateType}:${projectId || 'none'}:${id}`;
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `${updateType} completion status retrieved successfully (cached)`, 200);
     }
 
     let document;
@@ -332,6 +352,9 @@ export const GET = async (req: NextRequest) => {
     if (!document) {
       return errorResponse(`${updateType} not found`, 404);
     }
+
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(document));
 
     return successResponse(document, `${updateType} completion status retrieved successfully`);
 

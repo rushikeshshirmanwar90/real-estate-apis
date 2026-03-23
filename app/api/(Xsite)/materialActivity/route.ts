@@ -3,6 +3,7 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { NextRequest } from "next/server";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
+import { client } from "@/lib/redis";
 
 interface MaterialItem {
   name: string;
@@ -40,8 +41,17 @@ export const GET = async (req: NextRequest | Request) => {
   const activity = searchParams.get("activity");
   const targetDate = searchParams.get("targetDate"); // Get activities for specific date
 
-  try {
+    try {
     await connect();
+
+    // Check cache first
+    const cacheKey = `materialActivity:${projectId || 'all'}:${clientId || 'all'}:${userId || 'all'}:${activity || 'all'}:${targetDate || 'all'}`;
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, "Material activities fetched successfully (cached)", 200);
+    }
 
     if (!projectId && !clientId) {
       return errorResponse("projectId or clientId is required", 406);
@@ -72,11 +82,16 @@ export const GET = async (req: NextRequest | Request) => {
       }, "No material activities found", 200);
     }
 
+    const responseData = {
+      activities: materials,
+      totalActivities: materials.length
+    };
+
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(responseData));
+
     return successResponse(
-      {
-        activities: materials,
-        totalActivities: materials.length
-      },
+      responseData,
       "Material activities fetched successfully",
       200
     );
@@ -215,6 +230,12 @@ export const POST = async (req: NextRequest | Request) => {
 
     console.log('✅ Material activity created successfully:', newImportedMaterial._id);
 
+    // Invalidate cache for this project and client
+    const keys = await client.keys(`materialActivity:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+
     // Send notification to project admins (async, don't wait for it)
     notifyMaterialActivityCreated(newImportedMaterial)
       .then(result => {
@@ -285,6 +306,12 @@ export const DELETE = async (req: NextRequest | Request) => {
         );
       }
 
+      // Invalidate cache for this project and client
+      const keys = await client.keys(`materialActivity:*`);
+      if (keys.length > 0) {
+        await Promise.all(keys.map(key => client.del(key)));
+      }
+
       return successResponse(
         { deletedCount: deletedCount.deletedCount, query },
         `Successfully deleted ${deletedCount.deletedCount} material activities`,
@@ -297,6 +324,12 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     if (!deletedRequest) {
       return errorResponse("Requested material not found", 404);
+    }
+
+    // Invalidate cache for this project and client
+    const keys = await client.keys(`materialActivity:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
     }
 
     return successResponse(

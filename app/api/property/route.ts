@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -20,12 +21,22 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("Invalid userId format", 400);
     }
 
+    // Check cache
+    let cacheValue = await client.get(`property:user:${userId}`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, "Properties retrieved successfully (cached)");
+    }
+
     const objectId = new mongoose.Types.ObjectId(userId);
     const property = await UserCustomerDetails.findOne({ userId: objectId }).lean();
 
     if (!property) {
       return errorResponse("No properties found for this user", 404);
     }
+
+    // Cache the property
+    await client.set(`property:user:${userId}`, JSON.stringify(property));
 
     return successResponse(property, "Properties retrieved successfully");
   } catch (error: unknown) {
@@ -95,6 +106,9 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Failed to add property", 500);
     }
 
+    // Invalidate cache
+    await client.del(`property:user:${userId}`);
+
     return successResponse(result, "Property added successfully", 201);
   } catch (error: unknown) {
     logger.error("Error adding property", error);
@@ -137,6 +151,9 @@ export const DELETE = async (req: NextRequest) => {
         return errorResponse("User or property not found", 404);
       }
 
+      // Invalidate cache
+      await client.del(`property:user:${userId}`);
+
       return successResponse(result, "Property deleted successfully");
     }
 
@@ -155,6 +172,9 @@ export const DELETE = async (req: NextRequest) => {
         return errorResponse("User not found", 404);
       }
 
+      // Invalidate cache
+      await client.del(`property:user:${userId}`);
+
       return successResponse(
         deletedData,
         "User properties deleted successfully"
@@ -166,6 +186,12 @@ export const DELETE = async (req: NextRequest) => {
 
     if (deleteResult.deletedCount === 0) {
       return errorResponse("No data found to delete", 404);
+    }
+
+    // Invalidate all property caches
+    const keys = await client.keys(`property:user:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
     }
 
     return successResponse(
@@ -211,6 +237,9 @@ export const PUT = async (req: NextRequest) => {
     if (!result) {
       return errorResponse("User or property not found", 404);
     }
+
+    // Invalidate cache
+    await client.del(`property:user:${userId}`);
 
     return successResponse(result, "Property updated successfully");
   } catch (error: unknown) {

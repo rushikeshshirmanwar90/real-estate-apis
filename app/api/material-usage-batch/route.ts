@@ -6,6 +6,7 @@ import { Section } from "@/lib/models/Section";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
+import { client } from "@/lib/redis";
 
 // Local types matching MaterialSchema
 type Specs = Record<string, unknown>;
@@ -504,6 +505,12 @@ export const POST = async (req: NextRequest | Request) => {
         .catch(error => {
           console.error('Critical error in material activity notification:', error);
         });
+
+      // Invalidate cache for this project
+      const keys = await client.keys(`material-usage:${projectId}:*`);
+      if (keys.length > 0) {
+        await Promise.all(keys.map(key => client.del(key)));
+      }
 
       console.log(`========================================`);
       console.log(`📊 SAVED ACTIVITY DETAILS:`);

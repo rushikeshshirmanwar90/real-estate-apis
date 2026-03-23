@@ -4,6 +4,7 @@ import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
+import { client } from "@/lib/redis";
 
 /**
  * GET /api/clients/staff
@@ -28,14 +29,22 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("Invalid client ID format", 400);
     }
 
+    // Check cache
+    const cacheKey = `clients:${clientId}:staff`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} staff member(s) successfully (cached)`);
+    }
+
     // Find the client
-    const client = await Client.findById(clientId);
-    if (!client) {
+    const clientData = await Client.findById(clientId);
+    if (!clientData) {
       return errorResponse("Client not found", 404);
     }
 
     // Get staff IDs from client's staffs array
-    const staffIds = client.staffs || [];
+    const staffIds = clientData.staffs || [];
 
     console.log(`📋 Client ${clientId} has ${staffIds.length} staff members`);
 
@@ -60,6 +69,9 @@ export const GET = async (req: NextRequest) => {
       // You can add additional fields here if needed
       return staffObj;
     });
+
+    // Cache the staff list
+    await client.set(cacheKey, JSON.stringify(staffWithDetails));
 
     return successResponse(
       staffWithDetails,

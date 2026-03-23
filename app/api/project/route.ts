@@ -8,6 +8,7 @@ import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -53,6 +54,13 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid project ID format", 400);
       }
 
+      // Check cache for single project
+      let cacheValue = await client.get(`project:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return successResponse(cacheValue, "Project retrieved successfully (cached)");
+      }
+
       // Build query for single project
       const projectQuery: any = {
         _id: new Types.ObjectId(id),
@@ -70,7 +78,18 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Project not found or not assigned to this staff member", 404);
       }
 
+      // Cache the project
+      await client.set(`project:${id}`, JSON.stringify(project));
+
       return successResponse(project, "Project retrieved successfully");
+    }
+
+    // Check cache for projects list
+    const cacheKey = `projects:${clientId}${staffId ? `:staff:${staffId}` : ''}${excludeMaterials ? ':noMaterials' : ''}`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} project(s) successfully (cached)`);
     }
 
     // Build query for multiple projects
@@ -87,6 +106,9 @@ export const GET = async (req: NextRequest) => {
       .lean();
 
     console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
+
+    // Cache the projects list
+    await client.set(cacheKey, JSON.stringify(projects));
 
     return successResponse(
       projects,
@@ -195,6 +217,12 @@ export const POST = async (req: NextRequest) => {
       console.log('⚠️ No user info available for activity logging - skipping activity log');
     }
 
+    // ✅ Invalidate cache after creating new project
+    const keys = await client.keys(`projects:${body.clientId}*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+
     return successResponse(newProject, "Project created successfully", 201);
   } catch (error: unknown) {
     logger.error("Error creating project", error);
@@ -262,6 +290,13 @@ export const PATCH = async (req: NextRequest) => {
         console.error('Failed to log project completion activity:', logError);
         // Don't fail the request if logging fails
       }
+    }
+
+    // ✅ Invalidate cache after updating project
+    await client.del(`project:${id}`);
+    const keys = await client.keys(`projects:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
     }
 
     return successResponse(

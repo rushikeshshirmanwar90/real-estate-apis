@@ -4,6 +4,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { notifyActivityCreated } from "@/lib/services/notificationService";
+import { client } from "@/lib/redis";
 
 // GET: Fetch activities with filters
 export const GET = async (req: NextRequest | Request) => {
@@ -59,15 +60,28 @@ export const GET = async (req: NextRequest | Request) => {
       }
     }
 
+    // Build cache key based on query
+    const cacheKey = `activity:query:${JSON.stringify(query)}`;
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return successResponse(cacheValue, "Activities fetched successfully (cached)", 200);
+    }
+
     // Get all activities without pagination
     const activities = await Activity.find(query)
       .sort({ date: -1, createdAt: -1 });
 
+    const result = {
+      activities,
+      totalActivities: activities.length
+    };
+
+    // Cache the activities
+    await client.set(cacheKey, JSON.stringify(result));
+
     return successResponse(
-      {
-        activities,
-        totalActivities: activities.length
-      },
+      result,
       "Activities fetched successfully",
       200
     );
@@ -159,6 +173,12 @@ export const POST = async (req: NextRequest | Request) => {
       });
     }
 
+    // Invalidate cache
+    const keys = await client.keys(`activity:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
+    }
+
     return successResponse(newActivity, "Activity logged successfully", 201);
   } catch (error: unknown) {
     console.error('❌ Activity POST API Error:', error);
@@ -191,6 +211,12 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     if (!deletedActivity) {
       return errorResponse("Activity not found", 404);
+    }
+
+    // Invalidate cache
+    const keys = await client.keys(`activity:*`);
+    if (keys.length > 0) {
+      await client.del(...keys);
     }
 
     return successResponse(

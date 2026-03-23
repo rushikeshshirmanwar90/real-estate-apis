@@ -3,13 +3,7 @@ import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
-import redis, {
-  projectMaterialFieldsKey,
-  TTL_PROJECT_FIELDS,
-  safeRedisGet,
-  safeRedisSet,
-  safeRedisDel,
-} from "@/lib/services/redis";
+import { client } from "@/lib/redis";
 
 type Specs = Record<string, unknown>;
 
@@ -33,24 +27,7 @@ type MaterialSubdoc = {
   totalCost: number;
 };
 
-// ─── Cache invalidation helper ────────────────────────────────────────────────
-// Deletes the project-fields cache.
-async function invalidateProjectMaterialCache(projectId: string): Promise<void> {
-  try {
-    // Check if Redis is available before attempting operations
-    if (!redis || redis.status !== 'ready') {
-      console.warn("⚠️  Redis not available for cache invalidation");
-      return;
-    }
 
-    // Delete project-fields cache
-    await redis.del(projectMaterialFieldsKey(projectId));
-    console.log(`🗑️  Deleted cache for project ${projectId}`);
-  } catch (err) {
-    // Cache invalidation failure must never break the API response
-    console.error("⚠️  Redis invalidation error:", err);
-  }
-}
 
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
 export const GET = async (req: NextRequest | Request) => {
@@ -90,17 +67,16 @@ export const GET = async (req: NextRequest | Request) => {
     // Add basic client validation (optional - you might want to implement checkValidClient here too)
     // await checkValidClient(req);
 
-    // ── 1. Try Redis cache with pagination ──────────────────────────────────────────────────
-    const cacheKey = `materials:${projectId}:${clientId}:${sortBy}:${sortOrder}:${sectionId || 'all'}:${page}:${limit}`;
-
-    const cached = await safeRedisGet(cacheKey);
-    if (cached) {
-      console.log("✅ CACHE HIT:", cacheKey);
-      return NextResponse.json(JSON.parse(cached), { status: 200 });
-    }
-    console.log("❌ CACHE MISS:", cacheKey);
-
     await connect();
+
+    // Check cache first
+    const cacheKey = `material:${projectId}:${clientId}:${sectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
+      return NextResponse.json(cacheValue, { status: 200 });
+    }
 
     // ✅ NEW: Enhanced pipeline with pagination and section filtering
     const pipeline: any[] = [
@@ -237,12 +213,6 @@ export const GET = async (req: NextRequest | Request) => {
         }
       };
 
-      // Cache the empty result too so repeated requests don't hammer DB
-      const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(emptyResponse), TTL_PROJECT_FIELDS);
-      if (cacheSet) {
-        console.log("💾 Cached empty result:", cacheKey);
-      }
-
       return NextResponse.json(emptyResponse, { status: 200 });
     }
 
@@ -262,11 +232,8 @@ export const GET = async (req: NextRequest | Request) => {
       }
     };
 
-    // ── 3. Store result in Redis ─────────────────────────────────────────────
-    const cacheSet = await safeRedisSet(cacheKey, JSON.stringify(responsePayload), TTL_PROJECT_FIELDS);
-    if (cacheSet) {
-      console.log("💾 Cached:", cacheKey, `(TTL ${TTL_PROJECT_FIELDS}s)`);
-    }
+    // Cache the response
+    await client.set(cacheKey, JSON.stringify(responsePayload));
 
     return NextResponse.json(responsePayload, { status: 200 });
   } catch (error: unknown) {
@@ -304,9 +271,6 @@ export const POST = async (req: NextRequest | Request) => {
       material?: MaterialSubdoc;
       error?: string;
     }> = [];
-
-    // Track which projects were mutated so we can invalidate their caches once
-    const mutatedProjectIds = new Set<string>();
 
     for (const item of materialItems) {
       const {
@@ -422,7 +386,6 @@ export const POST = async (req: NextRequest | Request) => {
             message: `Merged ${qnt} ${unit} of ${materialName}. Total now: ${newQnt} ${unit}`,
             material: updatedMaterial as MaterialSubdoc,
           });
-          mutatedProjectIds.add(projectId);
         } else {
           results.push({ ...resultBase, success: false, error: "Failed to merge material" });
         }
@@ -457,14 +420,25 @@ export const POST = async (req: NextRequest | Request) => {
           message: `Created new batch: ${qnt} ${unit} of ${materialName}`,
           material: newMaterial,
         });
-        mutatedProjectIds.add(projectId);
       } else {
         results.push({ ...resultBase, success: false, error: "Failed to create material" });
       }
     }
 
-    // ── Invalidate Redis caches for every mutated project ─────────────────
-    await Promise.all([...mutatedProjectIds].map(invalidateProjectMaterialCache));
+    // Invalidate cache for this project
+    const keys = await client.keys(`material:*:${client} || '*'}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+    // Invalidate project cache
+    const projectKeys = await client.keys(`project:*`);
+    if (projectKeys.length > 0) {
+      await Promise.all(projectKeys.map(key => client.del(key)));
+    }
+    const projectsKeys = await client.keys(`projects:*`);
+    if (projectsKeys.length > 0) {
+      await Promise.all(projectsKeys.map(key => client.del(key)));
+    }
 
     return NextResponse.json({ success: true, results }, { status: 200 });
   } catch (error: unknown) {
@@ -526,8 +500,17 @@ export const PUT = async (req: NextRequest | Request) => {
       );
     }
 
-    // Invalidate all material caches for this project
-    await invalidateProjectMaterialCache(projectId);
+    // Invalidate cache for this project
+    const keys = await client.keys(`material:${projectId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+    // Invalidate project cache
+    await client.del(`project:${projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
+    if (projectKeys.length > 0) {
+      await Promise.all(projectKeys.map(key => client.del(key)));
+    }
 
     return NextResponse.json(
       {
@@ -597,8 +580,17 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     await project.save();
 
-    // Invalidate all material caches for this project
-    await invalidateProjectMaterialCache(projectId);
+    // Invalidate cache for this project
+    const keys = await client.keys(`material:${projectId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
+    // Invalidate project cache
+    await client.del(`project:${projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
+    if (projectKeys.length > 0) {
+      await Promise.all(projectKeys.map(key => client.del(key)));
+    }
 
     return NextResponse.json(
       {

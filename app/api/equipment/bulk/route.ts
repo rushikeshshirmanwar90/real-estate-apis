@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { client } from "@/lib/redis";
 
 // POST - Bulk operations for equipment
 export const POST = async (req: NextRequest) => {
@@ -18,7 +19,7 @@ export const POST = async (req: NextRequest) => {
     }
 
     switch (operation) {
-      case "create":
+      case "create": {
         // Bulk create equipment entries
         if (!Array.isArray(data) || data.length === 0) {
           return errorResponse("Data array is required for bulk create", 400);
@@ -69,19 +70,33 @@ export const POST = async (req: NextRequest) => {
           console.log('Successfully updated project spent field');
         }
         
+        // Invalidate cache for equipment queries
+        const keysToDelete = await client.keys(`equipment:query:*`);
+        if (keysToDelete.length > 0) {
+          await client.del(...keysToDelete);
+        }
+        
         return successResponse(
           createdEquipment,
           `${createdEquipment.length} equipment entries created successfully`,
           201
         );
+      }
 
-      case "update":
+      case "update": {
         // Bulk update equipment entries
         if (!filters || !data) {
           return errorResponse("Filters and update data are required for bulk update", 400);
         }
 
         const updateResult = await Equipment.updateMany(filters, { $set: data });
+        
+        // Invalidate cache for equipment queries
+        const keysToDelete = await client.keys(`equipment:query:*`);
+        if (keysToDelete.length > 0) {
+          await client.del(...keysToDelete);
+        }
+        
         return successResponse(
           {
             matchedCount: updateResult.matchedCount,
@@ -89,8 +104,9 @@ export const POST = async (req: NextRequest) => {
           },
           `${updateResult.modifiedCount} equipment entries updated successfully`
         );
+      }
 
-      case "delete":
+      case "delete": {
         // Bulk delete equipment entries
         if (!filters) {
           return errorResponse("Filters are required for bulk delete", 400);
@@ -130,12 +146,19 @@ export const POST = async (req: NextRequest) => {
           }
         }
 
+        // Invalidate cache for equipment queries
+        const keysToDelete = await client.keys(`equipment:query:*`);
+        if (keysToDelete.length > 0) {
+          await client.del(...keysToDelete);
+        }
+
         return successResponse(
           { deletedCount: deleteResult.deletedCount },
           `${deleteResult.deletedCount} equipment entries deleted successfully and project spent amounts updated`
         );
+      }
 
-      case "status-update":
+      case "status-update": {
         // Bulk status update
         if (!filters || !data.status) {
           return errorResponse("Filters and status are required for bulk status update", 400);
@@ -146,6 +169,12 @@ export const POST = async (req: NextRequest) => {
           { $set: { status: data.status, updatedBy: data.updatedBy } }
         );
         
+        // Invalidate cache for equipment queries
+        const keysToDelete = await client.keys(`equipment:query:*`);
+        if (keysToDelete.length > 0) {
+          await client.del(...keysToDelete);
+        }
+        
         return successResponse(
           {
             matchedCount: statusUpdateResult.matchedCount,
@@ -153,8 +182,9 @@ export const POST = async (req: NextRequest) => {
           },
           `${statusUpdateResult.modifiedCount} equipment entries status updated to ${data.status}`
         );
+      }
 
-      case "cost-update":
+      case "cost-update": {
         // Bulk cost recalculation
         if (!filters) {
           return errorResponse("Filters are required for bulk cost update", 400);
@@ -176,6 +206,13 @@ export const POST = async (req: NextRequest) => {
 
         if (bulkOps.length > 0) {
           const costUpdateResult = await Equipment.bulkWrite(bulkOps);
+          
+          // Invalidate cache for equipment queries
+          const keysToDelete = await client.keys(`equipment:query:*`);
+          if (keysToDelete.length > 0) {
+            await client.del(...keysToDelete);
+          }
+          
           return successResponse(
             {
               matchedCount: costUpdateResult.matchedCount,
@@ -189,8 +226,9 @@ export const POST = async (req: NextRequest) => {
             "No equipment entries found matching the criteria"
           );
         }
+      }
 
-      case "duplicate":
+      case "duplicate": {
         // Duplicate equipment entries to another entity
         if (!filters || !data.targetEntityId || !data.targetEntityType) {
           return errorResponse("Filters, targetEntityId, and targetEntityType are required for duplication", 400);
@@ -234,6 +272,12 @@ export const POST = async (req: NextRequest) => {
             }
           }
           
+          // Invalidate cache for equipment queries
+          const keysToDelete = await client.keys(`equipment:query:*`);
+          if (keysToDelete.length > 0) {
+            await client.del(...keysToDelete);
+          }
+          
           return successResponse(
             duplicateResult,
             `${duplicateResult.length} equipment entries duplicated successfully`,
@@ -245,8 +289,9 @@ export const POST = async (req: NextRequest) => {
             "No equipment entries found matching the criteria for duplication"
           );
         }
+      }
 
-      case "export":
+      case "export": {
         // Export equipment data
         if (!filters) {
           return errorResponse("Filters are required for export", 400);
@@ -261,6 +306,7 @@ export const POST = async (req: NextRequest) => {
           exportData,
           `${exportData.length} equipment entries exported successfully`
         );
+      }
 
       default:
         return errorResponse(

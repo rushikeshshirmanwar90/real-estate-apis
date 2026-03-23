@@ -3,6 +3,7 @@ import { OtherSection } from "@/lib/models/OtherSection";
 import { Projects } from "@/lib/models/Project";
 
 import { NextRequest, NextResponse } from "next/server";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest | Request) => {
   const { searchParams } = new URL(req.url);
@@ -12,9 +13,31 @@ export const GET = async (req: NextRequest | Request) => {
     let data;
 
     if (id) {
+      // Check cache for single otherSection
+      let cacheValue = await client.get(`otherSection:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return NextResponse.json({ data: cacheValue }, { status: 200 });
+      }
+
       data = await OtherSection.findById(id);
+
+      // Cache the otherSection
+      if (data) {
+        await client.set(`otherSection:${id}`, JSON.stringify(data));
+      }
     } else {
+      // Check cache for all otherSections
+      let cacheValue = await client.get(`otherSection:all`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
+        return NextResponse.json({ data: cacheValue }, { status: 200 });
+      }
+
       data = await OtherSection.find();
+
+      // Cache all otherSections
+      await client.set(`otherSection:all`, JSON.stringify(data));
     }
 
     if (!data) {
@@ -85,6 +108,13 @@ export const POST = async (req: NextRequest | Request) => {
         { message: `Project not found :  ${savedData.name}` },
         { status: 404 }
       );
+    }
+
+    // Invalidate cache
+    await client.del(`otherSection:all`);
+    const projectKeys = await client.keys(`project:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
     }
 
     return NextResponse.json(
@@ -184,6 +214,14 @@ export const DELETE = async (req: NextRequest | Request) => {
       );
     }
 
+    // Invalidate cache
+    await client.del(`otherSection:${sectionId}`);
+    await client.del(`otherSection:all`);
+    const projectKeys = await client.keys(`project:*`);
+    if (projectKeys.length > 0) {
+      await client.del(...projectKeys);
+    }
+
     return NextResponse.json(
       { deletedOtherSection: deleted, project },
       { status: 200 }
@@ -238,6 +276,10 @@ export const PUT = async (req: NextRequest | Request) => {
       );
     }
 
+    // Invalidate cache
+    await client.del(`otherSection:${OtherSectionId}`);
+    await client.del(`otherSection:all`);
+
     return NextResponse.json(
       {
         newHouse,
@@ -290,6 +332,10 @@ export const PATCH = async (req: NextRequest | Request) => {
       { "section.sectionId": id },
       { $set: { "section.$.isCompleted": isCompleted } }
     );
+
+    // Invalidate cache
+    await client.del(`otherSection:${id}`);
+    await client.del(`otherSection:all`);
 
     return NextResponse.json(
       {
