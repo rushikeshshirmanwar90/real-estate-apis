@@ -22,9 +22,9 @@ export const GET = async (req: NextRequest | Request) => {
 
       data = await OtherSection.findById(id);
 
-      // Cache the otherSection
+      // Cache the otherSection with 24-hour expiration
       if (data) {
-        await client.set(`otherSection:${id}`, JSON.stringify(data));
+        await client.set(`otherSection:${id}`, JSON.stringify(data), 'EX', 86400);
       }
     } else {
       // Check cache for all otherSections
@@ -36,8 +36,8 @@ export const GET = async (req: NextRequest | Request) => {
 
       data = await OtherSection.find();
 
-      // Cache all otherSections
-      await client.set(`otherSection:all`, JSON.stringify(data));
+      // Cache all otherSections with 24-hour expiration
+      await client.set(`otherSection:all`, JSON.stringify(data), 'EX', 86400);
     }
 
     if (!data) {

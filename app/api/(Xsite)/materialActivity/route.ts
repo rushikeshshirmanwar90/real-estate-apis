@@ -87,8 +87,8 @@ export const GET = async (req: NextRequest | Request) => {
       totalActivities: materials.length
     };
 
-    // Cache the response
-    await client.set(cacheKey, JSON.stringify(responseData));
+    // Cache the response with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return successResponse(
       responseData,

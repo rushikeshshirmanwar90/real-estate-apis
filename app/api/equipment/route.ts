@@ -39,8 +39,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Equipment not found", 404);
       }
 
-      // Cache the equipment
-      await client.set(`equipment:${id}`, JSON.stringify(equipment));
+      // Cache the equipment with 24-hour expiration
+      await client.set(`equipment:${id}`, JSON.stringify(equipment), 'EX', 86400);
 
       return successResponse(equipment, "Equipment retrieved successfully");
     }
@@ -87,8 +87,8 @@ export const GET = async (req: NextRequest) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Cache the equipment list
-    await client.set(cacheKey, JSON.stringify(equipment));
+    // Cache the equipment list with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(equipment), 'EX', 86400);
 
     return successResponse(
       equipment,

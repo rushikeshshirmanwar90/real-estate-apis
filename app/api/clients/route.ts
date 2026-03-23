@@ -36,8 +36,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client not found", 404);
       }
 
-      // Cache the client
-      await client.set(`client:${id}`, JSON.stringify(clientData));
+      // Cache the client with 24-hour expiration
+      await client.set(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
 
       return successResponse(clientData, "Client retrieved successfully");
     }
@@ -62,8 +62,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client not found with this email", 404);
       }
 
-      // Cache the client
-      await client.set(`client:email:${email}`, JSON.stringify(clientData));
+      // Cache the client with 24-hour expiration
+      await client.set(`client:email:${email}`, JSON.stringify(clientData), 'EX', 86400);
 
       return successResponse(clientData, "Client retrieved successfully");
     }
@@ -81,8 +81,8 @@ export const GET = async (req: NextRequest) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Cache all clients
-    await client.set(`clients:all`, JSON.stringify(clients));
+    // Cache all clients with 24-hour expiration
+    await client.set(`clients:all`, JSON.stringify(clients), 'EX', 86400);
 
     return successResponse(
       clients,

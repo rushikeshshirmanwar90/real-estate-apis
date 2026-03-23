@@ -493,8 +493,8 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    // Cache the response
-    await client.set(cacheKey, JSON.stringify(responseData));
+    // Cache the response with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return NextResponse.json(responseData);
 

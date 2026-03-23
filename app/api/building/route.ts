@@ -68,8 +68,8 @@ export const GET = async (req: NextRequest) => {
               building = await newBuilding.save();
               logger.info(`Created missing building record for ${id}`);
               
-              // Cache the building
-              await client.set(`building:${id}`, JSON.stringify(building));
+              // Cache the building with 24-hour expiration
+              await client.set(`building:${id}`, JSON.stringify(building), 'EX', 86400);
               
               return successResponse(building, "Building created and retrieved successfully");
             }
@@ -81,8 +81,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Building not found", 404);
       }
 
-      // Cache the building
-      await client.set(`building:${id}`, JSON.stringify(building));
+      // Cache the building with 24-hour expiration
+      await client.set(`building:${id}`, JSON.stringify(building), 'EX', 86400);
 
       return successResponse(building, "Building retrieved successfully");
     }
@@ -107,8 +107,8 @@ export const GET = async (req: NextRequest) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Cache the buildings list
-    await client.set(cacheKey, JSON.stringify(buildings));
+    // Cache the buildings list with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(buildings), 'EX', 86400);
 
     return successResponse(
       buildings,

@@ -150,8 +150,8 @@ export const GET = async (req: NextRequest) => {
           console.log('⚠️ Staff has no assigned projects');
         }
         
-        // Cache the staff data
-        await client.set(cacheKey, JSON.stringify(staffObj));
+        // Cache the staff data with 24-hour expiration
+        await client.set(cacheKey, JSON.stringify(staffObj), 'EX', 86400);
         
         return successResponse(staffObj, "Staff member retrieved successfully with all projects");
       }
@@ -278,8 +278,8 @@ export const GET = async (req: NextRequest) => {
 
     console.log('✅ Returning staff data:', staffWithProjects.length, 'items');
     
-    // Cache the staff list
-    await client.set(cacheKey, JSON.stringify(staffWithProjects));
+    // Cache the staff list with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(staffWithProjects), 'EX', 86400);
     
     return successResponse(
       staffWithProjects,

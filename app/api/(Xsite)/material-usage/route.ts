@@ -269,8 +269,8 @@ export const GET = async (req: NextRequest | Request) => {
       }
     };
 
-    // Cache the response
-    await client.set(cacheKey, JSON.stringify(responsePayload));
+    // Cache the response with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
 
     return NextResponse.json(responsePayload, { status: 200 });
   } catch (error: unknown) {

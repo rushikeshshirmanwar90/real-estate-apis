@@ -78,8 +78,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Project not found or not assigned to this staff member", 404);
       }
 
-      // Cache the project
-      await client.set(`project:${id}`, JSON.stringify(project));
+      // Cache the project with 24-hour expiration
+      await client.set(`project:${id}`, JSON.stringify(project), 'EX', 86400);
 
       return successResponse(project, "Project retrieved successfully");
     }
@@ -107,8 +107,8 @@ export const GET = async (req: NextRequest) => {
 
     console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
 
-    // Cache the projects list
-    await client.set(cacheKey, JSON.stringify(projects));
+    // Cache the projects list with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(projects), 'EX', 86400);
 
     return successResponse(
       projects,

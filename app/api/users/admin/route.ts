@@ -69,8 +69,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Admin not found", 404);
       }
 
-      // Cache the admin
-      await client.set(`admin:${id}`, JSON.stringify(adminData));
+      // Cache the admin with 24-hour expiration
+      await client.set(`admin:${id}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -94,8 +94,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Admin not found with this email", 404);
       }
 
-      // Cache the admin
-      await client.set(`admin:email:${email}`, JSON.stringify(adminData));
+      // Cache the admin with 24-hour expiration
+      await client.set(`admin:email:${email}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -132,8 +132,8 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Admin not found with this clientId", 404);
       }
 
-      // Cache the admin
-      await client.set(`admin:client:${clientId}`, JSON.stringify(adminData));
+      // Cache the admin with 24-hour expiration
+      await client.set(`admin:client:${clientId}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -151,8 +151,8 @@ export const GET = async (req: NextRequest) => {
     const adminData = await Admin.find().sort({ createdAt: -1 });
     console.log('📊 Total admins found:', adminData.length);
 
-    // Cache all admins
-    await client.set(`admin:all`, JSON.stringify(adminData));
+    // Cache all admins with 24-hour expiration
+    await client.set(`admin:all`, JSON.stringify(adminData), 'EX', 86400);
 
     return successResponse(
       adminData,

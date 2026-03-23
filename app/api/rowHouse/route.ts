@@ -21,9 +21,9 @@ export const GET = async (req: NextRequest | Request) => {
 
       data = await RowHouse.findById(id);
 
-      // Cache the rowHouse
+      // Cache the rowHouse with 24-hour expiration
       if (data) {
-        await client.set(`rowHouse:${id}`, JSON.stringify(data));
+        await client.set(`rowHouse:${id}`, JSON.stringify(data), 'EX', 86400);
       }
     } else {
       // Check cache for all rowHouses
@@ -35,8 +35,8 @@ export const GET = async (req: NextRequest | Request) => {
 
       data = await RowHouse.find();
 
-      // Cache all rowHouses
-      await client.set(`rowHouse:all`, JSON.stringify(data));
+      // Cache all rowHouses with 24-hour expiration
+      await client.set(`rowHouse:all`, JSON.stringify(data), 'EX', 86400);
     }
 
     if (!data) {

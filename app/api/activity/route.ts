@@ -77,8 +77,8 @@ export const GET = async (req: NextRequest | Request) => {
       totalActivities: activities.length
     };
 
-    // Cache the activities
-    await client.set(cacheKey, JSON.stringify(result));
+    // Cache the activities with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(result), 'EX', 86400);
 
     return successResponse(
       result,

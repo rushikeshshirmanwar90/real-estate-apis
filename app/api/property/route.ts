@@ -35,8 +35,8 @@ export const GET = async (req: NextRequest) => {
       return errorResponse("No properties found for this user", 404);
     }
 
-    // Cache the property
-    await client.set(`property:user:${userId}`, JSON.stringify(property));
+    // Cache the property with 24-hour expiration
+    await client.set(`property:user:${userId}`, JSON.stringify(property), 'EX', 86400);
 
     return successResponse(property, "Properties retrieved successfully");
   } catch (error: unknown) {

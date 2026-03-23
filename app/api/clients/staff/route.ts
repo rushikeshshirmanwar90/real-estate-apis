@@ -70,8 +70,8 @@ export const GET = async (req: NextRequest) => {
       return staffObj;
     });
 
-    // Cache the staff list
-    await client.set(cacheKey, JSON.stringify(staffWithDetails));
+    // Cache the staff list with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(staffWithDetails), 'EX', 86400);
 
     return successResponse(
       staffWithDetails,

@@ -51,8 +51,8 @@ export const GET = async (req: NextRequest | Request) => {
         return errorResponse("data not found", 204);
       }
 
-      // Cache the result
-      await client.set(cacheKey, JSON.stringify(sectionData));
+      // Cache the result with 24-hour expiration
+      await client.set(cacheKey, JSON.stringify(sectionData), 'EX', 86400);
 
       return successResponse(
         sectionData,
@@ -79,8 +79,8 @@ export const GET = async (req: NextRequest | Request) => {
         return errorResponse("data not found", 204);
       }
 
-      // Cache the result
-      await client.set(cacheKey, JSON.stringify(sectionDataById));
+      // Cache the result with 24-hour expiration
+      await client.set(cacheKey, JSON.stringify(sectionDataById), 'EX', 86400);
 
       return successResponse(
         sectionDataById,

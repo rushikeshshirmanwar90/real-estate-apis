@@ -353,8 +353,8 @@ export const GET = async (req: NextRequest) => {
       return errorResponse(`${updateType} not found`, 404);
     }
 
-    // Cache the response
-    await client.set(cacheKey, JSON.stringify(document));
+    // Cache the response with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(document), 'EX', 86400);
 
     return successResponse(document, `${updateType} completion status retrieved successfully`);
 

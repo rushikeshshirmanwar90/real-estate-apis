@@ -427,8 +427,8 @@ export const GET = async (req: NextRequest) => {
       responseData = equipmentCategories;
     }
 
-    // Cache the response
-    await client.set(cacheKey, JSON.stringify(responseData));
+    // Cache the response with 24-hour expiration
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return successResponse(responseData, category ? `${category} equipment retrieved successfully` : "Equipment categories retrieved successfully");
   } catch (error: unknown) {
