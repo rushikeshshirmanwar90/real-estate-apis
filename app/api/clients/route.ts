@@ -24,11 +24,16 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Invalid client ID format", 400);
       }
 
-      // Check cache
-      let cacheValue = await client.get(`client:${id}`);
-      if (cacheValue) {
-        cacheValue = JSON.parse(cacheValue);
-        return successResponse(cacheValue, "Client retrieved successfully (cached)");
+      // Check if cache-busting parameter is present
+      const skipCache = searchParams.get("_t") || searchParams.get("skipCache");
+      
+      // Check cache only if not skipping
+      if (!skipCache) {
+        let cacheValue = await client.get(`client:${id}`);
+        if (cacheValue) {
+          cacheValue = JSON.parse(cacheValue);
+          return successResponse(cacheValue, "Client retrieved successfully (cached)");
+        }
       }
 
       const clientData = await Client.findById(id).select("-password").lean();
@@ -36,10 +41,12 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client not found", 404);
       }
 
-      // Cache the client with 24-hour expiration
-      await client.set(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
+      // Cache the client with 24-hour expiration (only if not skipping cache)
+      if (!skipCache) {
+        await client.set(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
+      }
 
-      return successResponse(clientData, "Client retrieved successfully");
+      return successResponse(clientData, skipCache ? "Client retrieved successfully (fresh)" : "Client retrieved successfully");
     }
 
     // Get specific client by email

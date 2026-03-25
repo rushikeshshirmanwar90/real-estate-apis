@@ -425,19 +425,85 @@ export const POST = async (req: NextRequest | Request) => {
       }
     }
 
-    // Invalidate cache for this project
-    const keys = await client.keys(`material:*:${client} || '*'}:*`);
-    if (keys.length > 0) {
-      await Promise.all(keys.map(key => client.del(key)));
-    }
-    // Invalidate project cache
-    const projectKeys = await client.keys(`project:*`);
-    if (projectKeys.length > 0) {
-      await Promise.all(projectKeys.map(key => client.del(key)));
-    }
-    const projectsKeys = await client.keys(`projects:*`);
-    if (projectsKeys.length > 0) {
-      await Promise.all(projectsKeys.map(key => client.del(key)));
+    // ✅ OPTIMIZED: Update cache instead of just invalidating
+    console.log('\n========================================');
+    console.log('🔄 UPDATING CACHE AFTER MATERIAL ADD');
+    console.log('========================================');
+    
+    try {
+      // Get all cache keys for this project's materials
+      const materialKeys = await client.keys(`material:*`);
+      console.log(`📋 Found ${materialKeys.length} cache keys to update`);
+      
+      if (materialKeys.length > 0) {
+        // Update each cached response with the new materials
+        for (const cacheKey of materialKeys) {
+          try {
+            const cachedData = await client.get(cacheKey);
+            if (cachedData) {
+              const parsedCache = JSON.parse(cachedData);
+              
+              // Check if this cache entry is for the same project
+              if (parsedCache.MaterialAvailable && Array.isArray(parsedCache.MaterialAvailable)) {
+                console.log(`🔄 Updating cache key: ${cacheKey}`);
+                
+                // Get fresh data from database for this specific cache configuration
+                const cacheKeyParts = cacheKey.split(':');
+                const cachedProjectId = cacheKeyParts[1];
+                const cachedClientId = cacheKeyParts[2];
+                
+                // Only update if it matches our project
+                if (cachedProjectId && materialItems[0]?.projectId === cachedProjectId) {
+                  // Fetch fresh data from database
+                  const freshProject = await Projects.findById(cachedProjectId);
+                  
+                  if (freshProject && freshProject.MaterialAvailable) {
+                    // Update the cached response with fresh data
+                    parsedCache.MaterialAvailable = freshProject.MaterialAvailable;
+                    parsedCache.pagination.totalItems = freshProject.MaterialAvailable.length;
+                    parsedCache.pagination.totalPages = Math.ceil(
+                      freshProject.MaterialAvailable.length / (parsedCache.pagination.itemsPerPage || 20)
+                    );
+                    
+                    // Save updated cache with same expiration (24 hours)
+                    await client.set(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
+                    console.log(`✅ Cache updated: ${cacheKey}`);
+                  }
+                }
+              }
+            }
+          } catch (updateError) {
+            console.error(`❌ Error updating cache key ${cacheKey}:`, updateError);
+            // If update fails, delete the key to force fresh fetch
+            await client.del(cacheKey);
+          }
+        }
+      }
+      
+      // Also invalidate project-level caches (these are simpler to regenerate)
+      const projectKeys = await client.keys(`project:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+        console.log(`🗑️ Invalidated ${projectKeys.length} project cache keys`);
+      }
+      
+      const projectsKeys = await client.keys(`projects:*`);
+      if (projectsKeys.length > 0) {
+        await Promise.all(projectsKeys.map(key => client.del(key)));
+        console.log(`🗑️ Invalidated ${projectsKeys.length} projects cache keys`);
+      }
+      
+      console.log('✅ Cache update completed successfully');
+      console.log('========================================\n');
+      
+    } catch (cacheError) {
+      console.error('❌ Cache update error:', cacheError);
+      // If cache update fails, fall back to invalidation
+      console.log('⚠️ Falling back to cache invalidation...');
+      const allKeys = await client.keys(`material:*`);
+      if (allKeys.length > 0) {
+        await Promise.all(allKeys.map(key => client.del(key)));
+      }
     }
 
     return NextResponse.json({ success: true, results }, { status: 200 });

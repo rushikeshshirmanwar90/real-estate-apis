@@ -506,10 +506,79 @@ export const POST = async (req: NextRequest | Request) => {
           console.error('Critical error in material activity notification:', error);
         });
 
-      // Invalidate cache for this project
-      const keys = await client.keys(`material-usage:${projectId}:*`);
-      if (keys.length > 0) {
-        await Promise.all(keys.map(key => client.del(key)));
+      // ✅ OPTIMIZED: Update both material and material-usage caches
+      console.log('\n========================================');
+      console.log('🔄 UPDATING CACHES AFTER MATERIAL USAGE');
+      console.log('========================================');
+      
+      try {
+        // 1. Update material-usage cache
+        const usageKeys = await client.keys(`material-usage:${projectId}:*`);
+        console.log(`📋 Found ${usageKeys.length} material-usage cache keys`);
+        
+        if (usageKeys.length > 0) {
+          // For material-usage, it's simpler to invalidate since the data structure is complex
+          await Promise.all(usageKeys.map(key => client.del(key)));
+          console.log(`🗑️ Invalidated ${usageKeys.length} material-usage cache keys`);
+        }
+        
+        // 2. Update material (available) cache with fresh data
+        const materialKeys = await client.keys(`material:${projectId}:*`);
+        console.log(`📋 Found ${materialKeys.length} material cache keys to update`);
+        
+        if (materialKeys.length > 0) {
+          // ✅ CRITICAL FIX: Use cleanedProject (already has materials with 0 qty removed)
+          // Don't fetch again from DB - cleanedProject is already up-to-date!
+          console.log(`✅ Using cleanedProject data (materials with 0 qty already removed)`);
+          console.log(`   - Available materials in cleanedProject: ${cleanedProject?.MaterialAvailable?.length || 0}`);
+          
+          if (cleanedProject) {
+            for (const cacheKey of materialKeys) {
+              try {
+                const cachedData = await client.get(cacheKey);
+                if (cachedData) {
+                  const parsedCache = JSON.parse(cachedData);
+                  
+                  if (parsedCache.MaterialAvailable && Array.isArray(parsedCache.MaterialAvailable)) {
+                    // ✅ CRITICAL FIX: Update with cleanedProject data (0 qty materials removed)
+                    parsedCache.MaterialAvailable = cleanedProject.MaterialAvailable || [];
+                    parsedCache.pagination.totalItems = (cleanedProject.MaterialAvailable || []).length;
+                    parsedCache.pagination.totalPages = Math.ceil(
+                      (cleanedProject.MaterialAvailable || []).length / (parsedCache.pagination.itemsPerPage || 20)
+                    );
+                    
+                    // Save updated cache
+                    await client.set(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
+                    console.log(`✅ Updated material cache: ${cacheKey}`);
+                    console.log(`   - Materials in cache: ${parsedCache.MaterialAvailable.length}`);
+                  }
+                }
+              } catch (updateError) {
+                console.error(`❌ Error updating cache key ${cacheKey}:`, updateError);
+                await client.del(cacheKey);
+              }
+            }
+          } else {
+            console.warn(`⚠️ cleanedProject is null - falling back to invalidation`);
+            // If cleanedProject is null, invalidate cache
+            await Promise.all(materialKeys.map(key => client.del(key)));
+          }
+        }
+        
+        console.log('✅ Cache update completed');
+        console.log('========================================\n');
+        
+      } catch (cacheError) {
+        console.error('❌ Cache update error:', cacheError);
+        // Fallback to invalidation
+        const allKeys = await client.keys(`material-usage:${projectId}:*`);
+        if (allKeys.length > 0) {
+          await Promise.all(allKeys.map(key => client.del(key)));
+        }
+        const materialKeys = await client.keys(`material:${projectId}:*`);
+        if (materialKeys.length > 0) {
+          await Promise.all(materialKeys.map(key => client.del(key)));
+        }
       }
 
       console.log(`========================================`);

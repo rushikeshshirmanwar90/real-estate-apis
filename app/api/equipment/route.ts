@@ -1,11 +1,42 @@
 import connect from "@/lib/db";
 import { Equipment } from "@/lib/models/Xsite/Equipment";
 import { Projects } from "@/lib/models/Project";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { client } from "@/lib/redis";
+import { canAccessProject } from "@/lib/middleware/projectLicenseFilter";
+
+// Helper function to check staff access to project
+async function checkStaffProjectAccess(req: NextRequest, projectId: string): Promise<NextResponse | null> {
+  const { searchParams } = new URL(req.url);
+  const userRole = searchParams.get("userRole") || 'admin';
+  
+  // Admin users: no restrictions
+  if (userRole === 'admin') {
+    return null; // No error, proceed
+  }
+  
+  // Staff users: check project access
+  // Get project to find clientId
+  const project = await Projects.findById(projectId).select('clientId').lean();
+  if (!project) {
+    return errorResponse("Project not found", 404);
+  }
+  
+  const clientId = (project as any).clientId;
+  const accessCheck = await canAccessProject(clientId.toString());
+  
+  if (!accessCheck.canAccess) {
+    return errorResponse(
+      accessCheck.reason || "Access denied to this project",
+      403
+    );
+  }
+  
+  return null; // No error, proceed
+}
 
 
 // GET - Retrieve equipment entries
@@ -131,6 +162,12 @@ export const POST = async (req: NextRequest) => {
     
     if (data.perUnitCost < 0) {
       return errorResponse("Per unit cost cannot be negative", 400);
+    }
+
+    // Check staff access to this project
+    const accessError = await checkStaffProjectAccess(req, data.projectId);
+    if (accessError) {
+      return accessError;
     }
 
     // Create new equipment entry

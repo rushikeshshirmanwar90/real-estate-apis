@@ -6,13 +6,51 @@ import { OtherSection } from "@/lib/models/OtherSection";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { Labor } from "@/lib/models/Xsite/Labor";
 import { client } from "@/lib/redis";
+import { canAccessProject } from "@/lib/middleware/projectLicenseFilter";
+
+// Helper function to check staff access to project
+async function checkStaffProjectAccess(req: NextRequest, projectId: string): Promise<NextResponse | null> {
+  const { searchParams } = new URL(req.url);
+  const userRole = searchParams.get("userRole") || 'admin';
+  
+  // Admin users: no restrictions
+  if (userRole === 'admin') {
+    return null; // No error, proceed
+  }
+  
+  // Staff users: check project access
+  // Get project to find clientId
+  const project = await Projects.findById(projectId).select('clientId').lean();
+  if (!project) {
+    return NextResponse.json(
+      { success: false, message: "Project not found" },
+      { status: 404 }
+    );
+  }
+  
+  const clientId = (project as any).clientId;
+  const accessCheck = await canAccessProject(clientId.toString());
+  
+  if (!accessCheck.canAccess) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: accessCheck.reason || "Access denied to this project",
+        error: "PROJECT_ACCESS_DENIED"
+      },
+      { status: 403 }
+    );
+  }
+  
+  return null; // No error, proceed
+}
 
 // POST - Add labor entries
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     await connect();
 
-    const body = await request.json();
+    const body = await req.json();
     console.log('📋 Labor API - Request body:', JSON.stringify(body, null, 2));
 
     const {
@@ -69,6 +107,12 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+
+    // Check staff access to this project
+    const accessError = await checkStaffProjectAccess(req, projectId);
+    if (accessError) {
+      return accessError;
     }
 
     // Validate labor entries structure
@@ -334,11 +378,11 @@ export async function POST(request: NextRequest) {
 }
 
 // GET - Retrieve labor entries
-export async function GET(request: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     await connect();
 
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const entityType = searchParams.get('entityType');
     const entityId = searchParams.get('entityId');
     const projectId = searchParams.get('projectId');
@@ -512,11 +556,11 @@ export async function GET(request: NextRequest) {
 }
 
 // PUT - Update labor entry
-export async function PUT(request: NextRequest) {
+export async function PUT(req: NextRequest) {
   try {
     await connect();
 
-    const body = await request.json();
+    const body = await req.json();
     const {
       entityType,
       entityId,
@@ -652,11 +696,11 @@ export async function PUT(request: NextRequest) {
 }
 
 // DELETE - Remove labor entry
-export async function DELETE(request: NextRequest) {
+export async function DELETE(req: NextRequest) {
   try {
     await connect();
 
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = new URL(req.url);
     const entityType = searchParams.get('entityType');
     const entityId = searchParams.get('entityId');
     const laborId = searchParams.get('laborId');

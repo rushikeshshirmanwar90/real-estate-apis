@@ -9,6 +9,7 @@ import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { client } from "@/lib/redis";
+import { addLicenseStatusToProjects } from "@/lib/middleware/projectLicenseFilter";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -23,8 +24,9 @@ export const GET = async (req: NextRequest) => {
     const email = searchParams.get("email");
     const clientId = searchParams.get("clientId");
     const getAllProjects = searchParams.get("getAllProjects"); // New parameter for staff users
+    const skipCache = searchParams.get("skipCache"); // Skip cache parameter
 
-    console.log('🔍 Staff API (users/staff) called with:', { id, email, clientId, getAllProjects });
+    console.log('🔍 Staff API (users/staff) called with:', { id, email, clientId, getAllProjects, skipCache });
 
     // ✅ For staff users requesting all projects, clientId is optional
     // ✅ For email-based queries (login flow), clientId is optional
@@ -62,10 +64,17 @@ export const GET = async (req: NextRequest) => {
 
       // Check cache
       const cacheKey = getAllProjects === "true" ? `staff:${id}:allProjects` : `staff:${id}:client:${clientId}`;
-      let cacheValue = await client.get(cacheKey);
-      if (cacheValue) {
-        cacheValue = JSON.parse(cacheValue);
-        return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
+      
+      // Skip cache if requested
+      if (skipCache !== "true") {
+        let cacheValue = await client.get(cacheKey);
+        if (cacheValue) {
+          cacheValue = JSON.parse(cacheValue);
+          console.log('📦 Returning cached staff data');
+          return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
+        }
+      } else {
+        console.log('⚡ Skipping cache - fetching fresh data');
       }
 
       // ✅ Handle getAllProjects parameter for staff users
@@ -146,6 +155,56 @@ export const GET = async (req: NextRequest) => {
           
           console.log(`✅ Returning ${staffObj.assignedProjects.length} projects from ALL clients for staff user`);
           console.log('🔍 Final assignment structure:', JSON.stringify(staffObj.assignedProjects[0], null, 2));
+          
+          // ✅ ADD LICENSE STATUS TO PROJECTS FOR STAFF USERS
+          console.log('🔐 Adding license status to staff projects...');
+          
+          // Extract project data from assignments
+          const projectsToCheck = staffObj.assignedProjects
+            .map((assignment: any) => {
+              const projectData = assignment.projectData || assignment.projectId;
+              if (projectData && projectData._id) {
+                return {
+                  ...projectData,
+                  clientId: assignment.clientId, // Ensure clientId is included
+                  clientName: assignment.clientName
+                };
+              }
+              return null;
+            })
+            .filter((project: any) => project !== null);
+          
+          // Add license status to all projects (staff role)
+          const projectsWithLicenseStatus = await addLicenseStatusToProjects(projectsToCheck, 'staff');
+          
+          console.log('🔍 Projects with license status:', JSON.stringify(projectsWithLicenseStatus.map((p: any) => ({
+            name: p.name,
+            _id: p._id,
+            isAccessible: p.isAccessible,
+            licenseStatus: p.licenseStatus,
+            blockReason: p.blockReason
+          })), null, 2));
+          
+          // Map the license status back to assignments
+          staffObj.assignedProjects = staffObj.assignedProjects.map((assignment: any) => {
+            const projectData = assignment.projectData || assignment.projectId;
+            if (projectData && projectData._id) {
+              // Find the corresponding project with license status
+              const projectWithStatus = projectsWithLicenseStatus.find(
+                (p: any) => p._id.toString() === projectData._id.toString()
+              );
+              
+              if (projectWithStatus) {
+                return {
+                  ...assignment,
+                  projectData: projectWithStatus // Replace with project that has license status
+                };
+              }
+            }
+            return assignment;
+          });
+          
+          console.log('✅ License status added to all staff projects');
         } else {
           console.log('⚠️ Staff has no assigned projects');
         }

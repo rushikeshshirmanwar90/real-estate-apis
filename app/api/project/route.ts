@@ -9,6 +9,8 @@ import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 import { client } from "@/lib/redis";
+import { withLicenseCheck } from "@/lib/middleware/licenseCheck";
+import { addLicenseStatusToProjects, canAccessProject } from "@/lib/middleware/projectLicenseFilter";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -16,6 +18,7 @@ export const GET = async (req: NextRequest) => {
     const id = searchParams.get("id");
     const clientId = searchParams.get("clientId");
     const staffId = searchParams.get("staffId"); // Add staffId parameter for filtering
+    const userRole = searchParams.get("userRole") || 'admin'; // Get user role for filtering
     const excludeMaterials = searchParams.get("excludeMaterials") === "true"; // ✅ NEW: Option to exclude materials
 
     if (!clientId) {
@@ -78,6 +81,16 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Project not found or not assigned to this staff member", 404);
       }
 
+      // For staff users, check if they can access this project based on client license
+      if (userRole !== 'admin') {
+        const clientId = (project as any).clientId?._id || (project as any).clientId;
+        const accessCheck = await canAccessProject(clientId.toString());
+        
+        if (!accessCheck.canAccess) {
+          return errorResponse(accessCheck.reason || "Access denied", 403);
+        }
+      }
+
       // Cache the project with 24-hour expiration
       await client.set(`project:${id}`, JSON.stringify(project), 'EX', 86400);
 
@@ -85,7 +98,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Check cache for projects list
-    const cacheKey = `projects:${clientId}${staffId ? `:staff:${staffId}` : ''}${excludeMaterials ? ':noMaterials' : ''}`;
+    const cacheKey = `projects:${clientId}${staffId ? `:staff:${staffId}` : ''}${excludeMaterials ? ':noMaterials' : ''}:${userRole}`;
     let cacheValue = await client.get(cacheKey);
     if (cacheValue) {
       cacheValue = JSON.parse(cacheValue);
@@ -101,11 +114,32 @@ export const GET = async (req: NextRequest) => {
       console.log(`🔍 Filtering projects for staff ID: ${staffId}`);
     }
 
-    const projects = await Projects.find(projectsQuery, projection)
+    let projects = await Projects.find(projectsQuery, projection)
       .sort({ createdAt: -1 })
       .lean();
 
-    console.log(`📊 Found ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
+    // Add license status to projects (for staff, marks blocked projects)
+    console.log(`📊 Adding license status to ${projects.length} projects for userRole: "${userRole}"`);
+    
+    // Log first project's clientId for debugging
+    if (projects.length > 0) {
+        console.log(`🔍 First project clientId:`, projects[0].clientId);
+    }
+    
+    projects = await addLicenseStatusToProjects(projects, userRole);
+    
+    // Log result for debugging
+    if (projects.length > 0) {
+        console.log(`✅ First project after status:`, {
+            name: projects[0].name,
+            isAccessible: projects[0].isAccessible,
+            licenseStatus: projects[0].licenseStatus,
+            blockReason: projects[0].blockReason
+        });
+    }
+    console.log(`✅ Projects with status added`);
+
+    console.log(`📊 Returning ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
 
     // Cache the projects list with 24-hour expiration
     await client.set(cacheKey, JSON.stringify(projects), 'EX', 86400);
@@ -120,7 +154,7 @@ export const GET = async (req: NextRequest) => {
   }
 };
 
-export const POST = async (req: NextRequest) => {
+export const POST = withLicenseCheck(async (req: NextRequest) => {
   try {
     await connect();
 
@@ -238,11 +272,11 @@ export const POST = async (req: NextRequest) => {
 
     return errorResponse("Failed to create project", 500);
   }
-};
+});
 
 // DELETE and PUT methods moved to /api/project/[id]/route.ts for proper dynamic routing
 
-export const PATCH = async (req: NextRequest) => {
+export const PATCH = withLicenseCheck(async (req: NextRequest) => {
   try {
     await connect();
     const body = await req.json();
@@ -308,4 +342,4 @@ export const PATCH = async (req: NextRequest) => {
     console.error('Error updating project completion status:', error);
     return errorResponse("Failed to update project completion status", 500);
   }
-};
+});
