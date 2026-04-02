@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass Exponentor@Rushikesh@123
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
   web:
     build:
       context: .
@@ -10,7 +24,7 @@ services:
     environment:
       NODE_ENV: production
       DB_URL: mongodb+srv://rushi:iamrushi@cluster0.kq4lbxt.mongodb.net/real-estate?retryWrites=true&w=majority
-      REDIS_HOST: 187.127.137.30
+      REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: Exponentor@Rushikesh@123
       SALT_ID: 10
@@ -23,4 +37,10 @@ services:
       SMTP_PASS: anoeipuattkwiaxl
       NEXT_PUBLIC_CLIENT_ID: 676e84f57021012d6d8e2a3b
       NEXT_PUBLIC_AUTHENTICATION_CODE: Q7xLm92GpTCnB3sZgWAeYR8dMloK5Ujf8vrw02nl
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: always
+
+volumes:
+  redis-data:
