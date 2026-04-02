@@ -1,110 +1,134 @@
-# Dependencies
-node_modules
+############################################################
+# Production-ready .dockerignore for a Next.js (Vercel-style) app
+# Keeps Docker builds fast, lean, and free of development files.
+############################################################
+
+# Dependencies (installed inside Docker, never copied)
+node_modules/
+.pnpm-store/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Next.js build output
+# Next.js build outputs (always generated during `next build`)
 .next/
 out/
+dist/
+build/
+.vercel/
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Testing
+# Tests and testing output (not needed in production images)
 coverage/
-.nyc_output
+.nyc_output/
+__tests__/
+__mocks__/
+jest/
+cypress/
+cypress/screenshots/
+cypress/videos/
+playwright-report/
+test-results/
+.vitest/
+vitest.config.*
+jest.config.*
+cypress.config.*
+playwright.config.*
+*.test.*
+*.spec.*
 
-# IDE and editor files
+# Local development and editor files
+.git/
+.gitignore
+.gitattributes
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.log
 
-# OS generated files
+# Environment variables (only commit template files)
+.env
+.env*.local
+.env.development
+.env.test
+.env.production.local
+
+# Docker configuration files (not needed inside build context)
+Dockerfile*
+.dockerignore
+compose.yaml
+compose.yml
+docker-compose*.yaml
+docker-compose*.yml
+
+# Documentation
+*.md
+docs/
+
+# CI/CD configuration files
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+Jenkinsfile
+
+# Cache directories and temporary data
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.swc/
+.turbo/
+.tmp/
+.temp/
+
+# TypeScript build metadata
+*.tsbuildinfo
+
+# Sensitive or unnecessary configuration files
+*.pem
+.editorconfig
+.prettierrc*
+prettier.config.*
+.eslintrc*
+eslint.config.*
+.stylelintrc*
+stylelint.config.*
+.babelrc*
+*.iml
+*.ipr
+*.iws
+
+# OS-specific junk
 .DS_Store
-.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
 Thumbs.db
+Desktop.ini
 
-# Git
-.git/
-.gitignore
+# AI/ML tool metadata and configs
+.cursor/
+.cursorrules
+.copilot/
+.copilotignore
+.github/copilot/
+.gemini/
+.anthropic/
+.kiro
+.claude
+AGENTS.md
+.agents/
 
-# Logs
-logs
-*.log
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Expo
-.expo/
-
-# Vercel
-.vercel
-
-# Storybook build outputs
-.out
-.storybook-out
-
-# Temporary folders
-tmp/
-temp/
-
-# Documentation
-docs/
-*.md
-README*
-
-# Examples and scripts (optional - remove if needed in container)
-examples/
-scripts/
-
-# Test files
-**/*.test.*
-**/*.spec.*
-jest.config.js
-jest.setup.js
-
-# TypeScript cache
-*.tsbuildinfo
-
-# Postman collection
-postman-collection.json
+# AI-generated temp files
+*.aider*
+*.copilot*
+*.chatgpt*
+*.claude*
+*.gemini*
+*.openai*
+*.anthropic*

@@ -1,43 +1,32 @@
 version: '3.8'
 
 services:
-  real-estate-app:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: real-estate-app
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DB_URL=${DB_URL}
+      - SALT_ID=${SALT_ID}
+      - JWT_SECRET=${JWT_SECRET}
+      - DOMAIN=${DOMAIN}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - NEXT_PUBLIC_CLIENT_ID=${NEXT_PUBLIC_CLIENT_ID}
+      - NEXT_PUBLIC_AUTHENTICATION_CODE=${NEXT_PUBLIC_AUTHENTICATION_CODE}
     env_file:
       - .env
-    depends_on:
-      - redis
-      - mongodb
-    volumes:
-      - ./public:/app/public
     restart: unless-stopped
+    networks:
+      - app-network
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-
-  mongodb:
-    image: mongo:7
-    ports:
-      - "27017:27017"
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
-    volumes:
-      - mongodb_data:/data/db
-    restart: unless-stopped
-
-volumes:
-  redis_data:
-  mongodb_data:
+networks:
+  app-network:
+    driver: bridge
