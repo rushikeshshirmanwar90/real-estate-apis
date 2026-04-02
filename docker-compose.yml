@@ -5,20 +5,22 @@ services:
       dockerfile: Dockerfile
     ports:
       - '3000:3000'
+    env_file:
+      - .env
     environment:
-      NODE_ENV: 'production'
-      DB_URL: '${DB_URL}'
-      REDIS_HOST: '${REDIS_HOST}'
-      REDIS_PORT: '${REDIS_PORT}'
-      REDIS_PASSWORD: '${REDIS_PASSWORD}'
-      SALT_ID: '${SALT_ID}'
-      JWT_SECRET: '${JWT_SECRET}'
-      DOMAIN: '${DOMAIN}'
-      SMTP_HOST: '${SMTP_HOST}'
-      SMTP_PORT: '${SMTP_PORT}'
-      SMTP_SECURE: '${SMTP_SECURE}'
-      SMTP_USER: '${SMTP_USER}'
-      SMTP_PASS: '${SMTP_PASS}'
-      NEXT_PUBLIC_CLIENT_ID: '${NEXT_PUBLIC_CLIENT_ID}'
-      NEXT_PUBLIC_AUTHENTICATION_CODE: '${NEXT_PUBLIC_AUTHENTICATION_CODE}'
+      NODE_ENV: production
+      DB_URL: mongodb+srv://rushi:iamrushi@cluster0.kq4lbxt.mongodb.net/real-estate?retryWrites=true&w=majority
+      REDIS_HOST: 187.127.137.30
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: Exponentor@Rushikesh@123
+      SALT_ID: 10
+      JWT_SECRET: sjdlfjaorinaldjlf13$$zldsjflasjf
+      DOMAIN: https://real-estate-apis.vercel.app
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_SECURE: false
+      SMTP_USER: rushikeshshrimanwar@gmail.com
+      SMTP_PASS: anoeipuattkwiaxl
+      NEXT_PUBLIC_CLIENT_ID: 676e84f57021012d6d8e2a3b
+      NEXT_PUBLIC_AUTHENTICATION_CODE: Q7xLm92GpTCnB3sZgWAeYR8dMloK5Ujf8vrw02nl
     restart: always
