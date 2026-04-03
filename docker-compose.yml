@@ -6,13 +6,11 @@ services:
       - '8001:8001'
     volumes:
       - redis-data:/data
-    env_file:
-      - .env
     environment:
-      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD}
+      - REDIS_ARGS=--requirepass ${REDIS_PASSWORD:-defaultpassword}
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -21,11 +19,14 @@ services:
     image: exponentor/xsite-apis:latest
     ports:
       - '3000:3000'
-    env_file:
-      - .env
     environment:
       NODE_ENV: production
       REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-defaultpassword}
+      DATABASE_URL: ${DATABASE_URL}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL}
     depends_on:
       redis:
         condition: service_healthy
