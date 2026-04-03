@@ -18,10 +18,7 @@ services:
       retries: 3
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: real-estate-apis-web:latest
+    image: exponentor/xsite-apis:latest
     ports:
       - '3000:3000'
     env_file:
