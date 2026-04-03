@@ -30,7 +30,8 @@ export const GET = async (req: NextRequest | Request) => {
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") || "desc";
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "20"), 100); // ✅ NEW: Pagination with max 100
+    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 100); // ✅ Pagination: default 10, max 100
+    const cacheBuster = searchParams.get("_t");                // ✅ Cache busting parameter (ignored, just for client-side cache bypass)
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -66,8 +67,9 @@ export const GET = async (req: NextRequest | Request) => {
     console.log('Limit:', limit);
     console.log('========================================\n');
 
-    // Check cache first
+    // Check cache first (exclude cache buster from cache key)
     const cacheKey = `material-usage:${projectId}:${clientId}:${sectionId || 'all'}:${miniSectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
+    console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
     let cacheValue = await client.get(cacheKey);
     
     if (cacheValue) {
@@ -494,10 +496,39 @@ export const POST = async (req: NextRequest | Request) => {
 
     // FIXED: Return both MaterialAvailable AND MaterialUsed
     
-    // Invalidate cache for this project
-    const keys = await client.keys(`material-usage:${projectId}:*`);
-    if (keys.length > 0) {
-      await Promise.all(keys.map(key => client.del(key)));
+    // ✅ COMPREHENSIVE CACHE INVALIDATION: Clear all related caches
+    console.log('\n========================================');
+    console.log('🗑️ INVALIDATING CACHES AFTER MATERIAL USAGE');
+    console.log('========================================');
+    
+    try {
+      // Invalidate material-usage caches for this project
+      const usageKeys = await client.keys(`material-usage:${projectId}:*`);
+      if (usageKeys.length > 0) {
+        await Promise.all(usageKeys.map(key => client.del(key)));
+        console.log(`✅ Invalidated ${usageKeys.length} material-usage cache keys`);
+      }
+      
+      // ✅ CRITICAL: Also invalidate material (available) caches since quantities changed
+      const materialKeys = await client.keys(`material:${projectId}:*`);
+      if (materialKeys.length > 0) {
+        await Promise.all(materialKeys.map(key => client.del(key)));
+        console.log(`✅ Invalidated ${materialKeys.length} material cache keys`);
+      }
+      
+      // Invalidate project-level caches
+      await client.del(`project:${projectId}`);
+      const projectKeys = await client.keys(`projects:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+        console.log(`✅ Invalidated ${projectKeys.length} project cache keys`);
+      }
+      
+      console.log('✅ Cache invalidation completed successfully');
+      console.log('========================================\n');
+    } catch (cacheError) {
+      console.error('❌ Cache invalidation error:', cacheError);
+      // Don't fail the request if cache invalidation fails
     }
 
     return NextResponse.json(

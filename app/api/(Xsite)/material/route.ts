@@ -39,7 +39,8 @@ export const GET = async (req: NextRequest | Request) => {
     const sortOrder    = searchParams.get("sortOrder")          || "desc";
     const sectionId    = searchParams.get("sectionId");         // ✅ NEW: Section filtering
     const page         = parseInt(searchParams.get("page") || "1");
-    const limit        = Math.min(parseInt(searchParams.get("limit") || "20"), 100); // ✅ NEW: Pagination with max 100
+    const limit        = Math.min(parseInt(searchParams.get("limit") || "10"), 100); // ✅ Pagination: default 10, max 100
+    const cacheBuster  = searchParams.get("_t");                // ✅ Cache busting parameter (ignored, just for client-side cache bypass)
 
     if (!projectId || !clientId) {
       return NextResponse.json(
@@ -69,8 +70,9 @@ export const GET = async (req: NextRequest | Request) => {
 
     await connect();
 
-    // Check cache first
+    // Check cache first (exclude cache buster from cache key)
     const cacheKey = `material:${projectId}:${clientId}:${sectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
+    console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
     let cacheValue = await client.get(cacheKey);
     
     if (cacheValue) {
