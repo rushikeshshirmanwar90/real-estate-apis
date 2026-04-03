@@ -8,7 +8,7 @@ import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { client } from "@/lib/redis";
+import { client, safeRedisOperation } from "@/lib/redis";
 import { withLicenseCheck } from "@/lib/middleware/licenseCheck";
 import { addLicenseStatusToProjects, canAccessProject } from "@/lib/middleware/projectLicenseFilter";
 
@@ -58,7 +58,10 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache for single project
-      let cacheValue = await client.get(`project:${id}`);
+      let cacheValue = await safeRedisOperation(
+        async () => await client.get(`project:${id}`),
+        null
+      );
       if (cacheValue) {
         cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Project retrieved successfully (cached)");
@@ -92,14 +95,20 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the project with 24-hour expiration
-      await client.set(`project:${id}`, JSON.stringify(project), 'EX', 86400);
+      await safeRedisOperation(
+        async () => await client.set(`project:${id}`, JSON.stringify(project), 'EX', 86400),
+        null
+      );
 
       return successResponse(project, "Project retrieved successfully");
     }
 
     // Check cache for projects list
     const cacheKey = `projects:${clientId}${staffId ? `:staff:${staffId}` : ''}${excludeMaterials ? ':noMaterials' : ''}:${userRole}`;
-    let cacheValue = await client.get(cacheKey);
+    let cacheValue = await safeRedisOperation(
+      async () => await client.get(cacheKey),
+      null
+    );
     if (cacheValue) {
       cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} project(s) successfully (cached)`);
@@ -142,7 +151,10 @@ export const GET = async (req: NextRequest) => {
     console.log(`📊 Returning ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
 
     // Cache the projects list with 24-hour expiration
-    await client.set(cacheKey, JSON.stringify(projects), 'EX', 86400);
+    await safeRedisOperation(
+      async () => await client.set(cacheKey, JSON.stringify(projects), 'EX', 86400),
+      null
+    );
 
     return successResponse(
       projects,
@@ -252,10 +264,12 @@ export const POST = withLicenseCheck(async (req: NextRequest) => {
     }
 
     // ✅ Invalidate cache after creating new project
-    const keys = await client.keys(`projects:${body.clientId}*`);
-    if (keys.length > 0) {
-      await client.del(...keys);
-    }
+    await safeRedisOperation(async () => {
+      const keys = await client.keys(`projects:${body.clientId}*`);
+      if (keys.length > 0) {
+        await client.del(...keys);
+      }
+    }, null);
 
     return successResponse(newProject, "Project created successfully", 201);
   } catch (error: unknown) {
@@ -327,11 +341,13 @@ export const PATCH = withLicenseCheck(async (req: NextRequest) => {
     }
 
     // ✅ Invalidate cache after updating project
-    await client.del(`project:${id}`);
-    const keys = await client.keys(`projects:*`);
-    if (keys.length > 0) {
-      await client.del(...keys);
-    }
+    await safeRedisOperation(async () => {
+      await client.del(`project:${id}`);
+      const keys = await client.keys(`projects:*`);
+      if (keys.length > 0) {
+        await client.del(...keys);
+      }
+    }, null);
 
     return successResponse(
       updatedProject,

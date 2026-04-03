@@ -4,24 +4,60 @@ export const client = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT || '6379'),
   password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: true,
+  enableOfflineQueue: true,
   retryStrategy(times) {
-    if (times > 3) {
-      return null; // Stop retrying
-    }
-    return Math.min(times * 50, 2000);
+    const delay = Math.min(times * 50, 2000);
+    return delay;
   },
-  lazyConnect: true,
-  enableOfflineQueue: false, // Prevent queuing commands when disconnected
+  reconnectOnError(err) {
+    const targetError = 'READONLY';
+    if (err.message.includes(targetError)) {
+      return true;
+    }
+    return false;
+  },
+  keepAlive: 30000,
+  connectTimeout: 10000,
+  lazyConnect: false,
 });
 
-// Handle connection errors gracefully
+// Handle connection events
+client.on('connect', () => {
+  console.log('✅ Redis connected successfully');
+});
+
+client.on('ready', () => {
+  console.log('✅ Redis is ready to accept commands');
+});
+
 client.on('error', (err) => {
-  console.error('Redis connection error:', err.message);
+  console.error('❌ Redis connection error:', err.message);
 });
 
-// Connect with error handling
-client.connect().catch((err) => {
-  console.error('Failed to connect to Redis:', err.message);
-  console.error('Redis will be unavailable. Check your REDIS_HOST, REDIS_PORT, and REDIS_PASSWORD.');
+client.on('close', () => {
+  console.warn('⚠️ Redis connection closed');
 });
+
+client.on('reconnecting', () => {
+  console.log('🔄 Redis reconnecting...');
+});
+
+
+// Safe wrapper for Redis operations
+export async function safeRedisOperation<T>(
+  operation: () => Promise<T>,
+  fallback: T
+): Promise<T> {
+  try {
+    if (client.status === 'ready' || client.status === 'connect') {
+      return await operation();
+    }
+    console.warn('⚠️ Redis not ready, using fallback');
+    return fallback;
+  } catch (error) {
+    console.error('❌ Redis operation failed:', error);
+    return fallback;
+  }
+}
