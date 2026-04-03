@@ -8,9 +8,13 @@ services:
       - redis-data:/data
     environment:
       - REDIS_ARGS=--requirepass ${REDIS_PASSWORD:-defaultpassword}
+      - REDISINSIGHT_HOST=0.0.0.0
+      - REDISINSIGHT_PORT=8001
+      - RI_APP_PORT=8001
+      - RI_APP_HOST=0.0.0.0
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-defaultpassword}", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
