@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-defaultpassword}
     ports:
       - '6379:6379'
     volumes:
@@ -16,7 +16,7 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     environment:
-      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD}
+      - REDIS_HOSTS=local:redis:6379:0:${REDIS_PASSWORD:-defaultpassword}
     ports:
       - '8001:8081'
     depends_on:
