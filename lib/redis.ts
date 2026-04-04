@@ -1,55 +1,71 @@
 import { Redis } from "ioredis"
 
-export const client = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: true,
-  enableOfflineQueue: true,
-  retryStrategy(times) {
-    const delay = Math.min(times * 50, 2000);
-    return delay;
-  },
-  reconnectOnError(err) {
-    const targetError = 'READONLY';
-    if (err.message.includes(targetError)) {
-      return true;
-    }
-    return false;
-  },
-  keepAlive: 30000,
-  connectTimeout: 10000,
-  lazyConnect: false,
-});
+// Check if Redis is enabled via environment variable
+const REDIS_ENABLED = process.env.REDIS_ENABLED === 'true';
 
-// Handle connection events
-client.on('connect', () => {
-  console.log('✅ Redis connected successfully');
-});
+// Create Redis client only if enabled
+let client: Redis | null = null;
 
-client.on('ready', () => {
-  console.log('✅ Redis is ready to accept commands');
-});
+if (REDIS_ENABLED) {
+  client = new Redis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    password: process.env.REDIS_PASSWORD,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    enableOfflineQueue: true,
+    retryStrategy(times) {
+      const delay = Math.min(times * 50, 2000);
+      return delay;
+    },
+    reconnectOnError(err) {
+      const targetError = 'READONLY';
+      if (err.message.includes(targetError)) {
+        return true;
+      }
+      return false;
+    },
+    keepAlive: 30000,
+    connectTimeout: 10000,
+    lazyConnect: false,
+  });
 
-client.on('error', (err) => {
-  console.error('❌ Redis connection error:', err.message);
-});
+  // Handle connection events
+  client.on('connect', () => {
+    console.log('✅ Redis connected successfully');
+  });
 
-client.on('close', () => {
-  console.warn('⚠️ Redis connection closed');
-});
+  client.on('ready', () => {
+    console.log('✅ Redis is ready to accept commands');
+  });
 
-client.on('reconnecting', () => {
-  console.log('🔄 Redis reconnecting...');
-});
+  client.on('error', (err) => {
+    console.error('❌ Redis connection error:', err.message);
+  });
 
+  client.on('close', () => {
+    console.warn('⚠️ Redis connection closed');
+  });
+
+  client.on('reconnecting', () => {
+    console.log('🔄 Redis reconnecting...');
+  });
+} else {
+  console.log('ℹ️ Redis is DISABLED (set REDIS_ENABLED=true to enable)');
+}
+
+export { client };
 
 // Safe wrapper for Redis operations
 export async function safeRedisOperation<T>(
   operation: () => Promise<T>,
   fallback: T
 ): Promise<T> {
+  // If Redis is disabled, return fallback immediately
+  if (!REDIS_ENABLED || !client) {
+    return fallback;
+  }
+
   try {
     if (client.status === 'ready' || client.status === 'connect') {
       return await operation();

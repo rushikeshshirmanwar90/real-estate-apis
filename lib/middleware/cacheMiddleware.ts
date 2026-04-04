@@ -41,6 +41,11 @@ export async function cacheResponse(
  * @returns Success status
  */
 export async function invalidateCache(pattern: string): Promise<boolean> {
+  // If Redis is disabled, return true (no-op)
+  if (!redis) {
+    return true;
+  }
+
   try {
     // If pattern contains wildcard, find all matching keys
     if (pattern.includes('*')) {
@@ -64,6 +69,11 @@ export async function invalidateCache(pattern: string): Promise<boolean> {
  * @returns Success status
  */
 export async function clearAllCache(): Promise<boolean> {
+  // If Redis is disabled, return true (no-op)
+  if (!redis) {
+    return true;
+  }
+
   try {
     await redis.flushall();
     return true;
