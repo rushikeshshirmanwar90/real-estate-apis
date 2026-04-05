@@ -4,12 +4,7 @@ import { Admin } from "@/lib/models/users/Admin";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -63,9 +58,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`admin:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`admin:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Admin retrieved successfully (cached)");
       }
 
@@ -75,7 +70,7 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the admin with 24-hour expiration
-      await safeRedisSetCache(`admin:${id}`, JSON.stringify(adminData), 'EX', 86400);
+      await client.set(`admin:${id}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -88,9 +83,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`admin:email:${email}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`admin:email:${email}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Admin retrieved successfully (cached)");
       }
 
@@ -100,7 +95,7 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the admin with 24-hour expiration
-      await safeRedisSetCache(`admin:email:${email}`, JSON.stringify(adminData), 'EX', 86400);
+      await client.set(`admin:email:${email}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -123,9 +118,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`admin:client:${clientId}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`admin:client:${clientId}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Admin retrieved successfully (cached)");
       }
 
@@ -138,7 +133,7 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the admin with 24-hour expiration
-      await safeRedisSetCache(`admin:client:${clientId}`, JSON.stringify(adminData), 'EX', 86400);
+      await client.set(`admin:client:${clientId}`, JSON.stringify(adminData), 'EX', 86400);
 
       return successResponse(adminData, "Admin retrieved successfully");
     }
@@ -147,9 +142,9 @@ export const GET = async (req: NextRequest) => {
     console.log('🔍 Fetching all admins');
     
     // Check cache
-    const cachedData = await safeRedisGetCache(`admin:all`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(`admin:all`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} admin(s) successfully (cached)`);
     }
     
@@ -157,7 +152,7 @@ export const GET = async (req: NextRequest) => {
     console.log('📊 Total admins found:', adminData.length);
 
     // Cache all admins with 24-hour expiration
-    await safeRedisSetCache(`admin:all`, JSON.stringify(adminData), 'EX', 86400);
+    await client.set(`admin:all`, JSON.stringify(adminData), 'EX', 86400);
 
     return successResponse(
       adminData,
@@ -225,7 +220,7 @@ export const POST = async (req: NextRequest) => {
     await newLoginUser.save();
 
     // Invalidate cache
-    await safeRedisDelCache(`admin:all`);
+    await client.del(`admin:all`);
 
     return successResponse(savedAdmin, "Admin created successfully", 201);
   } catch (error: unknown) {
@@ -302,13 +297,13 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`admin:${id}`);
-    await safeRedisDelCache(`admin:all`);
+    await client.del(`admin:${id}`);
+    await client.del(`admin:all`);
     if (updatedAdmin.clientId) {
-      await safeRedisDelCache(`admin:client:${updatedAdmin.clientId}`);
+      await client.del(`admin:client:${updatedAdmin.clientId}`);
     }
     if (updateData.email) {
-      await safeRedisDelCache(`admin:email:${updateData.email}`);
+      await client.del(`admin:email:${updateData.email}`);
     }
 
     return successResponse(updatedAdmin, "Admin updated successfully");
@@ -358,11 +353,11 @@ export const DELETE = async (req: NextRequest) => {
     });
 
     // Invalidate cache
-    await safeRedisDelCache(`admin:${id}`);
-    await safeRedisDelCache(`admin:all`);
-    await safeRedisDelCache(`admin:email:${adminToDelete.email}`);
+    await client.del(`admin:${id}`);
+    await client.del(`admin:all`);
+    await client.del(`admin:email:${adminToDelete.email}`);
     if (adminToDelete.clientId) {
-      await safeRedisDelCache(`admin:client:${adminToDelete.clientId}`);
+      await client.del(`admin:client:${adminToDelete.clientId}`);
     }
 
     return successResponse(deletedAdmin, "Admin deleted successfully");

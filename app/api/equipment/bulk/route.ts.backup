@@ -5,13 +5,7 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 // POST - Bulk operations for equipment
 export const POST = async (req: NextRequest) => {
@@ -77,9 +71,9 @@ export const POST = async (req: NextRequest) => {
         }
         
         // Invalidate cache for equipment queries
-        const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+        const keysToDelete = await client.keys(`equipment:query:*`);
         if (keysToDelete.length > 0) {
-          await safeRedisDelCache(...keysToDelete);
+          await client.del(...keysToDelete);
         }
         
         return successResponse(
@@ -98,9 +92,9 @@ export const POST = async (req: NextRequest) => {
         const updateResult = await Equipment.updateMany(filters, { $set: data });
         
         // Invalidate cache for equipment queries
-        const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+        const keysToDelete = await client.keys(`equipment:query:*`);
         if (keysToDelete.length > 0) {
-          await safeRedisDelCache(...keysToDelete);
+          await client.del(...keysToDelete);
         }
         
         return successResponse(
@@ -153,9 +147,9 @@ export const POST = async (req: NextRequest) => {
         }
 
         // Invalidate cache for equipment queries
-        const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+        const keysToDelete = await client.keys(`equipment:query:*`);
         if (keysToDelete.length > 0) {
-          await safeRedisDelCache(...keysToDelete);
+          await client.del(...keysToDelete);
         }
 
         return successResponse(
@@ -176,9 +170,9 @@ export const POST = async (req: NextRequest) => {
         );
         
         // Invalidate cache for equipment queries
-        const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+        const keysToDelete = await client.keys(`equipment:query:*`);
         if (keysToDelete.length > 0) {
-          await safeRedisDelCache(...keysToDelete);
+          await client.del(...keysToDelete);
         }
         
         return successResponse(
@@ -214,9 +208,9 @@ export const POST = async (req: NextRequest) => {
           const costUpdateResult = await Equipment.bulkWrite(bulkOps);
           
           // Invalidate cache for equipment queries
-          const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+          const keysToDelete = await client.keys(`equipment:query:*`);
           if (keysToDelete.length > 0) {
-            await safeRedisDelCache(...keysToDelete);
+            await client.del(...keysToDelete);
           }
           
           return successResponse(
@@ -279,9 +273,9 @@ export const POST = async (req: NextRequest) => {
           }
           
           // Invalidate cache for equipment queries
-          const keysToDelete = await safeRedisKeysCache(`equipment:query:*`);
+          const keysToDelete = await client.keys(`equipment:query:*`);
           if (keysToDelete.length > 0) {
-            await safeRedisDelCache(...keysToDelete);
+            await client.del(...keysToDelete);
           }
           
           return successResponse(

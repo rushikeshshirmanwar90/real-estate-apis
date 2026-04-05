@@ -3,7 +3,13 @@ import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
-import { client } from "@/lib/redis";
+import { 
+  safeRedisGetCache, 
+  safeRedisSetCache, 
+  invalidateCachePattern,
+  safeRedisKeysCache,
+  safeRedisDelCache
+} from "@/lib/utils/redis-helpers";
 
 type Specs = Record<string, unknown>;
 
@@ -73,10 +79,10 @@ export const GET = async (req: NextRequest | Request) => {
     // Check cache first (exclude cache buster from cache key)
     const cacheKey = `material:${projectId}:${clientId}:${sectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
-    let cacheValue = await client.get(cacheKey);
     
-    if (cacheValue) {
-      cacheValue = JSON.parse(cacheValue);
+    const cachedData = await safeRedisGetCache(cacheKey);
+    if (cachedData) {
+      const cacheValue = JSON.parse(cachedData);
       return NextResponse.json(cacheValue, { status: 200 });
     }
 
@@ -235,7 +241,7 @@ export const GET = async (req: NextRequest | Request) => {
     };
 
     // Cache the response with 24-hour expiration
-    await client.set(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
+    await safeRedisSetCache(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
 
     return NextResponse.json(responsePayload, { status: 200 });
   } catch (error: unknown) {
@@ -434,14 +440,14 @@ export const POST = async (req: NextRequest | Request) => {
     
     try {
       // Get all cache keys for this project's materials
-      const materialKeys = await client.keys(`material:*`);
+      const materialKeys = await safeRedisKeysCache(`material:*`);
       console.log(`📋 Found ${materialKeys.length} cache keys to update`);
       
       if (materialKeys.length > 0) {
         // Update each cached response with the new materials
         for (const cacheKey of materialKeys) {
           try {
-            const cachedData = await client.get(cacheKey);
+            const cachedData = await safeRedisGetCache(cacheKey);
             if (cachedData) {
               const parsedCache = JSON.parse(cachedData);
               
@@ -468,7 +474,7 @@ export const POST = async (req: NextRequest | Request) => {
                     );
                     
                     // Save updated cache with same expiration (24 hours)
-                    await client.set(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
+                    await safeRedisSetCache(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
                     console.log(`✅ Cache updated: ${cacheKey}`);
                   }
                 }
@@ -477,23 +483,14 @@ export const POST = async (req: NextRequest | Request) => {
           } catch (updateError) {
             console.error(`❌ Error updating cache key ${cacheKey}:`, updateError);
             // If update fails, delete the key to force fresh fetch
-            await client.del(cacheKey);
+            await safeRedisDelCache(cacheKey);
           }
         }
       }
       
       // Also invalidate project-level caches (these are simpler to regenerate)
-      const projectKeys = await client.keys(`project:*`);
-      if (projectKeys.length > 0) {
-        await Promise.all(projectKeys.map(key => client.del(key)));
-        console.log(`🗑️ Invalidated ${projectKeys.length} project cache keys`);
-      }
-      
-      const projectsKeys = await client.keys(`projects:*`);
-      if (projectsKeys.length > 0) {
-        await Promise.all(projectsKeys.map(key => client.del(key)));
-        console.log(`🗑️ Invalidated ${projectsKeys.length} projects cache keys`);
-      }
+      await invalidateCachePattern(`project:*`);
+      await invalidateCachePattern(`projects:*`);
       
       console.log('✅ Cache update completed successfully');
       console.log('========================================\n');
@@ -502,10 +499,7 @@ export const POST = async (req: NextRequest | Request) => {
       console.error('❌ Cache update error:', cacheError);
       // If cache update fails, fall back to invalidation
       console.log('⚠️ Falling back to cache invalidation...');
-      const allKeys = await client.keys(`material:*`);
-      if (allKeys.length > 0) {
-        await Promise.all(allKeys.map(key => client.del(key)));
-      }
+      await invalidateCachePattern(`material:*`);
     }
 
     return NextResponse.json({ success: true, results }, { status: 200 });
@@ -568,17 +562,10 @@ export const PUT = async (req: NextRequest | Request) => {
       );
     }
 
-    // Invalidate cache for this project
-    const keys = await client.keys(`material:${projectId}:*`);
-    if (keys.length > 0) {
-      await Promise.all(keys.map(key => client.del(key)));
-    }
-    // Invalidate project cache
-    await client.del(`project:${projectId}`);
-    const projectKeys = await client.keys(`projects:*`);
-    if (projectKeys.length > 0) {
-      await Promise.all(projectKeys.map(key => client.del(key)));
-    }
+    // Invalidate cache for this project (PUT)
+    await invalidateCachePattern(`material:${projectId}:*`);
+    await safeRedisDelCache(`project:${projectId}`);
+    await invalidateCachePattern(`projects:*`);
 
     return NextResponse.json(
       {
@@ -648,17 +635,10 @@ export const DELETE = async (req: NextRequest | Request) => {
 
     await project.save();
 
-    // Invalidate cache for this project
-    const keys = await client.keys(`material:${projectId}:*`);
-    if (keys.length > 0) {
-      await Promise.all(keys.map(key => client.del(key)));
-    }
-    // Invalidate project cache
-    await client.del(`project:${projectId}`);
-    const projectKeys = await client.keys(`projects:*`);
-    if (projectKeys.length > 0) {
-      await Promise.all(projectKeys.map(key => client.del(key)));
-    }
+    // Invalidate cache for this project (DELETE method)
+    await invalidateCachePattern(`material:${projectId}:*`);
+    await safeRedisDelCache(`project:${projectId}`);
+    await invalidateCachePattern(`projects:*`);
 
     return NextResponse.json(
       {

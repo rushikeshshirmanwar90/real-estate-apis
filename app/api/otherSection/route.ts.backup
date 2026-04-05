@@ -3,13 +3,7 @@ import { OtherSection } from "@/lib/models/OtherSection";
 import { Projects } from "@/lib/models/Project";
 
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest | Request) => {
   const { searchParams } = new URL(req.url);
@@ -20,9 +14,9 @@ export const GET = async (req: NextRequest | Request) => {
 
     if (id) {
       // Check cache for single otherSection
-      const cachedData = await safeRedisGetCache(`otherSection:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`otherSection:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return NextResponse.json({ data: cacheValue }, { status: 200 });
       }
 
@@ -30,20 +24,20 @@ export const GET = async (req: NextRequest | Request) => {
 
       // Cache the otherSection with 24-hour expiration
       if (data) {
-        await safeRedisSetCache(`otherSection:${id}`, JSON.stringify(data), 'EX', 86400);
+        await client.set(`otherSection:${id}`, JSON.stringify(data), 'EX', 86400);
       }
     } else {
       // Check cache for all otherSections
-      const cachedData = await safeRedisGetCache(`otherSection:all`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`otherSection:all`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return NextResponse.json({ data: cacheValue }, { status: 200 });
       }
 
       data = await OtherSection.find();
 
       // Cache all otherSections with 24-hour expiration
-      await safeRedisSetCache(`otherSection:all`, JSON.stringify(data), 'EX', 86400);
+      await client.set(`otherSection:all`, JSON.stringify(data), 'EX', 86400);
     }
 
     if (!data) {
@@ -117,10 +111,10 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`otherSection:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
+    await client.del(`otherSection:all`);
+    const projectKeys = await client.keys(`project:*`);
     if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
+      await client.del(...projectKeys);
     }
 
     return NextResponse.json(
@@ -221,11 +215,11 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`otherSection:${sectionId}`);
-    await safeRedisDelCache(`otherSection:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
+    await client.del(`otherSection:${sectionId}`);
+    await client.del(`otherSection:all`);
+    const projectKeys = await client.keys(`project:*`);
     if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
+      await client.del(...projectKeys);
     }
 
     return NextResponse.json(
@@ -283,8 +277,8 @@ export const PUT = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`otherSection:${OtherSectionId}`);
-    await safeRedisDelCache(`otherSection:all`);
+    await client.del(`otherSection:${OtherSectionId}`);
+    await client.del(`otherSection:all`);
 
     return NextResponse.json(
       {
@@ -340,8 +334,8 @@ export const PATCH = async (req: NextRequest | Request) => {
     );
 
     // Invalidate cache
-    await safeRedisDelCache(`otherSection:${id}`);
-    await safeRedisDelCache(`otherSection:all`);
+    await client.del(`otherSection:${id}`);
+    await client.del(`otherSection:all`);
 
     return NextResponse.json(
       {

@@ -1,11 +1,6 @@
 import { NextRequest } from "next/server";
 import { successResponse } from "@/lib/utils/api-response";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 // Equipment categories and types data
 const equipmentCategories = {
@@ -400,9 +395,9 @@ export const GET = async (req: NextRequest) => {
     const cacheKey = `equipment:categories:${category || 'all'}:${format}`;
     
     // Check cache first
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, "Equipment categories retrieved successfully (cached)");
     }
 
@@ -433,7 +428,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Cache the response with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(responseData), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return successResponse(responseData, category ? `${category} equipment retrieved successfully` : "Equipment categories retrieved successfully");
   } catch (error: unknown) {

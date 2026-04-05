@@ -7,12 +7,7 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 const SALT_ROUNDS = 10;
 
@@ -34,9 +29,9 @@ export const GET = async (req: NextRequest) => {
       
       // Check cache only if not skipping
       if (!skipCache) {
-        const cachedData = await safeRedisGetCache(`client:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+        let cacheValue = await client.get(`client:${id}`);
+        if (cacheValue) {
+          cacheValue = JSON.parse(cacheValue);
           return successResponse(cacheValue, "Client retrieved successfully (cached)");
         }
       }
@@ -48,7 +43,7 @@ export const GET = async (req: NextRequest) => {
 
       // Cache the client with 24-hour expiration (only if not skipping cache)
       if (!skipCache) {
-        await safeRedisSetCache(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
+        await client.set(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
       }
 
       return successResponse(clientData, skipCache ? "Client retrieved successfully (fresh)" : "Client retrieved successfully");
@@ -61,9 +56,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`client:email:${email}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`client:email:${email}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Client retrieved successfully (cached)");
       }
 
@@ -75,15 +70,15 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the client with 24-hour expiration
-      await safeRedisSetCache(`client:email:${email}`, JSON.stringify(clientData), 'EX', 86400);
+      await client.set(`client:email:${email}`, JSON.stringify(clientData), 'EX', 86400);
 
       return successResponse(clientData, "Client retrieved successfully");
     }
 
     // Check cache for all clients
-    const cachedData = await safeRedisGetCache(`clients:all`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(`clients:all`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} client(s) successfully (cached)`);
     }
 
@@ -94,7 +89,7 @@ export const GET = async (req: NextRequest) => {
       .lean();
 
     // Cache all clients with 24-hour expiration
-    await safeRedisSetCache(`clients:all`, JSON.stringify(clients), 'EX', 86400);
+    await client.set(`clients:all`, JSON.stringify(clients), 'EX', 86400);
 
     return successResponse(
       clients,
@@ -171,7 +166,7 @@ export const POST = async (req: NextRequest) => {
       const { password: _, ...clientWithoutPassword } = addClient.toObject();
 
       // Invalidate cache
-      await safeRedisDelCache(`clients:all`);
+      await client.del(`clients:all`);
 
       return successResponse(
         clientWithoutPassword,
@@ -238,11 +233,11 @@ export const DELETE = async (req: NextRequest) => {
       await session.commitTransaction();
 
       // Invalidate cache
-      await safeRedisDelCache(`clients:all`);
+      await client.del(`clients:all`);
       if (deletedClient && !Array.isArray(deletedClient) && deletedClient._id) {
-        await safeRedisDelCache(`client:${deletedClient._id}`);
+        await client.del(`client:${deletedClient._id}`);
       }
-      await safeRedisDelCache(`client:email:${email}`);
+      await client.del(`client:email:${email}`);
 
       return successResponse(deletedClient, "Client deleted successfully");
     } catch (error) {
@@ -337,13 +332,13 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`clients:all`);
-    await safeRedisDelCache(`client:${id}`);
+    await client.del(`clients:all`);
+    await client.del(`client:${id}`);
     if (oldEmail) {
-      await safeRedisDelCache(`client:email:${oldEmail}`);
+      await client.del(`client:email:${oldEmail}`);
     }
     if (updateData.email) {
-      await safeRedisDelCache(`client:email:${updateData.email}`);
+      await client.del(`client:email:${updateData.email}`);
     }
 
     return successResponse(updatedClient, "Client updated successfully");

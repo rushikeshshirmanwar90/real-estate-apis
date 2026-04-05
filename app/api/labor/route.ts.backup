@@ -5,12 +5,7 @@ import { Building } from "@/lib/models/Building";
 import { OtherSection } from "@/lib/models/OtherSection";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { Labor } from "@/lib/models/Xsite/Labor";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 import { canAccessProject } from "@/lib/middleware/projectLicenseFilter";
 
 // Helper function to check staff access to project
@@ -310,14 +305,23 @@ export async function POST(req: NextRequest) {
     console.log('💰 Total cost added to spent:', totalLaborCost);
 
     // Invalidate cache for this entity and project
-    await invalidateCachePattern(`labor:${entityType}:${entityId}:*`);
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
     // Also invalidate project-level cache if not a project entity
     if (entityType !== 'project' && projectId) {
-      await invalidateCachePattern(`labor:project:${projectId}:*`);
+      const projectKeys = await client.keys(`labor:project:${projectId}:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+      }
     }
     // Invalidate project cache
-    await safeRedisDelCache(`project:${projectId}`);
-    await invalidateCachePattern(`projects:*`);
+    await client.del(`project:${projectId}`);
+    const projectCacheKeys = await client.keys(`projects:*`);
+    if (projectCacheKeys.length > 0) {
+      await Promise.all(projectCacheKeys.map(key => client.del(key)));
+    }
 
     return NextResponse.json({
       success: true,
@@ -390,9 +394,10 @@ export async function GET(req: NextRequest) {
 
     // Check cache first
     const cacheKey = `labor:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status}:${useStandalone}`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return NextResponse.json(cacheValue, { status: 200 });
     }
 
@@ -533,7 +538,7 @@ export async function GET(req: NextRequest) {
     };
 
     // Cache the response with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(responseData), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return NextResponse.json(responseData);
 
@@ -661,7 +666,10 @@ export async function PUT(req: NextRequest) {
     }
 
     // Invalidate cache for this entity and project
-    await invalidateCachePattern(`labor:${entityType}:${entityId}:*`);
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
 
     return NextResponse.json({
       success: true,
@@ -728,9 +736,15 @@ export async function DELETE(req: NextRequest) {
       }
 
       // Invalidate cache for this entity and project
-      await invalidateCachePattern(`labor:${entityType}:${entityId}:*`);
+      const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+      if (keys.length > 0) {
+        await Promise.all(keys.map(key => client.del(key)));
+      }
       if (projectId) {
-        await invalidateCachePattern(`labor:project:${projectId}:*`);
+        const projectKeys = await client.keys(`labor:project:${projectId}:*`);
+        if (projectKeys.length > 0) {
+          await Promise.all(projectKeys.map(key => client.del(key)));
+        }
       }
 
       return NextResponse.json({
@@ -846,10 +860,16 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Invalidate cache for this entity and project
-    await invalidateCachePattern(`labor:${entityType}:${entityId}:*`);
+    const keys = await client.keys(`labor:${entityType}:${entityId}:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
     // Also invalidate project-level cache if not a project entity
     if (entityType !== 'project' && currentEntity.projectId) {
-      await invalidateCachePattern(`labor:project:${currentEntity.projectId}:*`);
+      const projectKeys = await client.keys(`labor:project:${currentEntity.projectId}:*`);
+      if (projectKeys.length > 0) {
+        await Promise.all(projectKeys.map(key => client.del(key)));
+      }
     }
 
     return NextResponse.json({

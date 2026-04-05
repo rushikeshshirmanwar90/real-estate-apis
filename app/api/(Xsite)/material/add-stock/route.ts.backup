@@ -4,13 +4,7 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
  
 export async function POST(request: NextRequest) {
@@ -294,9 +288,9 @@ export async function POST(request: NextRequest) {
             console.log('✅ Material activity created successfully:', materialActivity._id);
 
             // Invalidate material activity cache
-            const activityKeys = await safeRedisKeysCache(`materialActivity:*`);
+            const activityKeys = await client.keys(`materialActivity:*`);
             if (activityKeys.length > 0) {
-                if (activityKeys.length > 0) await safeRedisDelCache(...activityKeys);
+                await Promise.all(activityKeys.map(key => client.del(key)));
                 console.log(`🗑️ Invalidated ${activityKeys.length} material activity cache keys`);
             }
 
@@ -324,17 +318,17 @@ export async function POST(request: NextRequest) {
         // Invalidate cache for this project
         try {
             console.log('🔄 Invalidating cache...');
-            const materialKeys = await safeRedisKeysCache(`material:${project._id}:*`);
+            const materialKeys = await client.keys(`material:${project._id}:*`);
             if (materialKeys.length > 0) {
-                if (materialKeys.length > 0) await safeRedisDelCache(...materialKeys);
+                await Promise.all(materialKeys.map(key => client.del(key)));
                 console.log(`🗑️ Invalidated ${materialKeys.length} material cache keys`);
             }
             
             // Invalidate project cache
-            await safeRedisDelCache(`project:${project._id}`);
-            const projectKeys = await safeRedisKeysCache(`projects:*`);
+            await client.del(`project:${project._id}`);
+            const projectKeys = await client.keys(`projects:*`);
             if (projectKeys.length > 0) {
-                if (projectKeys.length > 0) await safeRedisDelCache(...projectKeys);
+                await Promise.all(projectKeys.map(key => client.del(key)));
                 console.log(`🗑️ Invalidated ${projectKeys.length} project cache keys`);
             }
             console.log('✅ Cache invalidated successfully');

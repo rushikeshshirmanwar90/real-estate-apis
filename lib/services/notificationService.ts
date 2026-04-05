@@ -28,28 +28,47 @@ export interface ProjectAdmin {
 }
 
 /**
- * Get project admins (assigned staff) for a given project
+ * Get project admins (ONLY client admins, NO STAFF) for a given project
  */
 export async function getProjectAdmins(projectId: string): Promise<ProjectAdmin[]> {
   try {
     const project = await Projects.findById(projectId)
-      .select('assignedStaff')
+      .select('clientId name')
       .lean() as any;
 
-    if (!project || !project.assignedStaff || project.assignedStaff.length === 0) {
-      console.log(`No assigned staff found for project: ${projectId}`);
+    if (!project) {
+      console.log(`Project not found: ${projectId}`);
       return [];
     }
 
-    // Convert assigned staff to admin format
-    const admins: ProjectAdmin[] = project.assignedStaff.map((staff: any) => ({
-      _id: staff._id,
-      fullName: staff.fullName,
-      deviceTokens: [], // Will be populated from user/staff collection if needed
-      pushToken: undefined // Will be populated from user/staff collection if needed
-    }));
+    const admins: ProjectAdmin[] = [];
 
-    console.log(`Found ${admins.length} admins for project ${projectId}:`, 
+    // Get ONLY admins for this client (NO STAFF)
+    if (project.clientId) {
+      try {
+        // Import Admin model
+        const { Admin } = await import("@/lib/models/users/Admin");
+        
+        const clientAdmins = await Admin.find({ clientId: project.clientId })
+          .select('_id firstName lastName')
+          .lean() as any[];
+        
+        clientAdmins.forEach((admin: any) => {
+          admins.push({
+            _id: admin._id.toString(),
+            fullName: `${admin.firstName} ${admin.lastName}`,
+            deviceTokens: [],
+            pushToken: undefined
+          });
+        });
+        
+        console.log(`Found ${clientAdmins.length} client admins for project ${projectId} (staff excluded)`);
+      } catch (adminError) {
+        console.error('Error fetching client admins:', adminError);
+      }
+    }
+
+    console.log(`Total admins for project ${projectId}: ${admins.length}`, 
       admins.map(admin => admin.fullName));
 
     return admins;
@@ -924,7 +943,7 @@ async function resolveRecipientsWithFallback(
 }
 
 /**
- * Legacy fallback recipient resolution using project assigned staff
+ * Legacy fallback recipient resolution using ONLY client admins (NO STAFF)
  * This is used as a last resort when the enhanced API completely fails
  */
 async function tryLegacyFallbackRecipientResolution(
@@ -936,20 +955,38 @@ async function tryLegacyFallbackRecipientResolution(
     
     // Import here to avoid circular dependencies
     const { Projects } = await import("@/lib/models/Project");
+    const { Admin } = await import("@/lib/models/users/Admin");
 
     const project = await Projects.findById(materialActivity.projectId)
-      .select('assignedStaff name')
+      .select('name clientId')
       .lean() as any;
 
-    if (!project || !project.assignedStaff || project.assignedStaff.length === 0) {
-      NotificationLogger.warn(context, 'No assigned staff found in project for legacy fallback');
+    if (!project) {
+      NotificationLogger.warn(context, 'Project not found for legacy fallback');
       return [];
     }
 
-    const adminIds = project.assignedStaff.map((staff: any) => staff._id);
-    NotificationLogger.info(context, `Legacy fallback resolution found ${adminIds.length} recipients from project assigned staff`);
+    const recipientIds: string[] = [];
+
+    // Get ONLY admins for this client (NO STAFF)
+    if (project.clientId) {
+      try {
+        const admins = await Admin.find({ clientId: project.clientId })
+          .select('_id')
+          .lean() as any[];
+        
+        const adminIds = admins.map((admin: any) => admin._id.toString());
+        recipientIds.push(...adminIds);
+        
+        NotificationLogger.info(context, `Legacy fallback found ${adminIds.length} admins for client (staff excluded)`);
+      } catch (adminError) {
+        NotificationLogger.error(context, 'Error fetching admins in legacy fallback', adminError);
+      }
+    }
     
-    return adminIds;
+    NotificationLogger.info(context, `Legacy fallback resolution found ${recipientIds.length} admin recipients`);
+    
+    return recipientIds;
   } catch (fallbackError) {
     NotificationLogger.error(context, 'Legacy fallback recipient resolution failed', fallbackError);
     return [];

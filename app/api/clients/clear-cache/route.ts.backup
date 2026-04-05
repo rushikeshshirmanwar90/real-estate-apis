@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 
@@ -18,7 +13,7 @@ export const POST = async (req: NextRequest) => {
 
     if (clearAll) {
       // Clear all client-related cache
-      await safeRedisDelCache('clients:all');
+      await client.del('clients:all');
       clearedKeys.push('clients:all');
       
       console.log('🧹 Cleared all clients cache');
@@ -35,11 +30,11 @@ export const POST = async (req: NextRequest) => {
       }
 
       // Clear specific client cache
-      await safeRedisDelCache(`client:${clientId}`);
+      await client.del(`client:${clientId}`);
       clearedKeys.push(`client:${clientId}`);
       
       // Also clear the all clients cache since it contains this client
-      await safeRedisDelCache('clients:all');
+      await client.del('clients:all');
       clearedKeys.push('clients:all');
       
       console.log(`🧹 Cleared cache for client: ${clientId}`);
@@ -73,7 +68,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Check if client is cached
-    const cachedData = await safeRedisGetCache(`client:${clientId}`);
+    const cachedData = await client.get(`client:${clientId}`);
     const isCached = !!cachedData;
     
     let cacheData = null;

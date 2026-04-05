@@ -3,12 +3,7 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { NextRequest } from "next/server";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 interface MaterialItem {
   name: string;
@@ -51,9 +46,10 @@ export const GET = async (req: NextRequest | Request) => {
 
     // Check cache first
     const cacheKey = `materialActivity:${projectId || 'all'}:${clientId || 'all'}:${userId || 'all'}:${activity || 'all'}:${targetDate || 'all'}`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, "Material activities fetched successfully (cached)", 200);
     }
 
@@ -92,7 +88,7 @@ export const GET = async (req: NextRequest | Request) => {
     };
 
     // Cache the response with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(responseData), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(responseData), 'EX', 86400);
 
     return successResponse(
       responseData,
@@ -235,7 +231,10 @@ export const POST = async (req: NextRequest | Request) => {
     console.log('✅ Material activity created successfully:', newImportedMaterial._id);
 
     // Invalidate cache for this project and client
-    await invalidateCachePattern(`materialActivity:*`);
+    const keys = await client.keys(`materialActivity:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
 
     // Send notification to project admins (async, don't wait for it)
     notifyMaterialActivityCreated(newImportedMaterial)
@@ -308,7 +307,10 @@ export const DELETE = async (req: NextRequest | Request) => {
       }
 
       // Invalidate cache for this project and client
-      await invalidateCachePattern(`materialActivity:*`);
+      const keys = await client.keys(`materialActivity:*`);
+      if (keys.length > 0) {
+        await Promise.all(keys.map(key => client.del(key)));
+      }
 
       return successResponse(
         { deletedCount: deletedCount.deletedCount, query },
@@ -325,7 +327,10 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache for this project and client
-    await invalidateCachePattern(`materialActivity:*`);
+    const keys = await client.keys(`materialActivity:*`);
+    if (keys.length > 0) {
+      await Promise.all(keys.map(key => client.del(key)));
+    }
 
     return successResponse(
       deletedRequest,

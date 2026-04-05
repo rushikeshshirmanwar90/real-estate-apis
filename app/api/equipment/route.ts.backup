@@ -5,13 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 import { canAccessProject } from "@/lib/middleware/projectLicenseFilter";
 
 // Helper function to check staff access to project
@@ -65,9 +59,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`equipment:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`equipment:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Equipment retrieved successfully (cached)");
       }
 
@@ -77,7 +71,7 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the equipment with 24-hour expiration
-      await safeRedisSetCache(`equipment:${id}`, JSON.stringify(equipment), 'EX', 86400);
+      await client.set(`equipment:${id}`, JSON.stringify(equipment), 'EX', 86400);
 
       return successResponse(equipment, "Equipment retrieved successfully");
     }
@@ -113,9 +107,9 @@ export const GET = async (req: NextRequest) => {
 
     // Build cache key based on query
     const cacheKey = `equipment:query:${JSON.stringify(query)}`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} equipment entries successfully (cached)`);
     }
 
@@ -125,7 +119,7 @@ export const GET = async (req: NextRequest) => {
       .lean();
 
     // Cache the equipment list with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(equipment), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(equipment), 'EX', 86400);
 
     return successResponse(
       equipment,
@@ -248,15 +242,15 @@ export const POST = async (req: NextRequest) => {
       logger.info(`Updated project ${data.projectId} spent amount from ${currentSpent} to ${updatedProject.spent} (added ${equipmentCost}) for equipment ${equipment._id}`);
       
       // Invalidate cache after successful creation
-      const keys = await safeRedisKeysCache(`equipment:query:*`);
+      const keys = await client.keys(`equipment:query:*`);
       if (keys.length > 0) {
-        await safeRedisDelCache(...keys);
+        await client.del(...keys);
       }
       // Invalidate project cache
-      await safeRedisDelCache(`project:${data.projectId}`);
-      const projectKeys = await safeRedisKeysCache(`projects:*`);
+      await client.del(`project:${data.projectId}`);
+      const projectKeys = await client.keys(`projects:*`);
       if (projectKeys.length > 0) {
-        await safeRedisDelCache(...projectKeys);
+        await client.del(...projectKeys);
       }
       
       return successResponse(
@@ -277,9 +271,9 @@ export const POST = async (req: NextRequest) => {
       logger.error("Failed to update project spent amount", projectUpdateError);
       
       // Invalidate cache even if project update fails
-      const keys = await safeRedisKeysCache(`equipment:query:*`);
+      const keys = await client.keys(`equipment:query:*`);
       if (keys.length > 0) {
-        await safeRedisDelCache(...keys);
+        await client.del(...keys);
       }
       
       return successResponse(
@@ -290,9 +284,9 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Invalidate cache after successful creation
-    const keys = await safeRedisKeysCache(`equipment:query:*`);
+    const keys = await client.keys(`equipment:query:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(
@@ -381,16 +375,16 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`equipment:${id}`);
-    const keys = await safeRedisKeysCache(`equipment:query:*`);
+    await client.del(`equipment:${id}`);
+    const keys = await client.keys(`equipment:query:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
     // Invalidate project cache
-    await safeRedisDelCache(`project:${originalEquipment.projectId}`);
-    const projectKeys = await safeRedisKeysCache(`projects:*`);
+    await client.del(`project:${originalEquipment.projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
     if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
+      await client.del(...projectKeys);
     }
 
     return successResponse(updatedEquipment, "Equipment updated successfully and project spent amount adjusted");
@@ -456,16 +450,16 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`equipment:${id}`);
-    const keys = await safeRedisKeysCache(`equipment:query:*`);
+    await client.del(`equipment:${id}`);
+    const keys = await client.keys(`equipment:query:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
     // Invalidate project cache
-    await safeRedisDelCache(`project:${projectId}`);
-    const projectKeys = await safeRedisKeysCache(`projects:*`);
+    await client.del(`project:${projectId}`);
+    const projectKeys = await client.keys(`projects:*`);
     if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
+      await client.del(...projectKeys);
     }
 
     return successResponse(deletedEquipment, "Equipment deleted successfully and project spent amount updated");

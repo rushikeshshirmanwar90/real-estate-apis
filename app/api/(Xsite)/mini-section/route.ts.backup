@@ -3,12 +3,7 @@ import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { MiniSection as Section } from "@/lib/models/Xsite/mini-section";
 import { NextRequest } from "next/server";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 interface projectDetailProps {
   projectName: string;
@@ -37,9 +32,10 @@ export const GET = async (req: NextRequest | Request) => {
     if (sectionId) {
       // Check cache first
       const cacheKey = `miniSection:bySectionId:${sectionId}`;
-      const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(cacheKey);
+      
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(
           cacheValue,
           "Section data fetched successfully (cached)",
@@ -56,7 +52,7 @@ export const GET = async (req: NextRequest | Request) => {
       }
 
       // Cache the result with 24-hour expiration
-      await safeRedisSetCache(cacheKey, JSON.stringify(sectionData), 'EX', 86400);
+      await client.set(cacheKey, JSON.stringify(sectionData), 'EX', 86400);
 
       return successResponse(
         sectionData,
@@ -66,9 +62,10 @@ export const GET = async (req: NextRequest | Request) => {
     } else if (id) {
       // Check cache first
       const cacheKey = `miniSection:${id}`;
-      const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(cacheKey);
+      
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(
           cacheValue,
           "Section data fetched successfully (cached)",
@@ -83,7 +80,7 @@ export const GET = async (req: NextRequest | Request) => {
       }
 
       // Cache the result with 24-hour expiration
-      await safeRedisSetCache(cacheKey, JSON.stringify(sectionDataById), 'EX', 86400);
+      await client.set(cacheKey, JSON.stringify(sectionDataById), 'EX', 86400);
 
       return successResponse(
         sectionDataById,
@@ -140,7 +137,7 @@ export const POST = async (req: NextRequest | Request) => {
 
       // Invalidate cache after creating new mini-section
       if (data.mainSectionDetails?.sectionId) {
-        await safeRedisDelCache(`miniSection:bySectionId:${data.mainSectionDetails.sectionId}`);
+        await client.del(`miniSection:bySectionId:${data.mainSectionDetails.sectionId}`);
       }
 
       return successResponse(newSection, "section created successfully", 201);
@@ -195,9 +192,9 @@ export const PUT = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache after updating mini-section
-    await safeRedisDelCache(`miniSection:${id}`);
+    await client.del(`miniSection:${id}`);
     if (updatedData.mainSectionDetails?.sectionId) {
-      await safeRedisDelCache(`miniSection:bySectionId:${updatedData.mainSectionDetails.sectionId}`);
+      await client.del(`miniSection:bySectionId:${updatedData.mainSectionDetails.sectionId}`);
     }
 
     return successResponse(updatedData, "data updated successfully", 200);
@@ -227,9 +224,9 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache after deleting mini-section
-    await safeRedisDelCache(`miniSection:${id}`);
+    await client.del(`miniSection:${id}`);
     if (removedData.mainSectionDetails?.sectionId) {
-      await safeRedisDelCache(`miniSection:bySectionId:${removedData.mainSectionDetails.sectionId}`);
+      await client.del(`miniSection:bySectionId:${removedData.mainSectionDetails.sectionId}`);
     }
 
     return successResponse(removedData, "data deleted successfully", 200);

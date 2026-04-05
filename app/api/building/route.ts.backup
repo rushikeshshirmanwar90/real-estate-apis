@@ -7,13 +7,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -28,9 +22,9 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Check cache
-      const cachedData = await safeRedisGetCache(`building:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(`building:${id}`);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Building retrieved successfully (cached)");
       }
 
@@ -75,7 +69,7 @@ export const GET = async (req: NextRequest) => {
               logger.info(`Created missing building record for ${id}`);
               
               // Cache the building with 24-hour expiration
-              await safeRedisSetCache(`building:${id}`, JSON.stringify(building), 'EX', 86400);
+              await client.set(`building:${id}`, JSON.stringify(building), 'EX', 86400);
               
               return successResponse(building, "Building created and retrieved successfully");
             }
@@ -88,7 +82,7 @@ export const GET = async (req: NextRequest) => {
       }
 
       // Cache the building with 24-hour expiration
-      await safeRedisSetCache(`building:${id}`, JSON.stringify(building), 'EX', 86400);
+      await client.set(`building:${id}`, JSON.stringify(building), 'EX', 86400);
 
       return successResponse(building, "Building retrieved successfully");
     }
@@ -102,9 +96,9 @@ export const GET = async (req: NextRequest) => {
 
     // Check cache for buildings list
     const cacheKey = projectId ? `buildings:project:${projectId}` : `buildings:all`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} building(s) successfully (cached)`);
     }
 
@@ -114,7 +108,7 @@ export const GET = async (req: NextRequest) => {
       .lean();
 
     // Cache the buildings list with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(buildings), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(buildings), 'EX', 86400);
 
     return successResponse(
       buildings,
@@ -217,11 +211,11 @@ export const POST = async (req: NextRequest) => {
       logger.info(`Building created successfully: ${savedBuilding._id} with ${savedBuilding.floors?.length || 0} floors`);
 
       // Invalidate cache
-      await safeRedisDelCache(`buildings:all`);
-      await safeRedisDelCache(`buildings:project:${savedBuilding.projectId}`);
-      const projectKeys = await safeRedisKeysCache(`project:*`);
+      await client.del(`buildings:all`);
+      await client.del(`buildings:project:${savedBuilding.projectId}`);
+      const projectKeys = await client.keys(`project:*`);
       if (projectKeys.length > 0) {
-        await safeRedisDelCache(...projectKeys);
+        await client.del(...projectKeys);
       }
 
       return successResponse(
@@ -296,14 +290,14 @@ export const DELETE = async (req: NextRequest) => {
       await session.commitTransaction();
 
       // Invalidate cache
-      await safeRedisDelCache(`building:${sectionId}`);
-      await safeRedisDelCache(`buildings:all`);
+      await client.del(`building:${sectionId}`);
+      await client.del(`buildings:all`);
       if (updatedProject.projectId) {
-        await safeRedisDelCache(`buildings:project:${updatedProject.projectId}`);
+        await client.del(`buildings:project:${updatedProject.projectId}`);
       }
-      const projectKeys = await safeRedisKeysCache(`project:*`);
+      const projectKeys = await client.keys(`project:*`);
       if (projectKeys.length > 0) {
-        await safeRedisDelCache(...projectKeys);
+        await client.del(...projectKeys);
       }
 
       return successResponse(deletedBuilding, "Building deleted successfully");
@@ -373,10 +367,10 @@ export const PUT = async (req: NextRequest) => {
       : "Building updated successfully";
 
     // Invalidate cache
-    await safeRedisDelCache(`building:${id}`);
-    await safeRedisDelCache(`buildings:all`);
+    await client.del(`building:${id}`);
+    await client.del(`buildings:all`);
     if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
-      await safeRedisDelCache(`buildings:project:${updatedBuilding.projectId}`);
+      await client.del(`buildings:project:${updatedBuilding.projectId}`);
     }
 
     return successResponse(updatedBuilding, responseMessage);
@@ -462,10 +456,10 @@ export const PATCH = async (req: NextRequest) => {
       await session.commitTransaction();
 
       // Invalidate cache
-      await safeRedisDelCache(`building:${id}`);
-      await safeRedisDelCache(`buildings:all`);
+      await client.del(`building:${id}`);
+      await client.del(`buildings:all`);
       if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
-        await safeRedisDelCache(`buildings:project:${updatedBuilding.projectId}`);
+        await client.del(`buildings:project:${updatedBuilding.projectId}`);
       }
 
       return successResponse(

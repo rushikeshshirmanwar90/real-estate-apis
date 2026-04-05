@@ -6,12 +6,7 @@ import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 interface BodyType {
   updateType: 'minisection' | 'project' | 'project-section';
@@ -104,7 +99,7 @@ export const PATCH = async (req: NextRequest) => {
         }
 
         // Invalidate cache for this project-section
-        await safeRedisDelCache(`completion:project-section:${projectId}:${id}`);
+        await client.del(`completion:project-section:${projectId}:${id}`);
 
         return successResponse(
           { isCompleted: newCompletionState },
@@ -156,7 +151,7 @@ export const PATCH = async (req: NextRequest) => {
         }
 
         // Invalidate cache for this project
-        await safeRedisDelCache(`completion:project:${id}`);
+        await client.del(`completion:project:${id}`);
 
         return successResponse(
           { isCompleted: projectCompletionState },
@@ -210,7 +205,7 @@ export const PATCH = async (req: NextRequest) => {
         }
 
         // Invalidate cache for this mini-section
-        await safeRedisDelCache(`completion:minisection:${id}`);
+        await client.del(`completion:minisection:${id}`);
 
         return successResponse(
           { isCompleted: miniSectionCompletionState },
@@ -260,9 +255,10 @@ export const GET = async (req: NextRequest) => {
 
     // Check cache first
     const cacheKey = `completion:${updateType}:${projectId || 'none'}:${id}`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `${updateType} completion status retrieved successfully (cached)`, 200);
     }
 
@@ -358,7 +354,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Cache the response with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(document), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(document), 'EX', 86400);
 
     return successResponse(document, `${updateType} completion status retrieved successfully`);
 

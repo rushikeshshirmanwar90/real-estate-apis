@@ -8,13 +8,7 @@ import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 import { addLicenseStatusToProjects } from "@/lib/middleware/projectLicenseFilter";
 
 // Helper function to validate MongoDB ObjectId
@@ -73,9 +67,9 @@ export const GET = async (req: NextRequest) => {
       
       // Skip cache if requested
       if (skipCache !== "true") {
-        const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+        let cacheValue = await client.get(cacheKey);
+        if (cacheValue) {
+          cacheValue = JSON.parse(cacheValue);
           console.log('📦 Returning cached staff data');
           return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
         }
@@ -216,7 +210,7 @@ export const GET = async (req: NextRequest) => {
         }
         
         // Cache the staff data with 24-hour expiration
-        await safeRedisSetCache(cacheKey, JSON.stringify(staffObj), 'EX', 86400);
+        await client.set(cacheKey, JSON.stringify(staffObj), 'EX', 86400);
         
         return successResponse(staffObj, "Staff member retrieved successfully with all projects");
       }
@@ -260,9 +254,9 @@ export const GET = async (req: NextRequest) => {
 
       // Check cache
       const cacheKey = `staff:email:${email}:client:${clientId}`;
-      const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+      let cacheValue = await client.get(cacheKey);
+      if (cacheValue) {
+        cacheValue = JSON.parse(cacheValue);
         return successResponse(cacheValue, "Staff member retrieved successfully (cached)");
       }
 
@@ -301,9 +295,9 @@ export const GET = async (req: NextRequest) => {
     
     // Check cache
     const cacheKey = `staff:client:${clientId}:all`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} staff member(s) successfully (cached)`);
     }
     
@@ -344,7 +338,7 @@ export const GET = async (req: NextRequest) => {
     console.log('✅ Returning staff data:', staffWithProjects.length, 'items');
     
     // Cache the staff list with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(staffWithProjects), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(staffWithProjects), 'EX', 86400);
     
     return successResponse(
       staffWithProjects,
@@ -583,9 +577,9 @@ export const POST = async (req: NextRequest) => {
     await newLoginUser.save();
 
     // Invalidate cache
-    const keys = await safeRedisKeysCache(`staff:*`);
+    const keys = await client.keys(`staff:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(
@@ -690,9 +684,9 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    const keys = await safeRedisKeysCache(`staff:*`);
+    const keys = await client.keys(`staff:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(updatedStaff, "Staff member updated successfully");
@@ -847,9 +841,9 @@ export const DELETE = async (req: NextRequest) => {
     });
 
     // Invalidate cache
-    const keys = await safeRedisKeysCache(`staff:*`);
+    const keys = await client.keys(`staff:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(deletedStaff, "Staff member deleted successfully");

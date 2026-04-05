@@ -255,26 +255,53 @@ export class PushNotificationService {
     try {
       // Import here to avoid circular dependencies
       const { Projects } = await import("@/lib/models/Project");
+      const { Admin } = await import("@/lib/models/users/Admin");
 
-      // Get project with assigned staff - cast to any to handle Mongoose typing issues
+      // Get project with clientId
       const project = await Projects.findById(projectId)
-        .select('assignedStaff name')
+        .select('name clientId')
         .lean() as any;
 
-      if (!project || !project.assignedStaff || project.assignedStaff.length === 0) {
-        console.log('📭 No assigned staff found for project:', projectId);
+      if (!project) {
+        console.log('📭 Project not found:', projectId);
         return {
           success: true,
           messagesSent: 0,
-          errors: ['No assigned staff found for project'],
+          errors: ['Project not found'],
         };
       }
 
-      const adminIds = project.assignedStaff.map((staff: any) => staff._id);
-      console.log(`📱 Sending notifications to ${adminIds.length} project admins for project: ${project.name}`);
+      // Get ONLY admins for this client (NO STAFF)
+      const recipientIds: string[] = [];
+
+      if (project.clientId) {
+        try {
+          const admins = await Admin.find({ clientId: project.clientId })
+            .select('_id firstName lastName')
+            .lean() as any[];
+          
+          const adminIds = admins.map((admin: any) => admin._id.toString());
+          recipientIds.push(...adminIds);
+          
+          console.log(`📱 Found ${adminIds.length} admins for client ${project.clientId} (staff excluded)`);
+        } catch (adminError) {
+          console.error('❌ Error fetching admins:', adminError);
+        }
+      }
+
+      if (recipientIds.length === 0) {
+        console.log('📭 No admins found for project:', projectId);
+        return {
+          success: true,
+          messagesSent: 0,
+          errors: ['No admins found for project'],
+        };
+      }
+
+      console.log(`📱 Sending notifications to ${recipientIds.length} admins ONLY for project: ${project.name}`);
 
       return await this.sendToUsers(
-        adminIds,
+        recipientIds,
         title,
         body,
         {

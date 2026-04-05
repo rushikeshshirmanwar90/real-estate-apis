@@ -5,13 +5,7 @@ import mongoose from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -28,9 +22,9 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Check cache
-    const cachedData = await safeRedisGetCache(`property:user:${userId}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(`property:user:${userId}`);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, "Properties retrieved successfully (cached)");
     }
 
@@ -42,7 +36,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Cache the property with 24-hour expiration
-    await safeRedisSetCache(`property:user:${userId}`, JSON.stringify(property), 'EX', 86400);
+    await client.set(`property:user:${userId}`, JSON.stringify(property), 'EX', 86400);
 
     return successResponse(property, "Properties retrieved successfully");
   } catch (error: unknown) {
@@ -113,7 +107,7 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`property:user:${userId}`);
+    await client.del(`property:user:${userId}`);
 
     return successResponse(result, "Property added successfully", 201);
   } catch (error: unknown) {
@@ -158,7 +152,7 @@ export const DELETE = async (req: NextRequest) => {
       }
 
       // Invalidate cache
-      await safeRedisDelCache(`property:user:${userId}`);
+      await client.del(`property:user:${userId}`);
 
       return successResponse(result, "Property deleted successfully");
     }
@@ -179,7 +173,7 @@ export const DELETE = async (req: NextRequest) => {
       }
 
       // Invalidate cache
-      await safeRedisDelCache(`property:user:${userId}`);
+      await client.del(`property:user:${userId}`);
 
       return successResponse(
         deletedData,
@@ -195,9 +189,9 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     // Invalidate all property caches
-    const keys = await safeRedisKeysCache(`property:user:*`);
+    const keys = await client.keys(`property:user:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(
@@ -245,7 +239,7 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Invalidate cache
-    await safeRedisDelCache(`property:user:${userId}`);
+    await client.del(`property:user:${userId}`);
 
     return successResponse(result, "Property updated successfully");
   } catch (error: unknown) {

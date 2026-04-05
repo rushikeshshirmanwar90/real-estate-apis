@@ -2,7 +2,12 @@ import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { Types } from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
-import { client } from "@/lib/redis";
+import { 
+  safeRedisGetCache, 
+  safeRedisSetCache, 
+  invalidateCachePattern,
+  safeRedisDelCache 
+} from "@/lib/utils/redis-helpers";
 
 // Local types matching MaterialSchema
 type Specs = Record<string, unknown>;
@@ -70,10 +75,10 @@ export const GET = async (req: NextRequest | Request) => {
     // Check cache first (exclude cache buster from cache key)
     const cacheKey = `material-usage:${projectId}:${clientId}:${sectionId || 'all'}:${miniSectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
-    let cacheValue = await client.get(cacheKey);
     
-    if (cacheValue) {
-      cacheValue = JSON.parse(cacheValue);
+    const cachedData = await safeRedisGetCache(cacheKey);
+    if (cachedData) {
+      const cacheValue = JSON.parse(cachedData);
       return NextResponse.json(cacheValue, { status: 200 });
     }
 
@@ -272,7 +277,7 @@ export const GET = async (req: NextRequest | Request) => {
     };
 
     // Cache the response with 24-hour expiration
-    await client.set(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
+    await safeRedisSetCache(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
 
     return NextResponse.json(responsePayload, { status: 200 });
   } catch (error: unknown) {
@@ -501,35 +506,18 @@ export const POST = async (req: NextRequest | Request) => {
     console.log('🗑️ INVALIDATING CACHES AFTER MATERIAL USAGE');
     console.log('========================================');
     
-    try {
-      // Invalidate material-usage caches for this project
-      const usageKeys = await client.keys(`material-usage:${projectId}:*`);
-      if (usageKeys.length > 0) {
-        await Promise.all(usageKeys.map(key => client.del(key)));
-        console.log(`✅ Invalidated ${usageKeys.length} material-usage cache keys`);
-      }
-      
-      // ✅ CRITICAL: Also invalidate material (available) caches since quantities changed
-      const materialKeys = await client.keys(`material:${projectId}:*`);
-      if (materialKeys.length > 0) {
-        await Promise.all(materialKeys.map(key => client.del(key)));
-        console.log(`✅ Invalidated ${materialKeys.length} material cache keys`);
-      }
-      
-      // Invalidate project-level caches
-      await client.del(`project:${projectId}`);
-      const projectKeys = await client.keys(`projects:*`);
-      if (projectKeys.length > 0) {
-        await Promise.all(projectKeys.map(key => client.del(key)));
-        console.log(`✅ Invalidated ${projectKeys.length} project cache keys`);
-      }
-      
-      console.log('✅ Cache invalidation completed successfully');
-      console.log('========================================\n');
-    } catch (cacheError) {
-      console.error('❌ Cache invalidation error:', cacheError);
-      // Don't fail the request if cache invalidation fails
-    }
+    // Invalidate material-usage caches for this project
+    await invalidateCachePattern(`material-usage:${projectId}:*`);
+    
+    // ✅ CRITICAL: Also invalidate material (available) caches since quantities changed
+    await invalidateCachePattern(`material:${projectId}:*`);
+    
+    // Invalidate project-level caches
+    await safeRedisDelCache(`project:${projectId}`);
+    await invalidateCachePattern(`projects:*`);
+    
+    console.log('✅ Cache invalidation completed');
+    console.log('========================================\n');
 
     return NextResponse.json(
       {

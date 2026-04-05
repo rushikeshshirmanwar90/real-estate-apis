@@ -4,13 +4,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { notifyActivityCreated } from "@/lib/services/notificationService";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { client } from "@/lib/redis";
 
 // GET: Fetch activities with filters
 export const GET = async (req: NextRequest | Request) => {
@@ -68,9 +62,9 @@ export const GET = async (req: NextRequest | Request) => {
 
     // Build cache key based on query
     const cacheKey = `activity:query:${JSON.stringify(query)}`;
-    const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
+    let cacheValue = await client.get(cacheKey);
+    if (cacheValue) {
+      cacheValue = JSON.parse(cacheValue);
       return successResponse(cacheValue, "Activities fetched successfully (cached)", 200);
     }
 
@@ -84,7 +78,7 @@ export const GET = async (req: NextRequest | Request) => {
     };
 
     // Cache the activities with 24-hour expiration
-    await safeRedisSetCache(cacheKey, JSON.stringify(result), 'EX', 86400);
+    await client.set(cacheKey, JSON.stringify(result), 'EX', 86400);
 
     return successResponse(
       result,
@@ -180,9 +174,9 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache
-    const keys = await safeRedisKeysCache(`activity:*`);
+    const keys = await client.keys(`activity:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(newActivity, "Activity logged successfully", 201);
@@ -220,9 +214,9 @@ export const DELETE = async (req: NextRequest | Request) => {
     }
 
     // Invalidate cache
-    const keys = await safeRedisKeysCache(`activity:*`);
+    const keys = await client.keys(`activity:*`);
     if (keys.length > 0) {
-      await safeRedisDelCache(...keys);
+      await client.del(...keys);
     }
 
     return successResponse(
