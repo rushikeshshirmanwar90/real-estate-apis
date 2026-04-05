@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
     }
 
     const value = await safeRedisGet(key);
-    const exists = await redis.exists(key);
-    const ttl = await redis.ttl(key);
+    const exists = redis ? await redis.exists(key) : 0;
+    const ttl = redis ? await redis.ttl(key) : -1;
 
     return NextResponse.json({
       success: true,
@@ -106,6 +106,12 @@ export async function DELETE(req: NextRequest) {
 
     if (flushAll === 'true') {
       try {
+        if (!redis) {
+          return NextResponse.json({
+            success: false,
+            message: 'Redis client not available',
+          });
+        }
         await redis.flushall();
         return NextResponse.json({
           success: true,
@@ -121,6 +127,12 @@ export async function DELETE(req: NextRequest) {
 
     if (pattern) {
       try {
+        if (!redis) {
+          return NextResponse.json({
+            success: false,
+            message: 'Redis client not available',
+          });
+        }
         const keys = await redis.keys(pattern);
         if (keys.length > 0) {
           const success = await safeRedisDel(keys);

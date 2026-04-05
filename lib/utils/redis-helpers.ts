@@ -33,7 +33,11 @@ export async function safeRedisSetCache(
   
   try {
     if (expiryMode && time) {
-      await client.set(key, value, expiryMode, time);
+      if (expiryMode === 'EX') {
+        await client.set(key, value, 'EX', time);
+      } else {
+        await client.set(key, value, 'PX', time);
+      }
     } else {
       await client.set(key, value);
     }

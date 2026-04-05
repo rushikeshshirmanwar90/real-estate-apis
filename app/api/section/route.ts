@@ -30,8 +30,7 @@ export const GET = async (req: NextRequest | Request) => {
 
       data = await Section.find();
 
-      await safeRedisSetCache(`section`, JSON.stringify(data););
-      await client.expire("section", 86400);
+      await safeRedisSetCache(`section`, JSON.stringify(data));
 
     }
     else {
@@ -49,8 +48,7 @@ export const GET = async (req: NextRequest | Request) => {
       }
 
       data = await Section.findById(id);
-      await safeRedisSetCache(`section:${id}`, JSON.stringify(data););
-      await client.expire(`section:${id}`, 86400)
+      await safeRedisSetCache(`section:${id}`, JSON.stringify(data));
     }
 
     if (!data) {
