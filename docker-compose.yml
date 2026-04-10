@@ -1,4 +1,65 @@
+# ============================================================================
+# Docker Compose Configuration for Real Estate APIs
+# ============================================================================
+#
+# This file defines 3 services:
+#   1. mongodb  - Database container
+#   2. redis    - Cache/session container  
+#   3. web      - Next.js application container
+#
+# ENVIRONMENT VARIABLES:
+#   This file reads variables from the .env file in the same directory.
+#   Variables are referenced using ${VARIABLE_NAME} syntax.
+#
+#   Example: ${MONGO_USERNAME:-admin}
+#            ↑ Reads MONGO_USERNAME from .env
+#            ↑ If not found, uses "admin" as default
+#
+# HOW TO USE:
+#   1. Create .env file: cp .env.docker .env
+#   2. Edit .env with your values
+#   3. Start services: docker-compose up -d
+#
+# VARIABLE FLOW:
+#   .env file → docker-compose.yml → containers
+#
+# See ENV_FILES_GUIDE.md for detailed documentation
+# ============================================================================
+
 services:
+  # --------------------------------------------------------------------------
+  # MongoDB Database Container
+  # --------------------------------------------------------------------------
+  # Receives from .env:
+  #   - MONGO_USERNAME (used as admin username)
+  #   - MONGO_PASSWORD (used as admin password)
+  # --------------------------------------------------------------------------
+  mongodb:
+    image: mongo:7.0
+    container_name: real-estate-mongodb
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-adminpassword}
+      MONGO_INITDB_DATABASE: realEstate
+    restart: always
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  # --------------------------------------------------------------------------
+  # Redis Cache Container
+  # --------------------------------------------------------------------------
+  # Receives from .env:
+  #   - REDIS_PASSWORD (used to secure Redis)
+  # --------------------------------------------------------------------------
   redis:
     image: redis/redis-stack:latest
     ports:
@@ -19,6 +80,22 @@ services:
       timeout: 3s
       retries: 3
 
+  # --------------------------------------------------------------------------
+  # Web Application Container (Next.js)
+  # --------------------------------------------------------------------------
+  # Receives from .env:
+  #   - MONGO_USERNAME, MONGO_PASSWORD (used to build DB_URL and MONGODB_URI)
+  #   - REDIS_PASSWORD
+  #   - JWT_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL
+  #   - DOMAIN
+  #   - SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS
+  #   - NEXT_PUBLIC_CLIENT_ID, NEXT_PUBLIC_AUTHENTICATION_CODE
+  #
+  # Note: DB_URL and MONGODB_URI are automatically constructed using:
+  #   mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/realEstate
+  #
+  # The hostname "mongodb" refers to the mongodb container (Docker networking)
+  # --------------------------------------------------------------------------
   web:
     image: exponentor/xsite-apis:latest
     ports:
@@ -28,13 +105,28 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-defaultpassword}
-      DATABASE_URL: ${DATABASE_URL}
+      DB_URL: mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/realEstate?authSource=admin
+      MONGODB_URI: mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-adminpassword}@mongodb:27017/realEstate?authSource=admin
+      JWT_SECRET: ${JWT_SECRET}
+      SALT_ID: ${SALT_ID:-10}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       NEXTAUTH_URL: ${NEXTAUTH_URL}
+      DOMAIN: ${DOMAIN}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      NEXT_PUBLIC_CLIENT_ID: ${NEXT_PUBLIC_CLIENT_ID}
+      NEXT_PUBLIC_AUTHENTICATION_CODE: ${NEXT_PUBLIC_AUTHENTICATION_CODE}
     depends_on:
+      mongodb:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: always
 
 volumes:
+  mongodb-data:
+  mongodb-config:
   redis-data:
