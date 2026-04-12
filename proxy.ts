@@ -12,9 +12,14 @@ function applyCorsHeaders(response: NextResponse, request: NextRequest) {
     "http://localhost:8000",
     "http://localhost:3000",
     "https://real-estate-frontend-red.vercel.app",
+    "http://187.127.137.30:8000", // Super Admin
   ];
 
+  // Allow the requesting origin if it's in the allowed list, or allow all origins
   if (origin && allowedOrigins.includes(origin)) {
+    response.headers.set("Access-Control-Allow-Origin", origin);
+  } else if (origin) {
+    // Allow any origin (less secure but more flexible)
     response.headers.set("Access-Control-Allow-Origin", origin);
   } else {
     response.headers.set(

@@ -1,0 +1,222 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                  HOW TO FIX SMTP ERROR - STEP BY STEP                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  THE PROBLEM                                                              │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Your logs show:
+    ┌─────────────────────────────────────────┐
+    │ SMTP_USER: ❌ NOT SET                   │
+    │ SMTP_PASS: ❌ NOT SET                   │
+    │ Current values: SMTP_USER=undefined     │
+    └─────────────────────────────────────────┘
+
+    This means your deployment platform doesn't have these variables!
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  THE SOLUTION (3 STEPS)                                                   │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    STEP 1: Go to your deployment platform
+    ┌─────────────────────────────────────────┐
+    │ Railway: https://railway.app            │
+    │ Render:  https://dashboard.render.com   │
+    │ Vercel:  https://vercel.com/dashboard   │
+    └─────────────────────────────────────────┘
+
+    STEP 2: Find "Environment Variables" or "Variables"
+    ┌─────────────────────────────────────────┐
+    │ Railway: Click service → Variables tab  │
+    │ Render:  Click service → Environment    │
+    │ Vercel:  Settings → Environment Vars    │
+    └─────────────────────────────────────────┘
+
+    STEP 3: Add these 5 variables
+    ┌─────────────────────────────────────────┐
+    │ SMTP_HOST = smtp.gmail.com              │
+    │ SMTP_PORT = 587                         │
+    │ SMTP_SECURE = false                     │
+    │ SMTP_USER = rushikeshshrimanwar@        │
+    │             gmail.com                   │
+    │ SMTP_PASS = anoeipuattkwiaxl            │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  DETAILED INSTRUCTIONS BY PLATFORM                                        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ RAILWAY                               ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    1. Go to https://railway.app
+    2. Click on your project
+    3. Click on your service (web)
+    4. Click "Variables" tab
+    5. Click "New Variable" button
+    6. Add each variable:
+
+       Variable Name          Value
+       ─────────────────────────────────────
+       SMTP_HOST              smtp.gmail.com
+       SMTP_PORT              587
+       SMTP_SECURE            false
+       SMTP_USER              rushikeshshrimanwar@gmail.com
+       SMTP_PASS              anoeipuattkwiaxl
+
+    7. Click "Deploy" button
+
+    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ RENDER                                ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    1. Go to https://dashboard.render.com
+    2. Click on your service
+    3. Click "Environment" in left sidebar
+    4. Click "Add Environment Variable"
+    5. Add each variable:
+
+       Key                    Value
+       ─────────────────────────────────────
+       SMTP_HOST              smtp.gmail.com
+       SMTP_PORT              587
+       SMTP_SECURE            false
+       SMTP_USER              rushikeshshrimanwar@gmail.com
+       SMTP_PASS              anoeipuattkwiaxl
+
+    6. Click "Save Changes" (auto-redeploys)
+
+    ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+    ┃ VERCEL                                ┃
+    ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+    1. Go to https://vercel.com/dashboard
+    2. Click on your project
+    3. Click "Settings" tab
+    4. Click "Environment Variables"
+    5. Add each variable:
+
+       Name                   Value
+       ─────────────────────────────────────
+       SMTP_HOST              smtp.gmail.com
+       SMTP_PORT              587
+       SMTP_SECURE            false
+       SMTP_USER              rushikeshshrimanwar@gmail.com
+       SMTP_PASS              anoeipuattkwiaxl
+
+    6. Select "Production" environment
+    7. Click "Save"
+    8. Go to "Deployments" and redeploy
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  VERIFY IT WORKS                                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Step 1: Check variables are set
+    ┌─────────────────────────────────────────┐
+    │ Visit in browser:                       │
+    │ https://your-domain.com/api/debug-smtp  │
+    └─────────────────────────────────────────┘
+
+    You should see:
+    ┌─────────────────────────────────────────┐
+    │ {                                       │
+    │   "smtp": {                             │
+    │     "SMTP_HOST": "smtp.gmail.com",      │
+    │     "SMTP_PORT": "587",                 │
+    │     "SMTP_USER": "rushikesh...com",     │
+    │     "SMTP_PASS": "✅ SET"               │
+    │   }                                     │
+    │ }                                       │
+    └─────────────────────────────────────────┘
+
+    Step 2: Test OTP sending
+    ┌─────────────────────────────────────────┐
+    │ Try sending OTP from your app           │
+    │ Check logs for:                         │
+    │ ✅ Email transporter configured         │
+    │ ✅ OTP email sent successfully          │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  IMPORTANT NOTES                                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    ⚠️  Your local .env file DOES NOT MATTER for deployment
+    ⚠️  You MUST add variables in the platform dashboard
+    ⚠️  Variable names must be EXACT (SMTP_USER not SMTP_USERNAME)
+    ⚠️  After adding, you may need to redeploy
+    ⚠️  Check you're adding to "Production" environment
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  CHECKLIST                                                                │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    [ ] Logged into deployment platform
+    [ ] Found environment variables section
+    [ ] Added SMTP_HOST = smtp.gmail.com
+    [ ] Added SMTP_PORT = 587
+    [ ] Added SMTP_SECURE = false
+    [ ] Added SMTP_USER = rushikeshshrimanwar@gmail.com
+    [ ] Added SMTP_PASS = anoeipuattkwiaxl
+    [ ] Saved changes
+    [ ] Redeployed (if needed)
+    [ ] Visited /api/debug-smtp
+    [ ] All variables show ✅
+    [ ] Tested OTP sending
+    [ ] Email received successfully
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  WHAT YOU'LL SEE WHEN IT'S FIXED                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Before (Current - NOT WORKING):
+    ┌─────────────────────────────────────────┐
+    │ SMTP_USER: ❌ NOT SET                   │
+    │ SMTP_PASS: ❌ NOT SET                   │
+    │ ❌ Error sending OTP email              │
+    └─────────────────────────────────────────┘
+
+    After (Fixed - WORKING):
+    ┌─────────────────────────────────────────┐
+    │ SMTP_USER: rushikeshshrimanwar@...      │
+    │ SMTP_PASS: ✅ SET                       │
+    │ ✅ Email transporter configured         │
+    │ ✅ OTP email sent successfully          │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  WHY THIS HAPPENS                                                         │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Local Development:
+    ┌─────────────────────────────────────────┐
+    │ Reads .env file ✅                      │
+    │ SMTP_USER=rushikesh...@gmail.com        │
+    │ SMTP_PASS=anoeipuattkwiaxl              │
+    │ Works perfectly!                        │
+    └─────────────────────────────────────────┘
+
+    Deployment Platform:
+    ┌─────────────────────────────────────────┐
+    │ Does NOT read .env file ❌              │
+    │ Needs variables in dashboard            │
+    │ Currently: SMTP_USER=undefined          │
+    │ Currently: SMTP_PASS=undefined          │
+    │ Fails to send email!                    │
+    └─────────────────────────────────────────┘
+
+    Solution:
+    ┌─────────────────────────────────────────┐
+    │ Add variables to platform dashboard ✅  │
+    │ Platform reads from dashboard           │
+    │ SMTP_USER=rushikesh...@gmail.com        │
+    │ SMTP_PASS=anoeipuattkwiaxl              │
+    │ Emails work!                            │
+    └─────────────────────────────────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  ACTION REQUIRED: Add SMTP variables to your deployment platform NOW!    ║
+╚═══════════════════════════════════════════════════════════════════════════╝
