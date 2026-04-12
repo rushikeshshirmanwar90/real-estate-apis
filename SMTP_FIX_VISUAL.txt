@@ -1,0 +1,212 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║           FIX: SMTP "Missing credentials for PLAIN" Error                ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  THE PROBLEM                                                              │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Your local .env file has SMTP credentials:
+    ┌─────────────────────────────────────────┐
+    │ .env (local file)                       │
+    │                                         │
+    │ SMTP_USER=rushikesh...@gmail.com        │
+    │ SMTP_PASS=anoeipuattkwiaxl              │
+    └─────────────────────────────────────────┘
+                     │
+                     │ ✅ Works locally
+                     ▼
+            Local Application
+            
+    BUT your deployment platform doesn't have them:
+    ┌─────────────────────────────────────────┐
+    │ Deployment Platform                     │
+    │ (Railway/Render/Vercel)                 │
+    │                                         │
+    │ SMTP_USER = ❌ NOT SET                  │
+    │ SMTP_PASS = ❌ NOT SET                  │
+    └─────────────────────────────────────────┘
+                     │
+                     │ ❌ Fails in production
+                     ▼
+            Error: Missing credentials
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  THE SOLUTION (3 STEPS)                                                   │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    STEP 1: Go to your deployment platform
+    ┌─────────────────────────────────────────┐
+    │ Railway / Render / Vercel               │
+    │                                         │
+    │ → Open your project                     │
+    │ → Find "Variables" or "Environment"     │
+    └─────────────────────────────────────────┘
+
+    STEP 2: Add these 5 variables
+    ┌─────────────────────────────────────────┐
+    │ SMTP_HOST = smtp.gmail.com              │
+    │ SMTP_PORT = 587                         │
+    │ SMTP_SECURE = false                     │
+    │ SMTP_USER = rushikesh...@gmail.com      │
+    │ SMTP_PASS = anoeipuattkwiaxl            │
+    └─────────────────────────────────────────┘
+
+    STEP 3: Redeploy
+    ┌─────────────────────────────────────────┐
+    │ Click "Deploy" or wait for auto-deploy  │
+    └─────────────────────────────────────────┘
+                     │
+                     │ ✅ Variables now available
+                     ▼
+            Application can send emails!
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  VERIFY IT'S FIXED                                                        │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Visit this URL in your browser:
+    ┌─────────────────────────────────────────┐
+    │ https://your-domain.com/api/debug-smtp  │
+    └─────────────────────────────────────────┘
+
+    You should see:
+    ┌─────────────────────────────────────────┐
+    │ {                                       │
+    │   "smtp": {                             │
+    │     "SMTP_HOST": "smtp.gmail.com",      │
+    │     "SMTP_PORT": "587",                 │
+    │     "SMTP_USER": "rushikesh...com",     │
+    │     "SMTP_PASS": "✅ SET"               │
+    │   }                                     │
+    │ }                                       │
+    └─────────────────────────────────────────┘
+
+    If you see ✅ SET for SMTP_PASS, you're good!
+    If you see ❌ NOT SET, go back to Step 2.
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  PLATFORM-SPECIFIC INSTRUCTIONS                                           │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────┐
+    │ RAILWAY                                 │
+    ├─────────────────────────────────────────┤
+    │ 1. Open your project                    │
+    │ 2. Click your service                   │
+    │ 3. Go to "Variables" tab                │
+    │ 4. Click "New Variable"                 │
+    │ 5. Add each SMTP variable               │
+    │ 6. Click "Deploy"                       │
+    └─────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────┐
+    │ RENDER                                  │
+    ├─────────────────────────────────────────┤
+    │ 1. Open your service                    │
+    │ 2. Click "Environment" in sidebar       │
+    │ 3. Click "Add Environment Variable"     │
+    │ 4. Add each SMTP variable               │
+    │ 5. Save (auto-redeploys)                │
+    └─────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────┐
+    │ VERCEL                                  │
+    ├─────────────────────────────────────────┤
+    │ 1. Go to Project Settings               │
+    │ 2. Click "Environment Variables"        │
+    │ 3. Add each SMTP variable               │
+    │ 4. Select "Production"                  │
+    │ 5. Redeploy                             │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  GMAIL APP PASSWORD                                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Is "anoeipuattkwiaxl" a Gmail App Password?
+    
+    ✅ YES → You're good, use it as-is
+    ❌ NO  → Create one:
+
+    Steps to create Gmail App Password:
+    ┌─────────────────────────────────────────┐
+    │ 1. Go to myaccount.google.com           │
+    │ 2. Click "Security"                     │
+    │ 3. Enable "2-Step Verification"         │
+    │ 4. Click "App passwords"                │
+    │ 5. Select "Mail" and "Other"            │
+    │ 6. Name it "Real Estate App"            │
+    │ 7. Click "Generate"                     │
+    │ 8. Copy the 16-character password       │
+    │ 9. Use as SMTP_PASS                     │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  TESTING                                                                  │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Test 1: Check variables
+    ┌─────────────────────────────────────────┐
+    │ Visit: /api/debug-smtp                  │
+    │ Expect: All variables show ✅           │
+    └─────────────────────────────────────────┘
+
+    Test 2: Send OTP
+    ┌─────────────────────────────────────────┐
+    │ Try sending OTP from your app           │
+    │ Expect: Email received in inbox         │
+    └─────────────────────────────────────────┘
+
+    Test 3: Check logs
+    ┌─────────────────────────────────────────┐
+    │ Look for:                               │
+    │ ✅ Email transporter configured         │
+    │ ✅ OTP email sent successfully          │
+    └─────────────────────────────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  CHECKLIST                                                                │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    [ ] Identified deployment platform
+    [ ] Added SMTP_HOST to platform
+    [ ] Added SMTP_PORT to platform
+    [ ] Added SMTP_SECURE to platform
+    [ ] Added SMTP_USER to platform
+    [ ] Added SMTP_PASS to platform
+    [ ] Using Gmail App Password
+    [ ] Redeployed application
+    [ ] Checked /api/debug-smtp
+    [ ] All variables show ✅
+    [ ] Tested OTP sending
+    [ ] Email received
+    [ ] Deleted debug endpoint
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│  QUICK REFERENCE                                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+    Variables to add:
+    ┌─────────────────────────────────────────┐
+    │ SMTP_HOST=smtp.gmail.com                │
+    │ SMTP_PORT=587                           │
+    │ SMTP_SECURE=false                       │
+    │ SMTP_USER=rushikeshshrimanwar@gmail.com │
+    │ SMTP_PASS=anoeipuattkwiaxl              │
+    └─────────────────────────────────────────┘
+
+    Debug URL:
+    ┌─────────────────────────────────────────┐
+    │ https://your-domain.com/api/debug-smtp  │
+    └─────────────────────────────────────────┘
+
+    Documentation:
+    ┌─────────────────────────────────────────┐
+    │ SMTP_TROUBLESHOOTING.md                 │
+    │ FIX_SMTP_ERROR.md                       │
+    └─────────────────────────────────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  After fixing, delete: app/api/debug-smtp/route.ts                       ║
+╚═══════════════════════════════════════════════════════════════════════════╝
