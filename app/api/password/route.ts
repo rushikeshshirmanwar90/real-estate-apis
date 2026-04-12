@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { Customer } from "@/lib/models/users/Customer";
@@ -7,7 +7,7 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Staff } from "@/lib/models/users/Staff";
 import { Admin } from "@/lib/models/users/Admin";
 import { Client } from "@/lib/models/super-admin/Client";
-import { errorResponse, successResponse } from "@/lib/utils/api-response";
+import { errorResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isStrongPassword } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { withOptionalTransaction } from "@/lib/utils/transaction-helper";
@@ -134,16 +134,29 @@ export const POST = async (req: NextRequest) => {
       { algorithm: 'HS256' }
     );
 
-    return successResponse(
+    console.log('✅ JWT token generated successfully');
+    console.log('📊 Token length:', jwtToken.length);
+
+    // Return response with token at the correct level for frontend
+    return NextResponse.json(
       {
+        success: true,
+        message: "Password updated successfully",
+        data: {
+          user: {
+            id: updatedUser._id,
+            email: updatedUser.email,
+            userType: normalizedUserType,
+          },
+        },
+        token: jwtToken, // Token at root level for frontend compatibility
         user: {
           id: updatedUser._id,
           email: updatedUser.email,
           userType: normalizedUserType,
         },
-        token: jwtToken, // JWT token for immediate login after password setup
       },
-      "Password updated successfully"
+      { status: 200 }
     );
   } catch (error: unknown) {
     console.error('❌ Password API error:', error);
