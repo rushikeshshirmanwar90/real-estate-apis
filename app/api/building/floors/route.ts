@@ -103,21 +103,16 @@ export const POST = async (req: NextRequest) => {
       }
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
       // Check if building exists
-      const building = await Building.findById(body.buildingId).session(session);
+      const building = await Building.findById(body.buildingId);
       if (!building) {
-        await session.abortTransaction();
         return errorResponse("Building not found", 404);
       }
 
       // Check if floor number already exists
       const existingFloor = (building as any).floors?.find((f: any) => f.floorNumber === body.floorNumber);
       if (existingFloor) {
-        await session.abortTransaction();
         return errorResponse(`Floor ${body.floorNumber} already exists`, 400);
       }
 
@@ -156,15 +151,12 @@ export const POST = async (req: NextRequest) => {
             totalBookedUnits: floorData.totalBookedUnits
           }
         },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedBuilding) {
-        await session.abortTransaction();
         return errorResponse("Failed to add floor", 500);
       }
-
-      await session.commitTransaction();
 
       // Get the newly added floor
       const newFloor = (updatedBuilding as any).floors?.[(updatedBuilding as any).floors.length - 1];
@@ -210,10 +202,7 @@ export const POST = async (req: NextRequest) => {
         201
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error adding floor", error);
@@ -248,19 +237,14 @@ export const PUT = async (req: NextRequest) => {
       return errorResponse("Invalid ID format", 400);
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      const building = await Building.findById(buildingId).session(session);
+      const building = await Building.findById(buildingId);
       if (!building) {
-        await session.abortTransaction();
         return errorResponse("Building not found", 404);
       }
 
       const floorIndex = (building as any).floors?.findIndex((f: any) => f._id?.toString() === floorId);
       if (floorIndex === -1 || floorIndex === undefined) {
-        await session.abortTransaction();
         return errorResponse("Floor not found", 404);
       }
 
@@ -281,15 +265,12 @@ export const PUT = async (req: NextRequest) => {
       const updatedBuilding = await Building.findByIdAndUpdate(
         buildingId,
         { $set: updateData },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedBuilding) {
-        await session.abortTransaction();
         return errorResponse("Failed to update floor", 500);
       }
-
-      await session.commitTransaction();
 
       const updatedFloor = (updatedBuilding as any).floors?.[floorIndex];
 
@@ -331,10 +312,7 @@ export const PUT = async (req: NextRequest) => {
         "Floor updated successfully"
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error updating floor", error);
@@ -358,19 +336,14 @@ export const DELETE = async (req: NextRequest) => {
       return errorResponse("Invalid ID format", 400);
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      const building = await Building.findById(buildingId).session(session);
+      const building = await Building.findById(buildingId);
       if (!building) {
-        await session.abortTransaction();
         return errorResponse("Building not found", 404);
       }
 
       const floorToDelete = (building as any).floors?.find((f: any) => f._id?.toString() === floorId);
       if (!floorToDelete) {
-        await session.abortTransaction();
         return errorResponse("Floor not found", 404);
       }
 
@@ -385,15 +358,12 @@ export const DELETE = async (req: NextRequest) => {
             totalBookedUnits: -(floorToDelete.totalBookedUnits || 0)
           }
         },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedBuilding) {
-        await session.abortTransaction();
         return errorResponse("Failed to delete floor", 500);
       }
-
-      await session.commitTransaction();
 
       // Log activity
       const userInfo = extractUserInfo(req, {});
@@ -435,10 +405,7 @@ export const DELETE = async (req: NextRequest) => {
         "Floor deleted successfully"
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error deleting floor", error);

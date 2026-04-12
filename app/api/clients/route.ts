@@ -152,20 +152,14 @@ export const POST = async (req: NextRequest) => {
     // Remove licenseDays from data as it's not part of the schema
     delete data.licenseDays;
 
-    // Use transaction for atomicity
-    await connect();
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Create client and login user
     try {
       const addClient = new Client(data);
-      await addClient.save({ session });
+      await addClient.save();
 
       const loginPayload = { email: data.email, userType: "clients" };
       const newEntry = new LoginUser(loginPayload);
-      await newEntry.save({ session });
-
-      await session.commitTransaction();
+      await newEntry.save();
 
       // Return client without password
       const { password: _, ...clientWithoutPassword } = addClient.toObject();
@@ -179,10 +173,7 @@ export const POST = async (req: NextRequest) => {
         201
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error creating client", error);
@@ -215,27 +206,14 @@ export const DELETE = async (req: NextRequest) => {
 
     await connect();
 
-    // Use transaction for atomicity
-    await connect();
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Delete client and login user
     try {
-      const deletedClient = await Client.findOneAndDelete(
-        { email },
-        { session }
-      ).lean();
-      const deletedLoginUser = await LoginUser.findOneAndDelete(
-        { email },
-        { session }
-      ).lean();
+      const deletedClient = await Client.findOneAndDelete({ email }).lean();
+      const deletedLoginUser = await LoginUser.findOneAndDelete({ email }).lean();
 
       if (!deletedClient) {
-        await session.abortTransaction();
         return errorResponse("Client not found", 404);
       }
-
-      await session.commitTransaction();
 
       // Invalidate cache
       await safeRedisDelCache(`clients:all`);
@@ -246,10 +224,7 @@ export const DELETE = async (req: NextRequest) => {
 
       return successResponse(deletedClient, "Client deleted successfully");
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error deleting client", error);

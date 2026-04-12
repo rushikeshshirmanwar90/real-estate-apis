@@ -2,7 +2,6 @@ import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import mongoose from "mongoose";
 import { Customer } from "@/lib/models/users/Customer";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Staff } from "@/lib/models/users/Staff";
@@ -11,6 +10,7 @@ import { Client } from "@/lib/models/super-admin/Client";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isStrongPassword } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { withOptionalTransaction } from "@/lib/utils/transaction-helper";
 
 const SALT_ROUNDS = 10;
 
@@ -54,11 +54,8 @@ export const POST = async (req: NextRequest) => {
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     console.log('✅ Password hashed successfully');
 
-    // Use transaction for atomicity
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
+    // Use transaction if available (cluster), otherwise run without transaction (standalone)
+    const result = await withOptionalTransaction(async (session) => {
       let userModel;
       let normalizedUserType = userType;
       
@@ -81,9 +78,8 @@ export const POST = async (req: NextRequest) => {
           normalizedUserType = "clients";
           break;
         default:
-          await session.abortTransaction();
           console.log('❌ Unhandled user type in switch:', userType);
-          return errorResponse("Invalid user type", 400);
+          throw new Error("Invalid user type");
       }
 
       console.log('🔧 Selected user model:', userModel?.modelName || 'LoginUser only');
@@ -94,16 +90,18 @@ export const POST = async (req: NextRequest) => {
 
       // Update both the specific user model and LoginUser
       console.log('🔧 Updating user in both models...');
+      const updateOptions = session ? { new: true, session } : { new: true };
+      
       [updatedUser, updatedLoginUser] = await Promise.all([
         userModel.findOneAndUpdate(
           { email },
           { password: hashedPassword },
-          { new: true, session }
+          updateOptions
         ),
         LoginUser.findOneAndUpdate(
           { email },
           { password: hashedPassword },
-          { new: true, session }
+          updateOptions
         ),
       ]);
 
@@ -111,46 +109,42 @@ export const POST = async (req: NextRequest) => {
       console.log('✅ LoginUser update result:', !!updatedLoginUser);
 
       if (!updatedUser) {
-        await session.abortTransaction();
         console.log('❌ User not found in database');
-        return errorResponse("User not found", 404);
+        throw new Error("User not found");
       }
 
-      await session.commitTransaction();
-      console.log('✅ Transaction committed successfully');
+      console.log('✅ Password update completed successfully');
+      
+      return { updatedUser, normalizedUserType };
+    });
 
-      // Generate JWT token for the user after successful password update
-      const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
-      const jwtToken = jwt.sign(
-        {
+    const { updatedUser, normalizedUserType } = result;
+
+    // Generate JWT token for the user after successful password update
+    const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
+    const jwtToken = jwt.sign(
+      {
+        id: updatedUser._id,
+        email: updatedUser.email,
+        userType: normalizedUserType,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+      },
+      jwtSecret,
+      { algorithm: 'HS256' }
+    );
+
+    return successResponse(
+      {
+        user: {
           id: updatedUser._id,
           email: updatedUser.email,
           userType: normalizedUserType,
-          iat: Math.floor(Date.now() / 1000),
-          exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
         },
-        jwtSecret,
-        { algorithm: 'HS256' }
-      );
-
-      return successResponse(
-        {
-          user: {
-            id: updatedUser._id,
-            email: updatedUser.email,
-            userType: normalizedUserType,
-          },
-          token: jwtToken, // JWT token for immediate login after password setup
-        },
-        "Password updated successfully"
-      );
-    } catch (error) {
-      await session.abortTransaction();
-      console.error('❌ Transaction error:', error);
-      throw error;
-    } finally {
-      session.endSession();
-    }
+        token: jwtToken, // JWT token for immediate login after password setup
+      },
+      "Password updated successfully"
+    );
   } catch (error: unknown) {
     console.error('❌ Password API error:', error);
     logger.error("Error updating password", error);

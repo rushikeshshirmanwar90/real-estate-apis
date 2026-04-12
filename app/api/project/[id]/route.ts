@@ -103,15 +103,11 @@ export const DELETE = async (
 
     await connect();
 
-    // Start a transaction for cascading delete
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Perform cascading delete (without transaction)
     try {
       // First, get the project to be deleted for logging
       const projectToDelete = await Projects.findById(id).lean();
       if (!projectToDelete || !isSingleDocument(projectToDelete)) {
-        await session.abortTransaction();
         return errorResponse("Project not found", 404);
       }
 
@@ -121,45 +117,45 @@ export const DELETE = async (
       // Delete all related data in the correct order (children first, then parents)
       
       // 1. Delete Activities (logs related to this project)
-      const deletedActivities = await Activity.deleteMany({ projectId: id }, { session });
+      const deletedActivities = await Activity.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedActivities.deletedCount} activities for project ${id}`);
 
       // 2. Delete Material Activities
-      const deletedMaterialActivities = await MaterialActivity.deleteMany({ projectId: id }, { session });
+      const deletedMaterialActivities = await MaterialActivity.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedMaterialActivities.deletedCount} material activities for project ${id}`);
 
       // 3. Delete Updates
-      const deletedUpdates = await Updates.deleteMany({ projectId: id }, { session });
+      const deletedUpdates = await Updates.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedUpdates.deletedCount} updates for project ${id}`);
 
       // 4. Delete Customer Details (properties related to this project)
       const deletedCustomerDetails = await UserCustomerDetails.deleteMany({ 
         "property.projectId": id 
-      }, { session });
+      });
       logger.info(`Deleted ${deletedCustomerDetails.deletedCount} customer details for project ${id}`);
 
       // 5. Delete Buildings (this will also delete all floors and units within them)
-      const deletedBuildings = await Building.deleteMany({ projectId: id }, { session });
+      const deletedBuildings = await Building.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedBuildings.deletedCount} buildings for project ${id}`);
 
       // 6. Delete Sections
-      const deletedSections = await Section.deleteMany({ projectId: id }, { session });
+      const deletedSections = await Section.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedSections.deletedCount} sections for project ${id}`);
 
       // 7. Delete Row Houses
-      const deletedRowHouses = await RowHouse.deleteMany({ projectId: id }, { session });
+      const deletedRowHouses = await RowHouse.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedRowHouses.deletedCount} row houses for project ${id}`);
 
       // 8. Delete Room Info
-      const deletedRoomInfo = await RoomInfo.deleteMany({ projectId: id }, { session });
+      const deletedRoomInfo = await RoomInfo.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedRoomInfo.deletedCount} room info records for project ${id}`);
 
       // 9. Delete Other Sections
-      const deletedOtherSections = await OtherSection.deleteMany({ projectId: id }, { session });
+      const deletedOtherSections = await OtherSection.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedOtherSections.deletedCount} other sections for project ${id}`);
 
       // 10. Delete Mini Sections
-      const deletedMiniSections = await MiniSection.deleteMany({ projectId: id }, { session });
+      const deletedMiniSections = await MiniSection.deleteMany({ projectId: id });
       logger.info(`Deleted ${deletedMiniSections.deletedCount} mini sections for project ${id}`);
 
       // 11. Remove project from all assigned staff members' assignedProjects
@@ -195,14 +191,11 @@ export const DELETE = async (
       }
 
       // 12. Finally, delete the project itself
-      const deletedProject = await Projects.findByIdAndDelete(id, { session }).lean();
+      const deletedProject = await Projects.findByIdAndDelete(id).lean();
       if (!deletedProject) {
-        await session.abortTransaction();
         return errorResponse("Failed to delete project", 500);
       }
 
-      // Commit the transaction
-      await session.commitTransaction();
       logger.info(`Successfully completed cascading delete for project ${id}`);
 
       // Log activity for project deletion (after successful deletion)
@@ -268,12 +261,8 @@ export const DELETE = async (
       );
 
     } catch (error) {
-      // Rollback transaction on error
-      await session.abortTransaction();
-      logger.error("Error during cascading delete, transaction rolled back", error);
+      logger.error("Error during cascading delete", error);
       throw error;
-    } finally {
-      session.endSession();
     }
 
   } catch (error: unknown) {

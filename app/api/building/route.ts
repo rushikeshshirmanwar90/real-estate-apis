@@ -145,13 +145,8 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Building name is required", 400);
     }
 
-    // Use transaction for atomicity
-    await connect();
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Create building with proper defaults
     try {
-      // Create building with proper defaults
       const buildingData = {
         ...body,
         description: body.description || '',
@@ -165,7 +160,7 @@ export const POST = async (req: NextRequest) => {
       };
 
       const newBuilding = new Building(buildingData);
-      const savedBuilding = await newBuilding.save({ session });
+      const savedBuilding = await newBuilding.save();
 
       const updatedProject = await Projects.findByIdAndUpdate(
         savedBuilding.projectId,
@@ -178,15 +173,14 @@ export const POST = async (req: NextRequest) => {
             },
           },
         },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedProject) {
-        await session.abortTransaction();
+        // Rollback: delete the created building
+        await Building.findByIdAndDelete(savedBuilding._id);
         return errorResponse("Project not found", 404);
       }
-
-      await session.commitTransaction();
 
       // ✅ Log activity for building creation (consistent with section creation)
       const userInfo = extractUserInfo(req, body);
@@ -230,10 +224,7 @@ export const POST = async (req: NextRequest) => {
         201
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error creating building", error);
@@ -267,33 +258,28 @@ export const DELETE = async (req: NextRequest) => {
       return errorResponse("Invalid ID format", 400);
     }
 
-    // Use transaction for atomicity
-    await connect();
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Delete building and update project
     try {
       const updatedProject = await Projects.findByIdAndUpdate(
         projectId,
         { $pull: { section: { sectionId: sectionId } } },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedProject) {
-        await session.abortTransaction();
         return errorResponse("Project not found", 404);
       }
 
-      const deletedBuilding = await Building.findByIdAndDelete(sectionId, {
-        session,
-      }).lean();
+      const deletedBuilding = await Building.findByIdAndDelete(sectionId).lean();
 
       if (!deletedBuilding) {
-        await session.abortTransaction();
+        // Rollback: restore the section in project
+        await Projects.findByIdAndUpdate(
+          projectId,
+          { $push: { section: { sectionId: sectionId } } }
+        );
         return errorResponse("Building not found", 404);
       }
-
-      await session.commitTransaction();
 
       // Invalidate cache
       await safeRedisDelCache(`building:${sectionId}`);
@@ -308,10 +294,7 @@ export const DELETE = async (req: NextRequest) => {
 
       return successResponse(deletedBuilding, "Building deleted successfully");
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error deleting building", error);
@@ -411,26 +394,21 @@ export const PATCH = async (req: NextRequest) => {
       return errorResponse("Invalid building ID format", 400);
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
       const updatedBuilding = await Building.findByIdAndUpdate(
         id,
         { isCompleted },
-        { new: true, session }
+        { new: true }
       );
 
       if (!updatedBuilding) {
-        await session.abortTransaction();
         return errorResponse("Building not found", 404);
       }
 
       // Also update the section in the project
       await Projects.updateOne(
         { "section.sectionId": id },
-        { $set: { "section.$.isCompleted": isCompleted } },
-        { session }
+        { $set: { "section.$.isCompleted": isCompleted } }
       );
 
       // Log activity
@@ -459,25 +437,13 @@ export const PATCH = async (req: NextRequest) => {
         }
       }
 
-      await session.commitTransaction();
-
-      // Invalidate cache
-      await safeRedisDelCache(`building:${id}`);
-      await safeRedisDelCache(`buildings:all`);
-      if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
-        await safeRedisDelCache(`buildings:project:${updatedBuilding.projectId}`);
-      }
-
       return successResponse(
         updatedBuilding,
         "Building completion status updated successfully"
       );
 
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
 
   } catch (error) {

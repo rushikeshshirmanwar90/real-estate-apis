@@ -22,13 +22,9 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Invalid building ID format", 400);
     }
 
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
-      const building = await Building.findById(buildingId).session(session);
+      const building = await Building.findById(buildingId);
       if (!building) {
-        await session.abortTransaction();
         return errorResponse("Building not found", 404);
       }
 
@@ -36,26 +32,23 @@ export const POST = async (req: NextRequest) => {
 
       switch (operation) {
         case 'createFloors':
-          result = await bulkCreateFloors(building, data, session);
+          result = await bulkCreateFloors(building, data);
           break;
         case 'createUnits':
-          result = await bulkCreateUnits(building, data, session);
+          result = await bulkCreateUnits(building, data);
           break;
         case 'updateUnits':
-          result = await bulkUpdateUnits(building, data, session);
+          result = await bulkUpdateUnits(building, data);
           break;
         case 'updateUnitStatus':
-          result = await bulkUpdateUnitStatus(building, data, session);
+          result = await bulkUpdateUnitStatus(building, data);
           break;
         case 'generateUnits':
-          result = await generateUnitsForFloor(building, data, session);
+          result = await generateUnitsForFloor(building, data);
           break;
         default:
-          await session.abortTransaction();
           return errorResponse("Invalid operation", 400);
       }
-
-      await session.commitTransaction();
 
       // Log activity
       const userInfo = extractUserInfo(req, body);
@@ -90,10 +83,7 @@ export const POST = async (req: NextRequest) => {
         201
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error performing bulk operation", error);
@@ -102,7 +92,7 @@ export const POST = async (req: NextRequest) => {
 };
 
 // Bulk create floors
-async function bulkCreateFloors(building: any, data: any, session: any) {
+async function bulkCreateFloors(building: any, data: any) {
   const { floors } = data;
   
   if (!Array.isArray(floors)) {
@@ -162,8 +152,7 @@ async function bulkCreateFloors(building: any, data: any, session: any) {
             totalUnits: newFloorData.totalUnits,
             totalBookedUnits: newFloorData.totalBookedUnits
           }
-        },
-        { session }
+        }
       );
 
       results.successful++;
@@ -186,7 +175,7 @@ async function bulkCreateFloors(building: any, data: any, session: any) {
 }
 
 // Bulk create units
-async function bulkCreateUnits(building: any, data: any, session: any) {
+async function bulkCreateUnits(building: any, data: any) {
   const { floorId, units } = data;
   
   if (!floorId || !Array.isArray(units)) {
@@ -253,8 +242,7 @@ async function bulkCreateUnits(building: any, data: any, session: any) {
             totalUnits: 1,
             totalBookedUnits: ['Booked', 'Sold', 'Reserved'].includes(newUnitData.status) ? 1 : 0
           }
-        },
-        { session }
+        }
       );
 
       results.successful++;
@@ -278,7 +266,7 @@ async function bulkCreateUnits(building: any, data: any, session: any) {
 }
 
 // Bulk update units
-async function bulkUpdateUnits(building: any, data: any, session: any) {
+async function bulkUpdateUnits(building: any, data: any) {
   const { updates } = data;
   
   if (!Array.isArray(updates)) {
@@ -338,8 +326,7 @@ async function bulkUpdateUnits(building: any, data: any, session: any) {
 
       await Building.findByIdAndUpdate(
         building._id,
-        { $set: updateQuery },
-        { session }
+        { $set: updateQuery }
       );
 
       results.successful++;
@@ -362,7 +349,7 @@ async function bulkUpdateUnits(building: any, data: any, session: any) {
 }
 
 // Bulk update unit status
-async function bulkUpdateUnitStatus(building: any, data: any, session: any) {
+async function bulkUpdateUnitStatus(building: any, data: any) {
   const { unitIds, newStatus, customerInfo, bookingDate } = data;
   
   if (!Array.isArray(unitIds) || !newStatus) {
@@ -412,8 +399,7 @@ async function bulkUpdateUnitStatus(building: any, data: any, session: any) {
 
           await Building.findByIdAndUpdate(
             building._id,
-            { $set: updateQuery },
-            { session }
+            { $set: updateQuery }
           );
 
           // Update booked counts if status changed
@@ -432,8 +418,7 @@ async function bulkUpdateUnitStatus(building: any, data: any, session: any) {
                   "floors.$.totalBookedUnits": increment,
                   totalBookedUnits: increment
                 }
-              },
-              { session }
+              }
             );
           }
 
@@ -468,7 +453,7 @@ async function bulkUpdateUnitStatus(building: any, data: any, session: any) {
 }
 
 // Generate units for a floor based on pattern
-async function generateUnitsForFloor(building: any, data: any, session: any) {
+async function generateUnitsForFloor(building: any, data: any) {
   const { 
     floorId, 
     unitPattern, 
@@ -540,8 +525,7 @@ async function generateUnitsForFloor(building: any, data: any, session: any) {
             totalUnits: 1,
             totalBookedUnits: ['Booked', 'Sold', 'Reserved'].includes(status) ? 1 : 0
           }
-        },
-        { session }
+        }
       );
 
       results.successful++;

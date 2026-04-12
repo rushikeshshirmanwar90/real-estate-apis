@@ -92,34 +92,25 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("No valid contacts to insert", 400);
     }
 
-    // Use transaction for atomicity
-    await connect();
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
+    // Insert contacts and update user verification
     try {
       // Get the user's verification status
       const user = await Customer.findOne({
         _id: validContacts[0].userId,
-      }).session(session);
+      });
       if (!user) {
-        await session.abortTransaction();
         return errorResponse("User not found", 404);
       }
 
       // Check if user is already verified
       if (user.verified) {
-        await session.abortTransaction();
         return errorResponse("User is already verified", 400);
       }
 
       // Insert the contacts
-      const insertedContacts = await Contacts.insertMany(validContacts, {
-        session,
-      });
+      const insertedContacts = await Contacts.insertMany(validContacts);
 
       if (insertedContacts.length === 0) {
-        await session.abortTransaction();
         return errorResponse("Unable to insert contacts", 500);
       }
 
@@ -127,10 +118,8 @@ export const POST = async (req: NextRequest) => {
       await Customer.findByIdAndUpdate(
         user._id,
         { verified: true },
-        { new: true, session }
+        { new: true }
       );
-
-      await session.commitTransaction();
 
       return successResponse(
         {
@@ -141,10 +130,7 @@ export const POST = async (req: NextRequest) => {
         201
       );
     } catch (error) {
-      await session.abortTransaction();
       throw error;
-    } finally {
-      session.endSession();
     }
   } catch (error: unknown) {
     logger.error("Error inserting contacts", error);
