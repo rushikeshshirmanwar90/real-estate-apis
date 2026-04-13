@@ -54,7 +54,6 @@ export const POST = async (req: NextRequest) => {
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     console.log('✅ Password hashed successfully');
 
-    // Use transaction if available (cluster), otherwise run without transaction (standalone)
     const result = await withOptionalTransaction(async (session) => {
       let userModel;
       let normalizedUserType = userType;
