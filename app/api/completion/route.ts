@@ -103,7 +103,7 @@ export const PATCH = async (req: NextRequest) => {
           return errorResponse("Failed to update section completion", 500);
         }
 
-        // Invalidate cache for this project-section
+        // Invalidate cache for this project-section - FIXED: Match GET endpoint cache key format
         await safeRedisDelCache(`completion:project-section:${projectId}:${id}`);
 
         return successResponse(
@@ -155,8 +155,9 @@ export const PATCH = async (req: NextRequest) => {
           return errorResponse("Project not found", 404);
         }
 
-        // Invalidate cache for this project
-        await safeRedisDelCache(`completion:project:${id}`);
+        // Invalidate cache for this project - FIXED: Match GET endpoint cache key format
+        await safeRedisDelCache(`completion:project:none:${id}`);
+        await safeRedisDelCache(`completion:project:${id}`); // Also delete old format for safety
 
         return successResponse(
           { isCompleted: projectCompletionState },
@@ -209,8 +210,9 @@ export const PATCH = async (req: NextRequest) => {
           return errorResponse("Mini section not found", 404);
         }
 
-        // Invalidate cache for this mini-section
-        await safeRedisDelCache(`completion:minisection:${id}`);
+        // Invalidate cache for this mini-section - FIXED: Match GET endpoint cache key format
+        await safeRedisDelCache(`completion:minisection:none:${id}`);
+        await safeRedisDelCache(`completion:minisection:${id}`); // Also delete old format for safety
 
         return successResponse(
           { isCompleted: miniSectionCompletionState },
