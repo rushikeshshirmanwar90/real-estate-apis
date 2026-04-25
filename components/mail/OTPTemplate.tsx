@@ -19,7 +19,7 @@ interface OTPEmailProps {
 }
 
 const baseUrl =
-  "https://res.cloudinary.com/dlcq8i2sc/image/upload/v1741694804/wbw6tqlr9qakfbts0kic.png";
+  "https://res.cloudinary.com/dlcq8i2sc/image/upload/v1777079492/b3lp68bfx6zojimljssr.png";
 
 export const OTPTemplate = ({ staffName, companyName, otp }: OTPEmailProps) => {
   return (

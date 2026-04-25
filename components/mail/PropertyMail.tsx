@@ -27,7 +27,7 @@ interface AWSVerifyEmailProps {
 
 const apkLink = 'https://expo.dev/accounts/rushi_shrimanwar/projects/real-estate-app/builds/6e9ca91f-93e0-4e4e-b04a-22ad49d6af27';
 
-const baseUrl = 'https://kommodo.ai/i/585GLABKR1NqAOayUo6K';
+const baseUrl = 'https://res.cloudinary.com/dlcq8i2sc/image/upload/v1777079492/b3lp68bfx6zojimljssr.png';
 
 export const EmailTemplate = ({
     details,

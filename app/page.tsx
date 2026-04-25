@@ -125,7 +125,7 @@ export default function Home() {
 
   //* Initialize state with default values
   const [heroSection, setHeroSection] = useState<HeroSectionData>({
-    clientId: clientId,
+    clientId: clientId || "",
     details: [
       {
         title: "",
@@ -138,7 +138,7 @@ export default function Home() {
   })
 
   const [aboutUs, setAboutUs] = useState<AboutUsData>({
-    clientId: clientId,
+    clientId: clientId || "",
     subTitle: "",
     description: "",
     image: "",
@@ -162,19 +162,19 @@ export default function Home() {
   })
 
   const [ourServices, setOurServices] = useState<OurServicesData>({
-    clientId: clientId,
+    clientId: clientId || "",
     subTitle: "",
     services: [],
   })
 
   const [faq, setFAQ] = useState<FAQData>({
-    clientId: clientId,
+    clientId: clientId || "",
     subTitle: "",
     FAQs: [],
   })
 
   const [ourTeam, setOurTeam] = useState<OurTeamData>({
-    clientId: clientId,
+    clientId: clientId || "",
     subTitle: "",
     teamMembers: [],
   })
@@ -605,7 +605,7 @@ export default function Home() {
         />
 
         <OurTeamCard
-          clientId={clientId}
+          clientId={clientId || ""}
           subTitle={ourTeam.subTitle}
           teamMembers={ourTeam.teamMembers}
           onSave={handleSaveOurTeam}

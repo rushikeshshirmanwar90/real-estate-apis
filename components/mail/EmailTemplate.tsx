@@ -17,7 +17,7 @@ interface AWSVerifyEmailProps {
     verificationCode?: string | number;
 }
 
-const baseUrl = 'https://kommodo.ai/i/585GLABKR1NqAOayUo6K';
+const baseUrl = 'https://res.cloudinary.com/dlcq8i2sc/image/upload/v1777079492/b3lp68bfx6zojimljssr.png';
 
 export const EmailTemplate = ({
     verificationCode,

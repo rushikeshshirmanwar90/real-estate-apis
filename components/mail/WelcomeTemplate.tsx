@@ -17,11 +17,8 @@ interface AWSVerifyEmailProps {
   companyName: string;
 }
 
-const apkLink =
-  "https://expo.dev/accounts/rushi_shrimanwar/projects/real-estate-app/builds/6e9ca91f-93e0-4e4e-b04a-22ad49d6af27";
-
 const baseUrl =
-  "https://res.cloudinary.com/dlcq8i2sc/image/upload/v1741694804/wbw6tqlr9qakfbts0kic.png";
+  "https://res.cloudinary.com/dlcq8i2sc/image/upload/v1777079492/b3lp68bfx6zojimljssr.png";
 
 export const EmailTemplate = ({ staffName, companyName }: AWSVerifyEmailProps) => {
   return (
