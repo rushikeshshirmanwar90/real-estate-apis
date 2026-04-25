@@ -10,6 +10,7 @@ import { OurTeamCard } from "@/components/homepage/editable-cards/our-team-card"
 import axios from "axios"
 import domain from "@/components/utils/domain"
 import { toast } from "react-toastify"
+import { getClientId } from "@/functions/clientId"
 
 // Define interfaces for all our data structures
 interface HeroDetail {
@@ -92,7 +93,26 @@ interface LoadingState {
 }
 
 export default function Home() {
-  const clientId = process.env.NEXT_PUBLIC_CLIENT_ID || ""
+  const [clientId, setClientId] = useState<string | null>(null);
+
+  // Fetch clientId on mount
+  useEffect(() => {
+    const fetchClientId = () => {
+      console.log('🔍 Fetching clientId for home page...');
+      const id = getClientId();
+      console.log('✅ ClientId received:', id);
+      
+      if (!id) {
+        console.error('❌ No valid clientId found. User may need to log in again.');
+        toast.error('Session expired. Please log in again.');
+        return;
+      }
+      
+      setClientId(id);
+    };
+    
+    fetchClientId();
+  }, []);
 
   // * Loading states
   const [loading, setLoading] = useState<LoadingState>({
@@ -182,16 +202,27 @@ export default function Home() {
 
   // !! Fetching functions with proper error handling and loading states
   const fetchHeroSection = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      console.log('⚠️ ClientId not available, skipping hero section fetch');
+      return;
+    }
 
     updateLoadingState('heroSection', true)
     try {
+      console.log('📡 Fetching hero section for clientId:', clientId);
       const response = await api.get(`/api/hero-section?clientId=${clientId}`)
       if (response.data?.data) {
         setHeroSection(response.data.data)
+        console.log('✅ Hero section loaded successfully');
       }
-    } catch (error) {
-      handleError(error, 'fetching hero section')
+    } catch (error: any) {
+      // Handle 404 gracefully - it's okay if hero section doesn't exist yet
+      if (error.response?.status === 404) {
+        console.log('ℹ️ No hero section found for this client (404) - this is normal for new clients');
+        setHeroSection({ clientId, details: [] }); // Set empty state
+      } else {
+        handleError(error, 'fetching hero section')
+      }
     } finally {
       updateLoadingState('heroSection', false)
     }
@@ -199,7 +230,10 @@ export default function Home() {
 
   // !! Fetching About us section with proper error handling and loading states
   const fetchAboutUs = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      console.log('⚠️ ClientId not available, skipping about us fetch');
+      return;
+    }
 
     updateLoadingState('aboutUs', true)
     try {
@@ -207,8 +241,13 @@ export default function Home() {
       if (response.data?.data) {
         setAboutUs(response.data.data)
       }
-    } catch (error) {
-      handleError(error, 'fetching about us section')
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log('ℹ️ No about us section found (404) - this is normal for new clients');
+        setAboutUs({ clientId, subTitle: '', description: '', image: '', points: [] });
+      } else {
+        handleError(error, 'fetching about us section')
+      }
     } finally {
       updateLoadingState('aboutUs', false)
     }
@@ -216,7 +255,10 @@ export default function Home() {
 
   // !! Fetching Our Services section with proper error handling and loading states 
   const fetchOurServices = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      console.log('⚠️ ClientId not available, skipping our services fetch');
+      return;
+    }
 
     updateLoadingState('ourServices', true)
     try {
@@ -224,8 +266,13 @@ export default function Home() {
       if (response.data?.data) {
         setOurServices(response.data.data)
       }
-    } catch (error) {
-      handleError(error, 'fetching our services')
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log('ℹ️ No our services section found (404) - this is normal for new clients');
+        setOurServices({ clientId, subTitle: '', services: [] });
+      } else {
+        handleError(error, 'fetching our services')
+      }
     } finally {
       updateLoadingState('ourServices', false)
     }
@@ -233,7 +280,10 @@ export default function Home() {
 
   // !! Fetching Our Team section with proper error handling and loading states
   const fetchOurTeam = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      console.log('⚠️ ClientId not available, skipping our team fetch');
+      return;
+    }
 
     updateLoadingState('ourTeam', true)
     try {
@@ -273,7 +323,10 @@ export default function Home() {
 
   // !! Fetching FAQ section with proper error handling and loading states
   const fetchFAQ = useCallback(async () => {
-    if (!clientId) return
+    if (!clientId) {
+      console.log('⚠️ ClientId not available, skipping FAQ fetch');
+      return;
+    }
 
     updateLoadingState('faq', true)
     try {
@@ -281,8 +334,13 @@ export default function Home() {
       if (response.data?.data) {
         setFAQ(response.data.data)
       }
-    } catch (error) {
-      handleError(error, 'fetching FAQ')
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.log('ℹ️ No FAQ section found (404) - this is normal for new clients');
+        setFAQ({ clientId, subTitle: '', FAQs: [] });
+      } else {
+        handleError(error, 'fetching FAQ')
+      }
     } finally {
       updateLoadingState('faq', false)
     }

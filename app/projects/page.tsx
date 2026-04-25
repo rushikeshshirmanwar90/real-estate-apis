@@ -3,33 +3,120 @@
 import { useEffect, useState } from 'react';
 import { Plus, BarChart3 } from 'lucide-react';
 import axios from "axios"
-import TopHeader from '@/components/TopHeader';
 import ProjectCard from '@/components/ProjectCard';
 import { projectProps } from './types/project-props';
 import domain from '@/components/utils/domain';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { getClientId } from '@/functions/clientId';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Page() {
     const [projectData, setProjectData] = useState<projectProps[]>([]);
     const [isProjectLoading, setIsProjectLoading] = useState<boolean>(false);
     const [handleChange, setHandleChange] = useState<number>();
     const [error, setError] = useState<string | null>(null);
+    const [clientId, setClientId] = useState<string | null>(null);
+    const { toast } = useToast();
+
+    // Fetch clientId on mount
+    useEffect(() => {
+        const fetchClientId = () => {
+            console.log('🔍 Fetching clientId...');
+            const id = getClientId();
+            console.log('✅ ClientId received:', id);
+            
+            if (!id) {
+                console.error('❌ No valid clientId found. User may need to log in again.');
+                toast({
+                    title: "Error",
+                    description: "Session expired. Please log in again.",
+                    variant: "destructive",
+                });
+                setIsProjectLoading(false);
+                return;
+            }
+            
+            setClientId(id);
+        };
+        
+        fetchClientId();
+    }, []);
 
     const fetchProjectData = async () => {
+        console.log('🔍 Attempting to fetch project data with clientId:', clientId);
+        
+        if (!clientId) {
+            console.log('⚠️ ClientId is not available yet, skipping API call');
+            return;
+        }
+        
         setIsProjectLoading(true);
         setError(null);
+        
         try {
-            const res = await axios.get(`${domain}/api/project?clientId=${process.env.NEXT_PUBLIC_CLIENT_ID}`);
+            const res = await axios.get(`${domain}/api/project?clientId=${clientId}`);
+            
             const data = res.data;
-            setProjectData(data);
-        } catch (error) {
+            
+            if (Array.isArray(data)) {
+                console.log('✅ Project data loaded:', data.length, 'projects');
+                setProjectData(data);
+            } else if (data.data && Array.isArray(data.data)) {
+                console.log('✅ Project data loaded:', data.data.length, 'projects');
+                setProjectData(data.data);
+            } else {
+                console.log('⚠️ Unexpected data format:', data);
+                setProjectData([]);
+            }
+        } catch (error: any) {
+            console.error("❌ Error fetching project data:", error);
+            console.error('❌ Error response:', error.response?.data);
+            console.error('❌ Error status:', error.response?.status);
+            
             if (axios.isAxiosError(error)) {
-                setError(error.response?.data?.message || 'Failed to fetch project data');
+                const errorMessage = error.response?.data?.message || 'Failed to fetch project data';
+                setError(errorMessage);
+                
+                // Handle specific error cases
+                if (error.response?.status === 400) {
+                    console.error('❌ 400 Error - likely missing or invalid clientId');
+                    toast({
+                        title: "Error",
+                        description: "Invalid client configuration. Please contact support.",
+                        variant: "destructive",
+                    });
+                } else if (error.response?.status === 404) {
+                    console.error('❌ 404 Error - client or endpoint not found');
+                    toast({
+                        title: "Error",
+                        description: "Projects not found. Please contact support.",
+                        variant: "destructive",
+                    });
+                } else if (!error.response) {
+                    console.error('❌ Network error - server might be down');
+                    toast({
+                        title: "Error",
+                        description: "Unable to connect to server. Please check your connection.",
+                        variant: "destructive",
+                    });
+                } else {
+                    toast({
+                        title: "Error",
+                        description: errorMessage,
+                        variant: "destructive",
+                    });
+                }
             } else {
                 setError('An unexpected error occurred');
+                toast({
+                    title: "Error",
+                    description: "An unexpected error occurred",
+                    variant: "destructive",
+                });
             }
-            console.error("Error fetching project data:", error);
+            
+            setProjectData([]);
         } finally {
             setIsProjectLoading(false);
         }
@@ -41,7 +128,7 @@ export default function Page() {
 
     useEffect(() => {
         fetchProjectData();
-    }, [handleChange]);
+    }, [clientId, handleChange]);
 
     return (
         <div>
@@ -72,7 +159,7 @@ export default function Page() {
                     </Link>
                 </div>
             </div>
-            
+
             <div className='flex flex-col items-center justify-center my-5 gap-5'>
                 {isProjectLoading ? (
                     <div className="flex flex-col items-center gap-4">
@@ -89,7 +176,7 @@ export default function Page() {
                             Try again
                         </button>
                     </div>
-                ) : (
+                ) : projectData.length > 0 ? (
                     projectData.map((item: projectProps, index: number) => (
                         <ProjectCard
                             key={index}
@@ -97,6 +184,13 @@ export default function Page() {
                             refreshData={refreshData}
                         />
                     ))
+                ) : (
+                    <div className="text-center py-12">
+                        <p className="text-lg font-medium text-gray-600">No projects found</p>
+                        <p className="text-sm text-gray-500 mt-2">
+                            Click "Add Project" to create your first project
+                        </p>
+                    </div>
                 )}
             </div>
         </div>

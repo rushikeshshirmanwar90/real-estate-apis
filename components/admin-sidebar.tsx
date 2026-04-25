@@ -46,8 +46,7 @@ export function AdminSidebar() {
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Staff", href: "/staff", icon: UserCircle2 },
         { name: "Projects", href: "/projects", icon: Building2 },
-        { name: "Project Analytics", href: "/projects/analytics", icon: BarChart3 },
-        { name: "Analysis", href: "/analysis", icon: BarChart3 },
+        { name: "Analytics", href: "/projects/analytics", icon: BarChart3 },
         { name: "Reference", href: "/reference", icon: UserSearch },
     ]
 

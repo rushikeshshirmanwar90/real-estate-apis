@@ -354,6 +354,9 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ projectInfo, refreshData }) =
             {/* models */}
             <Dialog open={isSectionModelOpen} onOpenChange={setIsSectionModelOpen}>
                 <DialogContent className="max-h-[90vh] flex flex-col p-0">
+                    <DialogHeader className="p-6 pb-0">
+                        <DialogTitle>Section Details</DialogTitle>
+                    </DialogHeader>
                     <div className="flex-1 overflow-y-auto p-6">
                         {
                             selectedSection?.type == 'Buildings' ? (<div>

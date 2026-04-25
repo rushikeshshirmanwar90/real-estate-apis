@@ -1,42 +1,31 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Progress } from "@/components/ui/progress"
 import { 
     Building2, 
     Package, 
     Users, 
     Wrench, 
-    TrendingUp, 
-    TrendingDown,
-    AlertTriangle,
-    CheckCircle,
-    Clock,
     DollarSign,
     BarChart3,
-    PieChart,
+    PieChart as PieChartIcon,
     RefreshCw,
-    Filter,
     Download,
     Eye,
+    ArrowLeft,
     Layers,
-    Box,
-    Hammer,
-    Calendar,
-    MapPin,
-    Activity,
-    ArrowLeft
+    ChevronRight,
+    TrendingUp,
+    Activity
 } from "lucide-react"
 import { toast, Toaster } from "sonner"
-import Link from "next/link"
-
-import CustomBarChart from "@/components/charts/CustomBarChart"
-import CustomPieChart from "@/components/charts/CustomPieChart"
-import MaterialSpecifications from "@/components/MaterialSpecifications"
+import { getClientId } from "@/functions/clientId"
 
 // Types
 interface Material {
@@ -46,7 +35,6 @@ interface Material {
     unit: string
     cost?: number
     totalCost?: number
-    perUnitCost?: number
     sectionId?: string
     miniSectionId?: string
     specs?: any
@@ -55,53 +43,46 @@ interface Material {
 interface Labor {
     _id: string
     type: string
+    category?: string
     totalCost: number
     status: string
-    projectId: string
     sectionId?: string
+    miniSectionId?: string
 }
 
 interface Equipment {
     _id: string
     name: string
     type: string
-    cost: number
-    rentalCost?: number
-    projectId: string
+    totalCost?: number
+    cost?: number
+    status?: string
     sectionId?: string
+    projectSectionId?: string
 }
 
 interface Section {
     _id: string
     name: string
+    type?: string
     isCompleted?: boolean
-    miniSections?: MiniSection[]
-}
-
-interface MiniSection {
-    _id: string
-    name: string
-    isCompleted?: boolean
-    sectionId: string
 }
 
 interface Project {
     _id: string
     name: string
-    projectName?: string
     clientId: string
     spent?: number
     isCompleted?: boolean
     MaterialAvailable?: Material[]
     MaterialUsed?: Material[]
     Labors?: Labor[]
-    Equipment?: Equipment[]
+    Equipments?: Equipment[]
     section?: Section[]
     createdAt: string
-    updatedAt: string
 }
 
-// Format currency helper function
+// Format currency helper
 const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -111,26 +92,63 @@ const formatCurrency = (amount: number): string => {
     }).format(amount)
 }
 
-// Helper function to categorize materials
-const getMaterialCategory = (materialName: string): string => {
-    const name = materialName.toLowerCase()
-    if (name.includes('cement') || name.includes('concrete')) return 'Cement & Concrete'
-    if (name.includes('steel') || name.includes('iron') || name.includes('rebar')) return 'Steel & Metal'
-    if (name.includes('brick') || name.includes('block')) return 'Bricks & Blocks'
-    if (name.includes('sand') || name.includes('gravel') || name.includes('aggregate')) return 'Aggregates'
-    if (name.includes('paint') || name.includes('primer')) return 'Paint & Finishes'
-    if (name.includes('tile') || name.includes('marble') || name.includes('granite')) return 'Tiles & Stones'
-    if (name.includes('pipe') || name.includes('plumbing')) return 'Plumbing'
-    if (name.includes('wire') || name.includes('cable') || name.includes('electrical')) return 'Electrical'
-    if (name.includes('wood') || name.includes('timber')) return 'Wood & Timber'
-    return 'Others'
+// Simple Pie Chart Component
+interface PieChartProps {
+    data: { name: string; value: number; color: string }[]
+    size?: number
+}
+
+const SimplePieChart: React.FC<PieChartProps> = ({ data, size = 200 }) => {
+    const total = data.reduce((sum, item) => sum + item.value, 0)
+    
+    if (total === 0) {
+        return (
+            <div className="flex items-center justify-center" style={{ width: size, height: size }}>
+                <p className="text-muted-foreground text-sm">No data</p>
+            </div>
+        )
+    }
+    
+    let currentAngle = -90
+    const paths = data.map((item, index) => {
+        const percentage = (item.value / total) * 100
+        const angle = (percentage / 100) * 360
+        const startAngle = currentAngle
+        const endAngle = currentAngle + angle
+        currentAngle = endAngle
+        
+        const startX = size / 2 + (size / 2 - 10) * Math.cos((startAngle * Math.PI) / 180)
+        const startY = size / 2 + (size / 2 - 10) * Math.sin((startAngle * Math.PI) / 180)
+        const endX = size / 2 + (size / 2 - 10) * Math.cos((endAngle * Math.PI) / 180)
+        const endY = size / 2 + (size / 2 - 10) * Math.sin((endAngle * Math.PI) / 180)
+        
+        const largeArcFlag = angle > 180 ? 1 : 0
+        
+        return (
+            <path
+                key={index}
+                d={`M ${size / 2} ${size / 2} L ${startX} ${startY} A ${size / 2 - 10} ${size / 2 - 10} 0 ${largeArcFlag} 1 ${endX} ${endY} Z`}
+                fill={item.color}
+                stroke="white"
+                strokeWidth="2"
+            />
+        )
+    })
+    
+    return (
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+            {paths}
+            <circle cx={size / 2} cy={size / 2} r={size / 4} fill="white" />
+        </svg>
+    )
 }
 
 export default function ProjectAnalyticsPage() {
+    const router = useRouter()
     const [projects, setProjects] = useState<Project[]>([])
     const [loading, setLoading] = useState(true)
-    const [activeTab, setActiveTab] = useState("overview")
     const [refreshing, setRefreshing] = useState(false)
+    const [showCompleted, setShowCompleted] = useState(false)
 
     // Fetch projects data
     const fetchProjectsData = async (showLoading = true) => {
@@ -138,25 +156,13 @@ export default function ProjectAnalyticsPage() {
         setRefreshing(true)
         
         try {
-            let clientId = localStorage.getItem('clientId') || 
-                          sessionStorage.getItem('clientId') ||
-                          localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!)?.clientId : null
+            const clientId = getClientId()
             
             if (!clientId) {
-                const userData = localStorage.getItem('user')
-                if (userData) {
-                    const user = JSON.parse(userData)
-                    clientId = user.clientId || user._id || user.id
-                }
+                throw new Error('No client ID found. Please log in again.')
             }
             
-            if (!clientId) {
-                console.warn('⚠️ No client ID found in storage, using fallback client ID')
-                clientId = '695f818566b3d06dfb6083f2'
-                localStorage.setItem('clientId', clientId)
-            }
-            
-            console.log('🔍 Fetching projects data for client:', clientId)
+            console.log('🔍 Fetching projects for clientId:', clientId)
             
             const response = await fetch(`/api/project?clientId=${clientId}`)
             const data = await response.json()
@@ -165,123 +171,181 @@ export default function ProjectAnalyticsPage() {
                 throw new Error(data.message || 'Failed to fetch projects')
             }
             
-            if (data.success && data.projects) {
-                setProjects(data.projects)
-                console.log(`✅ Loaded ${data.projects.length} projects`)
+            let projectsArray: Project[] = []
+            
+            if (Array.isArray(data)) {
+                projectsArray = data
+            } else if (data.success && data.projects) {
+                projectsArray = data.projects
+            } else if (data.data && Array.isArray(data.data)) {
+                projectsArray = data.data
+            } else if (data.success && data.data && Array.isArray(data.data)) {
+                projectsArray = data.data
+            }
+            
+            console.log(`📊 Fetched ${projectsArray.length} projects`)
+            
+            // Load completion status and equipment data for all projects
+            const projectsWithData = await Promise.all(
+                projectsArray.map(async (project) => {
+                    let updatedProject = { ...project }
+                    
+                    // Load completion status
+                    try {
+                        if (project._id) {
+                            const response = await fetch(`/api/completion?updateType=project&id=${project._id}`)
+                            const responseData = await response.json()
+                            if (responseData.success && responseData.data) {
+                                updatedProject.isCompleted = Boolean(responseData.data.isCompleted)
+                            }
+                        }
+                    } catch (error) {
+                        console.warn(`Could not load completion status for project ${project._id}:`, error)
+                        updatedProject.isCompleted = false
+                    }
+                    
+                    // Load equipment data separately (not embedded in project)
+                    try {
+                        if (project._id) {
+                            console.log(`🔧 Fetching equipment for project ${project.name} (${project._id})`)
+                            const equipmentResponse = await fetch(`/api/equipment?projectId=${project._id}`)
+                            const equipmentData = await equipmentResponse.json()
+                            
+                            if (equipmentResponse.ok && equipmentData.success) {
+                                const equipmentArray = equipmentData.data || []
+                                updatedProject.Equipments = equipmentArray
+                                console.log(`✅ Loaded ${equipmentArray.length} equipment items for project ${project.name}`)
+                                
+                                if (equipmentArray.length > 0) {
+                                    const totalEquipmentCost = equipmentArray.reduce(
+                                        (sum: number, eq: any) => sum + (eq.totalCost || eq.cost || 0), 
+                                        0
+                                    )
+                                    console.log(`💰 Total equipment cost for ${project.name}: ₹${totalEquipmentCost}`)
+                                }
+                            } else {
+                                console.warn(`⚠️ No equipment data for project ${project.name}`)
+                                updatedProject.Equipments = []
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`❌ Error loading equipment for project ${project._id}:`, error)
+                        updatedProject.Equipments = []
+                    }
+                    
+                    return updatedProject
+                })
+            )
+            
+            console.log('✅ All project data loaded with equipment')
+            
+            setProjects(projectsWithData)
+            
+            if (projectsWithData.length > 0) {
                 toast.success('Projects data loaded successfully')
             } else {
-                throw new Error(data.message || 'No projects data found')
+                toast.info('No projects found')
             }
         } catch (error) {
-            console.error('❌ Error fetching projects:', error)
+            console.error('Error fetching projects:', error)
             toast.error(error instanceof Error ? error.message : 'Failed to fetch projects data')
+            setProjects([])
         } finally {
             setLoading(false)
             setRefreshing(false)
         }
     }
 
-    // Calculate analytics from projects
-    const calculateProjectAnalytics = () => {
-        const totalProjects = projects.length
-        const completedProjects = projects.filter(p => p.isCompleted).length
-        const ongoingProjects = totalProjects - completedProjects
+    // Calculate project expenses
+    const calculateProjectExpenses = (project: Project) => {
+        const available = (project.MaterialAvailable || []).reduce(
+            (sum, m) => sum + (m.totalCost || m.cost || 0), 0
+        )
+        const used = (project.MaterialUsed || []).reduce(
+            (sum, m) => sum + (m.totalCost || m.cost || 0), 0
+        )
+        const labor = (project.Labors || []).reduce(
+            (sum, l) => sum + (l.totalCost || 0), 0
+        )
         
-        let totalSpent = 0
-        let totalMaterialCost = 0
-        let totalLaborCost = 0
-        let totalEquipmentCost = 0
+        // Calculate equipment cost with detailed logging
+        let equipment = 0
+        if (project.Equipments && Array.isArray(project.Equipments)) {
+            console.log(`🔧 Calculating equipment for ${project.name}:`, {
+                equipmentCount: project.Equipments.length,
+                equipmentItems: project.Equipments.map(e => ({
+                    type: e.type,
+                    totalCost: e.totalCost,
+                    cost: e.cost,
+                    quantity: (e as any).quantity,
+                    perUnitCost: (e as any).perUnitCost,
+                    status: e.status
+                }))
+            })
+            
+            equipment = project.Equipments.reduce((sum, e) => {
+                // Only count active equipment
+                if (e.status && e.status !== 'active') {
+                    console.log(`⏭️ Skipping ${e.type} - status: ${e.status}`)
+                    return sum
+                }
+                
+                const equipmentCost = e.totalCost || e.cost || 0
+                console.log(`➕ Adding ${e.type}: ₹${equipmentCost}`)
+                return sum + equipmentCost
+            }, 0)
+            
+            console.log(`💰 Total equipment cost for ${project.name}: ₹${equipment}`)
+        } else {
+            console.log(`⚠️ No equipment array for ${project.name}`)
+        }
         
-        const materialCategories: { [key: string]: number } = {}
-        const laborTypes: { [key: string]: number } = {}
-        const equipmentTypes: { [key: string]: number } = {}
-        
-        projects.forEach(project => {
-            totalSpent += project.spent || 0
-            
-            // Material analysis
-            if (project.MaterialAvailable) {
-                project.MaterialAvailable.forEach(material => {
-                    const cost = material.totalCost || material.cost || 0
-                    totalMaterialCost += cost
-                    const category = getMaterialCategory(material.name)
-                    materialCategories[category] = (materialCategories[category] || 0) + cost
-                })
-            }
-            
-            if (project.MaterialUsed) {
-                project.MaterialUsed.forEach(material => {
-                    const cost = material.totalCost || material.cost || 0
-                    totalMaterialCost += cost
-                    const category = getMaterialCategory(material.name)
-                    materialCategories[category] = (materialCategories[category] || 0) + cost
-                })
-            }
-            
-            // Labor analysis
-            if (project.Labors) {
-                project.Labors.forEach(labor => {
-                    totalLaborCost += labor.totalCost
-                    laborTypes[labor.type] = (laborTypes[labor.type] || 0) + labor.totalCost
-                })
-            }
-            
-            // Equipment analysis
-            if (project.Equipment) {
-                project.Equipment.forEach(equipment => {
-                    totalEquipmentCost += equipment.cost
-                    equipmentTypes[equipment.type] = (equipmentTypes[equipment.type] || 0) + equipment.cost
-                })
-            }
-        })
-
         return {
-            totalProjects,
-            completedProjects,
-            ongoingProjects,
-            totalSpent,
-            totalMaterialCost,
-            totalLaborCost,
-            totalEquipmentCost,
-            materialCategories,
-            laborTypes,
-            equipmentTypes
+            available,
+            used,
+            labor,
+            equipment,
+            total: project.spent || 0
         }
     }
 
-    const analytics = calculateProjectAnalytics()
+    // Filter projects
+    const filteredProjects = projects.filter(p => 
+        showCompleted ? p.isCompleted === true : p.isCompleted === false
+    )
 
-    // Prepare chart data
-    const costBreakdownData = [
-        { name: 'Materials', value: analytics.totalMaterialCost, color: '#3b82f6' },
-        { name: 'Labor', value: analytics.totalLaborCost, color: '#ef4444' },
-        { name: 'Equipment', value: analytics.totalEquipmentCost, color: '#10b981' }
-    ]
+    // Calculate totals
+    const ongoingProjects = projects.filter(p => p.isCompleted === false)
+    const completedProjects = projects.filter(p => p.isCompleted === true)
+    
+    const totalExpenses = filteredProjects.reduce((sum, p) => sum + (p.spent || 0), 0)
+    const totalMaterials = filteredProjects.reduce((sum, p) => {
+        const expenses = calculateProjectExpenses(p)
+        return sum + expenses.used
+    }, 0)
+    const totalLabor = filteredProjects.reduce((sum, p) => {
+        const expenses = calculateProjectExpenses(p)
+        return sum + expenses.labor
+    }, 0)
+    const totalEquipment = filteredProjects.reduce((sum, p) => {
+        const expenses = calculateProjectExpenses(p)
+        return sum + expenses.equipment
+    }, 0)
 
-    const projectStatusData = [
-        { name: 'Completed', value: analytics.completedProjects, color: '#10b981' },
-        { name: 'Ongoing', value: analytics.ongoingProjects, color: '#f59e0b' }
-    ]
+    // Prepare pie chart data
+    const pieChartData = filteredProjects
+        .filter(p => (p.spent || 0) > 0)
+        .map((p, index) => ({
+            name: p.name,
+            value: p.spent || 0,
+            color: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#84cc16'][index % 7]
+        }))
 
-    const materialCategoryData = Object.entries(analytics.materialCategories).map(([category, cost], index) => ({
-        name: category,
-        value: cost,
-        color: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#84cc16'][index % 7]
-    }))
+    // Navigate to project details
+    const handleViewProject = (projectId: string) => {
+        router.push(`/projects/analytics/dashboard?projectId=${projectId}`)
+    }
 
-    const laborTypeData = Object.entries(analytics.laborTypes).map(([type, cost], index) => ({
-        name: type,
-        value: cost,
-        color: ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'][index % 5]
-    }))
-
-    const equipmentTypeData = Object.entries(analytics.equipmentTypes).map(([type, cost], index) => ({
-        name: type,
-        value: cost,
-        color: ['#10b981', '#3b82f6', '#ef4444', '#f59e0b', '#8b5cf6'][index % 5]
-    }))
-
-    // Load data on component mount
     useEffect(() => {
         fetchProjectsData()
     }, [])
@@ -311,9 +375,9 @@ export default function ProjectAnalyticsPage() {
                         </Button>
                     </Link>
                     <div>
-                        <h1 className="text-3xl font-bold">Project Analytics Dashboard</h1>
+                        <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
                         <p className="text-muted-foreground">
-                            Visual insights and data analysis for all projects
+                            Financial overview and project insights
                         </p>
                     </div>
                 </div>
@@ -330,46 +394,112 @@ export default function ProjectAnalyticsPage() {
                         <Download className="h-4 w-4 mr-2" />
                         Export
                     </Button>
+                    {/* Test Equipment API Button */}
+                    <Button 
+                        variant="outline"
+                        className="border-purple-500 text-purple-600"
+                        onClick={async () => {
+                            try {
+                                const clientId = getClientId()
+                                console.log('🧪 Testing Equipment API...')
+                                
+                                // Test 1: Get all equipment
+                                const allEquipmentResponse = await fetch('/api/equipment')
+                                const allEquipmentData = await allEquipmentResponse.json()
+                                console.log('📦 All Equipment:', allEquipmentData)
+                                
+                                // Test 2: Get equipment for first project
+                                if (projects.length > 0) {
+                                    const firstProjectId = projects[0]._id
+                                    const projectEquipmentResponse = await fetch(`/api/equipment?projectId=${firstProjectId}`)
+                                    const projectEquipmentData = await projectEquipmentResponse.json()
+                                    console.log(`🔧 Equipment for project ${projects[0].name}:`, projectEquipmentData)
+                                }
+                                
+                                toast.success('Check console for equipment API test results')
+                            } catch (error) {
+                                console.error('❌ Equipment API test failed:', error)
+                                toast.error('Equipment API test failed')
+                            }
+                        }}
+                    >
+                        🧪 Test Equipment API
+                    </Button>
                 </div>
             </div>
 
-            {/* Key Metrics Cards */}
+            {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card 
+                    className={`cursor-pointer transition-all ${!showCompleted ? 'ring-2 ring-blue-500' : ''}`}
+                    onClick={() => setShowCompleted(false)}
+                >
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Ongoing Projects</CardTitle>
+                        <Activity className="h-4 w-4 text-blue-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{ongoingProjects.length}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Active projects
+                        </p>
+                    </CardContent>
+                </Card>
+
+                <Card 
+                    className={`cursor-pointer transition-all ${showCompleted ? 'ring-2 ring-green-500' : ''}`}
+                    onClick={() => setShowCompleted(true)}
+                >
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Completed Projects</CardTitle>
+                        <Building2 className="h-4 w-4 text-green-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{completedProjects.length}</div>
+                        <p className="text-xs text-muted-foreground">
+                            Finished projects
+                        </p>
+                    </CardContent>
+                </Card>
+
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
-                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                        <Layers className="h-4 w-4 text-orange-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{analytics.totalProjects}</div>
+                        <div className="text-2xl font-bold">{projects.length}</div>
                         <p className="text-xs text-muted-foreground">
-                            {analytics.completedProjects} completed, {analytics.ongoingProjects} ongoing
+                            All projects
                         </p>
                     </CardContent>
                 </Card>
 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Investment</CardTitle>
-                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                        <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+                        <DollarSign className="h-4 w-4 text-purple-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(analytics.totalSpent)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(totalExpenses)}</div>
                         <p className="text-xs text-muted-foreground">
-                            Across all projects
+                            {showCompleted ? 'Completed' : 'Ongoing'} projects
                         </p>
                     </CardContent>
                 </Card>
+            </div>
 
+            {/* Expense Breakdown */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Material Costs</CardTitle>
-                        <Package className="h-4 w-4 text-muted-foreground" />
+                        <Package className="h-4 w-4 text-blue-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(analytics.totalMaterialCost)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(totalMaterials)}</div>
                         <p className="text-xs text-muted-foreground">
-                            {((analytics.totalMaterialCost / analytics.totalSpent) * 100).toFixed(1)}% of total
+                            {((totalMaterials / totalExpenses) * 100 || 0).toFixed(1)}% of total
                         </p>
                     </CardContent>
                 </Card>
@@ -377,624 +507,174 @@ export default function ProjectAnalyticsPage() {
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Labor Costs</CardTitle>
-                        <Users className="h-4 w-4 text-muted-foreground" />
+                        <Users className="h-4 w-4 text-orange-500" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(analytics.totalLaborCost)}</div>
+                        <div className="text-2xl font-bold">{formatCurrency(totalLabor)}</div>
                         <p className="text-xs text-muted-foreground">
-                            {((analytics.totalLaborCost / analytics.totalSpent) * 100).toFixed(1)}% of total
+                            {((totalLabor / totalExpenses) * 100 || 0).toFixed(1)}% of total
+                        </p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Equipment Costs</CardTitle>
+                        <Wrench className="h-4 w-4 text-purple-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{formatCurrency(totalEquipment)}</div>
+                        <p className="text-xs text-muted-foreground">
+                            {((totalEquipment / totalExpenses) * 100 || 0).toFixed(1)}% of total
                         </p>
                     </CardContent>
                 </Card>
             </div>
 
-            {/* Charts and Tables */}
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="grid w-full grid-cols-5">
-                    <TabsTrigger value="overview">Overview</TabsTrigger>
-                    <TabsTrigger value="materials">Materials</TabsTrigger>
-                    <TabsTrigger value="labor">Labor</TabsTrigger>
-                    <TabsTrigger value="equipment">Equipment</TabsTrigger>
-                    <TabsTrigger value="projects">Projects</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Cost Breakdown Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5" />
-                                    Cost Breakdown
-                                </CardTitle>
-                                <CardDescription>Distribution of expenses across categories</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <CustomBarChart 
-                                    data={costBreakdownData} 
-                                    height={300} 
-                                    formatValue={formatCurrency}
-                                />
-                            </CardContent>
-                        </Card>
-
-                        {/* Project Status Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <PieChart className="h-5 w-5" />
-                                    Project Status
-                                </CardTitle>
-                                <CardDescription>Completion status of all projects</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex justify-center">
-                                    <CustomPieChart 
-                                        data={projectStatusData} 
-                                        size={200} 
-                                        formatValue={(value) => value.toString()}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Summary Table */}
-                    <Card>
+            {/* Main Content */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Debug Panel - Remove this after debugging */}
+                {process.env.NODE_ENV === 'development' && (
+                    <Card className="lg:col-span-3 border-yellow-500 bg-yellow-50">
                         <CardHeader>
-                            <CardTitle>Project Summary</CardTitle>
-                            <CardDescription>Overview of all projects with key metrics</CardDescription>
+                            <CardTitle className="text-yellow-800">🐛 Debug Information</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                    <thead>
-                                        <tr className="border-b">
-                                            <th className="text-left p-3">Project Name</th>
-                                            <th className="text-center p-3">Status</th>
-                                            <th className="text-center p-3">Sections</th>
-                                            <th className="text-center p-3">Materials</th>
-                                            <th className="text-center p-3">Labor</th>
-                                            <th className="text-center p-3">Equipment</th>
-                                            <th className="text-right p-3">Total Spent</th>
-                                            <th className="text-center p-3">Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {projects.map((project) => (
-                                            <tr key={project._id} className="border-b hover:bg-gray-50">
-                                                <td className="p-3">
-                                                    <div className="font-medium">
-                                                        {project.name || project.projectName || 'Unnamed Project'}
-                                                    </div>
-                                                </td>
-                                                <td className="text-center p-3">
+                            <div className="space-y-2 text-sm">
+                                <p><strong>Total Projects:</strong> {projects.length}</p>
+                                <p><strong>Filtered Projects:</strong> {filteredProjects.length}</p>
+                                <p><strong>Total Equipment Cost:</strong> {formatCurrency(totalEquipment)}</p>
+                                <div className="mt-4">
+                                    <strong>Equipment by Project:</strong>
+                                    <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                                        {filteredProjects.map(p => {
+                                            const expenses = calculateProjectExpenses(p)
+                                            return (
+                                                <div key={p._id} className="text-xs border-l-2 border-yellow-600 pl-2">
+                                                    <strong>{p.name}:</strong> {p.Equipments?.length || 0} items, 
+                                                    Cost: {formatCurrency(expenses.equipment)}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Pie Chart */}
+                <Card className="lg:col-span-1">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <PieChartIcon className="h-5 w-5" />
+                            {showCompleted ? 'Completed' : 'Ongoing'} Projects
+                        </CardTitle>
+                        <CardDescription>
+                            Cost distribution
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex flex-col items-center">
+                        <SimplePieChart data={pieChartData} size={220} />
+                        <div className="mt-4 w-full space-y-2">
+                            {pieChartData.slice(0, 5).map((item, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <div 
+                                            className="w-3 h-3 rounded-full" 
+                                            style={{ backgroundColor: item.color }}
+                                        />
+                                        <span className="truncate max-w-[150px]">{item.name}</span>
+                                    </div>
+                                    <span className="font-medium">{formatCurrency(item.value)}</span>
+                                </div>
+                            ))}
+                            {pieChartData.length > 5 && (
+                                <p className="text-xs text-muted-foreground text-center">
+                                    +{pieChartData.length - 5} more projects
+                                </p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* Projects List */}
+                <Card className="lg:col-span-2">
+                    <CardHeader>
+                        <CardTitle>
+                            {showCompleted ? 'Completed' : 'Ongoing'} Projects ({filteredProjects.length})
+                        </CardTitle>
+                        <CardDescription>
+                            Click on a project to view detailed analytics
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {filteredProjects.length === 0 ? (
+                            <div className="text-center py-12">
+                                <Building2 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                                <p className="text-muted-foreground">
+                                    No {showCompleted ? 'completed' : 'ongoing'} projects found
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                                {filteredProjects.map((project) => {
+                                    const expenses = calculateProjectExpenses(project)
+                                    return (
+                                        <div
+                                            key={project._id}
+                                            className="border rounded-lg p-4 hover:bg-accent cursor-pointer transition-colors"
+                                            onClick={() => handleViewProject(project._id)}
+                                        >
+                                            <div className="flex items-start justify-between mb-3">
+                                                <div className="flex-1">
+                                                    <h3 className="font-semibold text-lg">{project.name}</h3>
+                                                    <p className="text-sm text-muted-foreground">
+                                                        {project.section?.length || 0} sections
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2">
                                                     <Badge variant={project.isCompleted ? "default" : "secondary"}>
                                                         {project.isCompleted ? "Completed" : "Ongoing"}
                                                     </Badge>
-                                                </td>
-                                                <td className="text-center p-3">
-                                                    {project.section?.length || 0}
-                                                </td>
-                                                <td className="text-center p-3">
-                                                    {(project.MaterialAvailable?.length || 0) + (project.MaterialUsed?.length || 0)}
-                                                </td>
-                                                <td className="text-center p-3">
-                                                    {project.Labors?.length || 0}
-                                                </td>
-                                                <td className="text-center p-3">
-                                                    {project.Equipment?.length || 0}
-                                                </td>
-                                                <td className="text-right p-3 font-medium">
-                                                    {formatCurrency(project.spent || 0)}
-                                                </td>
-                                                <td className="text-center p-3 text-sm text-muted-foreground">
-                                                    {new Date(project.createdAt).toLocaleDateString()}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-                <TabsContent value="materials" className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Materials Category Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <PieChart className="h-5 w-5" />
-                                    Materials by Category
-                                </CardTitle>
-                                <CardDescription>Cost distribution across material categories</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex justify-center">
-                                    <CustomPieChart 
-                                        data={materialCategoryData} 
-                                        size={250} 
-                                        formatValue={formatCurrency}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Materials Bar Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5" />
-                                    Material Costs
-                                </CardTitle>
-                                <CardDescription>Cost comparison by category</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <CustomBarChart 
-                                    data={materialCategoryData} 
-                                    height={300} 
-                                    formatValue={formatCurrency}
-                                />
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Materials Detailed Analysis with Tabs */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Detailed Materials Analysis</CardTitle>
-                            <CardDescription>Complete breakdown of materials across all projects with specifications</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Tabs defaultValue="available" className="w-full">
-                                <TabsList className="grid w-full grid-cols-2">
-                                    <TabsTrigger value="available" className="flex items-center gap-2">
-                                        <Package className="h-4 w-4 text-green-500" />
-                                        Available Materials
-                                    </TabsTrigger>
-                                    <TabsTrigger value="used" className="flex items-center gap-2">
-                                        <Box className="h-4 w-4 text-blue-500" />
-                                        Used Materials
-                                    </TabsTrigger>
-                                </TabsList>
-
-                                <TabsContent value="available" className="mt-6">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full border-collapse border border-gray-200 rounded-lg">
-                                            <thead className="bg-gray-50">
-                                                <tr>
-                                                    <th className="text-left p-4 border-b font-semibold">Project</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Material Name</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Category</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Specifications</th>
-                                                    <th className="text-center p-4 border-b font-semibold">Quantity</th>
-                                                    <th className="text-center p-4 border-b font-semibold">Unit</th>
-                                                    <th className="text-right p-4 border-b font-semibold">Unit Cost</th>
-                                                    <th className="text-right p-4 border-b font-semibold">Total Cost</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {projects.flatMap(project => 
-                                                    (project.MaterialAvailable || []).map(material => ({
-                                                        ...material,
-                                                        projectName: project.name || project.projectName || 'Unnamed Project'
-                                                    }))
-                                                ).length > 0 ? (
-                                                    projects.flatMap(project => 
-                                                        (project.MaterialAvailable || []).map(material => ({
-                                                            ...material,
-                                                            projectName: project.name || project.projectName || 'Unnamed Project'
-                                                        }))
-                                                    ).map((material, index) => (
-                                                        <tr key={index} className="hover:bg-gray-50 transition-colors">
-                                                            <td className="p-4 border-b font-medium">{material.projectName}</td>
-                                                            <td className="p-4 border-b">
-                                                                <div className="font-medium text-gray-900">{material.name}</div>
-                                                            </td>
-                                                            <td className="p-4 border-b">
-                                                                <Badge variant="outline" className="text-xs">
-                                                                    {getMaterialCategory(material.name)}
-                                                                </Badge>
-                                                            </td>
-                                                            <td className="p-4 border-b">
-                                                                <div className="text-sm max-w-xs">
-                                                                    {material.specs ? (
-                                                                        typeof material.specs === 'string' ? (
-                                                                            <span className="text-gray-700">{material.specs}</span>
-                                                                        ) : (
-                                                                            <div className="space-y-1">
-                                                                                {Object.entries(material.specs).map(([key, value]) => (
-                                                                                    <div key={key} className="text-xs">
-                                                                                        <span className="font-medium text-gray-600">{key}:</span>{' '}
-                                                                                        <span className="text-gray-700">{String(value)}</span>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        )
-                                                                    ) : (
-                                                                        <span className="text-gray-400 italic">No specifications</span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="text-center p-4 border-b font-medium">{material.qnt}</td>
-                                                            <td className="text-center p-4 border-b">{material.unit}</td>
-                                                            <td className="text-right p-4 border-b">
-                                                                {formatCurrency(material.perUnitCost || (material.totalCost || material.cost || 0) / (material.qnt || 1))}
-                                                            </td>
-                                                            <td className="text-right p-4 border-b font-semibold text-green-600">
-                                                                {formatCurrency(material.totalCost || material.cost || 0)}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan={8} className="text-center p-8 text-gray-500">
-                                                            No available materials found across all projects
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </TabsContent>
-
-                                <TabsContent value="used" className="mt-6">
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full border-collapse border border-gray-200 rounded-lg">
-                                            <thead className="bg-gray-50">
-                                                <tr>
-                                                    <th className="text-left p-4 border-b font-semibold">Project</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Material Name</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Category</th>
-                                                    <th className="text-left p-4 border-b font-semibold">Specifications</th>
-                                                    <th className="text-center p-4 border-b font-semibold">Quantity</th>
-                                                    <th className="text-center p-4 border-b font-semibold">Unit</th>
-                                                    <th className="text-right p-4 border-b font-semibold">Unit Cost</th>
-                                                    <th className="text-right p-4 border-b font-semibold">Total Cost</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {projects.flatMap(project => 
-                                                    (project.MaterialUsed || []).map(material => ({
-                                                        ...material,
-                                                        projectName: project.name || project.projectName || 'Unnamed Project'
-                                                    }))
-                                                ).length > 0 ? (
-                                                    projects.flatMap(project => 
-                                                        (project.MaterialUsed || []).map(material => ({
-                                                            ...material,
-                                                            projectName: project.name || project.projectName || 'Unnamed Project'
-                                                        }))
-                                                    ).map((material, index) => (
-                                                        <tr key={index} className="hover:bg-gray-50 transition-colors">
-                                                            <td className="p-4 border-b font-medium">{material.projectName}</td>
-                                                            <td className="p-4 border-b">
-                                                                <div className="font-medium text-gray-900">{material.name}</div>
-                                                            </td>
-                                                            <td className="p-4 border-b">
-                                                                <Badge variant="outline" className="text-xs">
-                                                                    {getMaterialCategory(material.name)}
-                                                                </Badge>
-                                                            </td>
-                                                            <td className="p-4 border-b">
-                                                                <div className="text-sm max-w-xs">
-                                                                    {material.specs ? (
-                                                                        typeof material.specs === 'string' ? (
-                                                                            <span className="text-gray-700">{material.specs}</span>
-                                                                        ) : (
-                                                                            <div className="space-y-1">
-                                                                                {Object.entries(material.specs).map(([key, value]) => (
-                                                                                    <div key={key} className="text-xs">
-                                                                                        <span className="font-medium text-gray-600">{key}:</span>{' '}
-                                                                                        <span className="text-gray-700">{String(value)}</span>
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        )
-                                                                    ) : (
-                                                                        <span className="text-gray-400 italic">No specifications</span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                            <td className="text-center p-4 border-b font-medium">{material.qnt}</td>
-                                                            <td className="text-center p-4 border-b">{material.unit}</td>
-                                                            <td className="text-right p-4 border-b">
-                                                                {formatCurrency(material.perUnitCost || (material.totalCost || material.cost || 0) / (material.qnt || 1))}
-                                                            </td>
-                                                            <td className="text-right p-4 border-b font-semibold text-blue-600">
-                                                                {formatCurrency(material.totalCost || material.cost || 0)}
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan={8} className="text-center p-8 text-gray-500">
-                                                            No used materials found across all projects
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </TabsContent>
-                            </Tabs>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                <TabsContent value="labor" className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Labor Type Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <PieChart className="h-5 w-5" />
-                                    Labor by Type
-                                </CardTitle>
-                                <CardDescription>Cost distribution across labor types</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex justify-center">
-                                    <CustomPieChart 
-                                        data={laborTypeData} 
-                                        size={250} 
-                                        formatValue={formatCurrency}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Labor Bar Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5" />
-                                    Labor Costs
-                                </CardTitle>
-                                <CardDescription>Cost comparison by labor type</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <CustomBarChart 
-                                    data={laborTypeData} 
-                                    height={300} 
-                                    formatValue={formatCurrency}
-                                />
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Labor Table */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Detailed Labor Analysis</CardTitle>
-                            <CardDescription>Complete breakdown of labor across all projects</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                    <thead>
-                                        <tr className="border-b">
-                                            <th className="text-left p-3">Project</th>
-                                            <th className="text-left p-3">Labor Type</th>
-                                            <th className="text-center p-3">Status</th>
-                                            <th className="text-right p-3">Total Cost</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {projects.flatMap(project => 
-                                            (project.Labors || []).map(labor => ({
-                                                ...labor,
-                                                projectName: project.name || project.projectName || 'Unnamed Project'
-                                            }))
-                                        ).map((labor, index) => (
-                                            <tr key={index} className="border-b hover:bg-gray-50">
-                                                <td className="p-3 font-medium">{labor.projectName}</td>
-                                                <td className="p-3">{labor.type}</td>
-                                                <td className="text-center p-3">
-                                                    <Badge variant={labor.status === 'active' ? 'default' : 'secondary'}>
-                                                        {labor.status}
-                                                    </Badge>
-                                                </td>
-                                                <td className="text-right p-3 font-medium">
-                                                    {formatCurrency(labor.totalCost || 0)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                <TabsContent value="equipment" className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Equipment Type Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <PieChart className="h-5 w-5" />
-                                    Equipment by Type
-                                </CardTitle>
-                                <CardDescription>Cost distribution across equipment types</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <div className="flex justify-center">
-                                    <CustomPieChart 
-                                        data={equipmentTypeData} 
-                                        size={250} 
-                                        formatValue={formatCurrency}
-                                    />
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Equipment Bar Chart */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BarChart3 className="h-5 w-5" />
-                                    Equipment Costs
-                                </CardTitle>
-                                <CardDescription>Cost comparison by equipment type</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <CustomBarChart 
-                                    data={equipmentTypeData} 
-                                    height={300} 
-                                    formatValue={formatCurrency}
-                                />
-                            </CardContent>
-                        </Card>
-                    </div>
-
-                    {/* Equipment Table */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Detailed Equipment Analysis</CardTitle>
-                            <CardDescription>Complete breakdown of equipment across all projects</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                    <thead>
-                                        <tr className="border-b">
-                                            <th className="text-left p-3">Project</th>
-                                            <th className="text-left p-3">Equipment Name</th>
-                                            <th className="text-center p-3">Type</th>
-                                            <th className="text-center p-3">Ownership</th>
-                                            <th className="text-right p-3">Purchase Cost</th>
-                                            <th className="text-right p-3">Rental Cost</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {projects.flatMap(project => 
-                                            (project.Equipment || []).map(equipment => ({
-                                                ...equipment,
-                                                projectName: project.name || project.projectName || 'Unnamed Project'
-                                            }))
-                                        ).map((equipment, index) => (
-                                            <tr key={index} className="border-b hover:bg-gray-50">
-                                                <td className="p-3 font-medium">{equipment.projectName}</td>
-                                                <td className="p-3">{equipment.name}</td>
-                                                <td className="text-center p-3">
-                                                    <Badge variant="outline">{equipment.type}</Badge>
-                                                </td>
-                                                <td className="text-center p-3">
-                                                    <Badge variant={equipment.rentalCost ? 'destructive' : 'default'}>
-                                                        {equipment.rentalCost ? 'Rented' : 'Owned'}
-                                                    </Badge>
-                                                </td>
-                                                <td className="text-right p-3 font-medium">
-                                                    {formatCurrency(equipment.cost || 0)}
-                                                </td>
-                                                <td className="text-right p-3 font-medium">
-                                                    {equipment.rentalCost ? formatCurrency(equipment.rentalCost) : '-'}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-
-                <TabsContent value="projects" className="space-y-6">
-                    {/* Project Performance Chart */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <BarChart3 className="h-5 w-5" />
-                                Project Investment Comparison
-                            </CardTitle>
-                            <CardDescription>Total spending across all projects</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <CustomBarChart 
-                                data={projects.map((project, index) => ({
-                                    name: (project.name || project.projectName || `Project ${index + 1}`).substring(0, 15),
-                                    value: project.spent || 0,
-                                    color: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#06b6d4', '#84cc16'][index % 7]
-                                }))} 
-                                height={400} 
-                                formatValue={formatCurrency}
-                            />
-                        </CardContent>
-                    </Card>
-
-                    {/* Detailed Projects Table */}
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Complete Project Details</CardTitle>
-                            <CardDescription>Comprehensive view of all project data</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="overflow-x-auto">
-                                <table className="w-full border-collapse">
-                                    <thead>
-                                        <tr className="border-b">
-                                            <th className="text-left p-3">Project Name</th>
-                                            <th className="text-center p-3">Status</th>
-                                            <th className="text-center p-3">Sections</th>
-                                            <th className="text-center p-3">Materials Available</th>
-                                            <th className="text-center p-3">Materials Used</th>
-                                            <th className="text-center p-3">Labor Entries</th>
-                                            <th className="text-center p-3">Equipment</th>
-                                            <th className="text-right p-3">Material Cost</th>
-                                            <th className="text-right p-3">Labor Cost</th>
-                                            <th className="text-right p-3">Equipment Cost</th>
-                                            <th className="text-right p-3">Total Spent</th>
-                                            <th className="text-center p-3">Created Date</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {projects.map((project) => {
-                                            const materialCost = [
-                                                ...(project.MaterialAvailable || []),
-                                                ...(project.MaterialUsed || [])
-                                            ].reduce((sum, m) => sum + (m.totalCost || m.cost || 0), 0)
+                                                    <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                                                </div>
+                                            </div>
                                             
-                                            const laborCost = (project.Labors || []).reduce((sum, l) => sum + (l.totalCost || 0), 0)
-                                            const equipmentCost = (project.Equipment || []).reduce((sum, e) => sum + (e.cost || 0), 0)
-
-                                            return (
-                                                <tr key={project._id} className="border-b hover:bg-gray-50">
-                                                    <td className="p-3">
-                                                        <div className="font-medium">
-                                                            {project.name || project.projectName || 'Unnamed Project'}
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center p-3">
-                                                        <Badge variant={project.isCompleted ? "default" : "secondary"}>
-                                                            {project.isCompleted ? "Completed" : "Ongoing"}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="text-center p-3">{project.section?.length || 0}</td>
-                                                    <td className="text-center p-3">{project.MaterialAvailable?.length || 0}</td>
-                                                    <td className="text-center p-3">{project.MaterialUsed?.length || 0}</td>
-                                                    <td className="text-center p-3">{project.Labors?.length || 0}</td>
-                                                    <td className="text-center p-3">{project.Equipment?.length || 0}</td>
-                                                    <td className="text-right p-3 font-medium">{formatCurrency(materialCost)}</td>
-                                                    <td className="text-right p-3 font-medium">{formatCurrency(laborCost)}</td>
-                                                    <td className="text-right p-3 font-medium">{formatCurrency(equipmentCost)}</td>
-                                                    <td className="text-right p-3 font-bold text-green-600">
-                                                        {formatCurrency(project.spent || 0)}
-                                                    </td>
-                                                    <td className="text-center p-3 text-sm text-muted-foreground">
-                                                        {new Date(project.createdAt).toLocaleDateString()}
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                <div className="text-center p-2 bg-green-50 rounded">
+                                                    <div className="text-lg font-bold text-green-600">
+                                                        {formatCurrency(expenses.total)}
+                                                    </div>
+                                                    <p className="text-xs text-green-700">Total</p>
+                                                </div>
+                                                <div className="text-center p-2 bg-blue-50 rounded">
+                                                    <div className="text-sm font-bold text-blue-600">
+                                                        {formatCurrency(expenses.used)}
+                                                    </div>
+                                                    <p className="text-xs text-blue-700">Materials</p>
+                                                </div>
+                                                <div className="text-center p-2 bg-orange-50 rounded">
+                                                    <div className="text-sm font-bold text-orange-600">
+                                                        {formatCurrency(expenses.labor)}
+                                                    </div>
+                                                    <p className="text-xs text-orange-700">Labor</p>
+                                                </div>
+                                                <div className="text-center p-2 bg-purple-50 rounded">
+                                                    <div className="text-sm font-bold text-purple-600">
+                                                        {formatCurrency(expenses.equipment)}
+                                                    </div>
+                                                    <p className="text-xs text-purple-700">Equipment</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
                             </div>
-                        </CardContent>
-                    </Card>
-                </TabsContent>
-            </Tabs>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     )
 }

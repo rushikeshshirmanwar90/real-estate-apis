@@ -106,18 +106,21 @@ const Page = () => {
 
     const isFormValid = () => {
         return (
-            formData.name.trim() !== "" &&
-            formData.projectId.trim() !== "" &&
-            formData.images.length > 0 &&
-            (formData.section ? formData.section.every(sec => sec.name.trim() !== "") : true) &&
+            formData.name && formData.name.trim() !== "" &&
+            formData.projectId && formData.projectId.trim() !== "" &&
+            formData.images && formData.images.length > 0 &&
+            (formData.section ? formData.section.every(sec => sec.name && sec.name.trim() !== "") : true) &&
             (formData.flatInfo ? formData.flatInfo.every(flat =>
-                flat.title.trim() !== "" &&
-                flat.images.length > 0 &&
+                flat.title && flat.title.trim() !== "" &&
+                flat.images && flat.images.length > 0 &&
                 flat.totalFlats > 0 &&
                 flat.totalBookedFlats >= 0 &&
                 flat.totalArea > 0
             ) : true) &&
-            (formData.amenities ? formData.amenities.every(amenity => amenity.name.trim() !== "" && amenity.icon.trim() !== "") : true)
+            (formData.amenities ? formData.amenities.every(amenity => 
+                amenity.name && amenity.name.trim() !== "" && 
+                amenity.icon && amenity.icon.trim() !== ""
+            ) : true)
         );
     };
 
