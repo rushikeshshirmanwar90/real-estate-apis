@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import NextTopLoader from 'nextjs-toploader';
 import { Bounce, ToastContainer } from 'react-toastify';
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { AdminSidebar } from "@/components/admin-sidebar";
 
 export const metadata: Metadata = {
   title: "Real Estate Admin Page",
@@ -18,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className=""  >
+      <body className="">
         <NextTopLoader
           color="#2299DD"
           initialPosition={0.08}
@@ -30,7 +28,6 @@ export default function RootLayout({
           speed={200}
           shadow="0 0 10px #2299DD,0 0 5px #2299DD"
         />
-
 
         <ToastContainer
           position="top-right"
@@ -44,13 +41,7 @@ export default function RootLayout({
           transition={Bounce}
         />
 
-        <SidebarProvider className="">
-          <div className="flex min-h-screen w-full">
-            <AdminSidebar />
-            <main className="flex-1">{children}</main>
-          </div>
-        </SidebarProvider>
-
+        {children}
       </body>
     </html>
   );

@@ -26,25 +26,10 @@ export const verifyAuthorization = (
 };
 
 export const checkValidClient = async (req: NextRequest | Request) => {
-  const isValidClient = await validateClient();
-
-  if (!isValidClient) {
-    return NextResponse.json(
-      {
-        message: "Client not found",
-      },
-      { status: 400 }
-    );
-  }
-
-  const auth = verifyAuthorization(req);
-
-  if (!auth.valid) {
-    return NextResponse.json(
-      {
-        error: auth.message,
-      },
-      { status: 400 }
-    );
-  }
+  // ⚠️ SECURITY WARNING: All APIs are now public - no authentication required
+  // This bypasses all client validation and authorization checks
+  console.log('🔓 API access granted - authentication bypassed for public access');
+  
+  // Return nothing (success) - no validation or authorization checks
+  return;
 };

@@ -52,6 +52,10 @@ export function proxy(request: NextRequest) {
     "/analysis/debug",
     "/analysis/simple",
     "/analysis/test",
+    "/support",
+    "/privacy-policy", 
+    "/xsite-marketing",
+    "/test",
   ];
 
   // Check if the current path or any parent path is public
@@ -63,13 +67,14 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // ----- CORS for API routes -----
+  // ----- CORS for API routes (ALL APIs are now public) -----
   if (pathname.startsWith("/api/")) {
     if (request.method === "OPTIONS") {
       return applyCorsHeaders(new NextResponse(null, { status: 204 }), request);
     }
 
     const response = NextResponse.next();
+    // All API routes are now accessible without authentication
     return applyCorsHeaders(response, request);
   }
 
