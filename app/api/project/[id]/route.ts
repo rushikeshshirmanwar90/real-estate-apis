@@ -17,6 +17,7 @@ import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { checkValidClient } from "@/lib/auth";
 
 // Type for project document
 interface ProjectDocument {

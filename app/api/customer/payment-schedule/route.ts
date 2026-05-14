@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { PaymentSchedule } from "@/lib/models/Shivai/Payment";
 import { Booking } from "@/lib/models/Shivai/Booking";
+import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // GET - Retrieve payment schedule data for a customer

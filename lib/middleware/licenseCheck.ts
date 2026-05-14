@@ -2,11 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { Client } from "@/lib/models/super-admin/Client";
 import connectDB from "@/lib/db";
 
-/**
- * Middleware to check if a client's license is active
- * Returns 403 if license is expired
- * Note: Staff users are also checked - they cannot access if their assigned client's license is expired
- */
 export async function checkLicense(clientId: string): Promise<{ hasAccess: boolean; license: number; message: string }> {
     try {
         await connectDB();
@@ -36,16 +31,15 @@ export async function checkLicense(clientId: string): Promise<{ hasAccess: boole
         // Check license status
         // -1 = Lifetime (always access)
         // 0 = Expired (no access)
-        // >0 = Active (has access)
-        const hasAccess = license === -1 || (license > 0 && isLicenseActive);
+        // >0 or -1 = Active (has access)
+        // Simple logic: if license is not 0, grant access
+        const hasAccess = license !== 0;
 
         let message = "";
         if (license === -1) {
             message = "Lifetime access";
         } else if (license === 0) {
             message = "License expired. Please contact support to renew.";
-        } else if (license > 0 && !isLicenseActive) {
-            message = "License inactive. Please contact support.";
         } else if (license > 0) {
             message = `License active with ${license} days remaining`;
         }

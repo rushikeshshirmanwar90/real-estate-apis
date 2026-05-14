@@ -1,12 +1,23 @@
 import connect from "@/lib/db";
 import { Equipment } from "@/lib/models/Xsite/Equipment";
 import { Projects } from "@/lib/models/Project";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
+import { checkValidClient } from "@/lib/auth";
 
 // POST - Test equipment spent integration
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 
@@ -83,6 +94,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET - Check current project spent and equipment totals
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");

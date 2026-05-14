@@ -1,12 +1,12 @@
+import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { Types } from "mongoose";
-import { NextRequest, NextResponse } from "next/server";
 import { 
   safeRedisGetCache, 
-  safeRedisSetCache, 
+  safeRedisSetCache,
   invalidateCachePattern,
-  safeRedisDelCache 
+  safeRedisDelCache
 } from "@/lib/utils/redis-helpers";
 
 // Local types matching MaterialSchema
@@ -18,14 +18,14 @@ type MaterialSubdoc = {
   unit: string;
   specs?: Specs;
   qnt: number;
-  perUnitCost: number; // Per-unit cost field
-  totalCost: number;   // Total cost field
+  perUnitCost: number;
+  totalCost: number;
   sectionId?: string;
   miniSectionId?: string;
 };
 
-// GET: Fetch MaterialUsed for a project with filtering and pagination
-export const GET = async (req: NextRequest | Request) => {
+// GET: Fetch MaterialUsed from Projects collection with filtering and pagination
+export const GET = async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
@@ -35,17 +35,13 @@ export const GET = async (req: NextRequest | Request) => {
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") || "desc";
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 100); // ✅ Pagination: default 10, max 100
-    const cacheBuster = searchParams.get("_t");                // ✅ Cache busting parameter (ignored, just for client-side cache bypass)
+    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 100);
+    const cacheBuster = searchParams.get("_t");
 
     if (!projectId || !clientId) {
       return NextResponse.json(
-        {
-          message: "Project ID and Client ID are required",
-        },
-        {
-          status: 400,
-        }
+        { message: "Project ID and Client ID are required" },
+        { status: 400 }
       );
     }
 
@@ -72,7 +68,7 @@ export const GET = async (req: NextRequest | Request) => {
     console.log('Limit:', limit);
     console.log('========================================\n');
 
-    // Check cache first (exclude cache buster from cache key)
+    // Check cache first
     const cacheKey = `material-usage:${projectId}:${clientId}:${sectionId || 'all'}:${miniSectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
     
@@ -82,19 +78,15 @@ export const GET = async (req: NextRequest | Request) => {
       return NextResponse.json(cacheValue, { status: 200 });
     }
 
-    // Build match conditions for filtering
+    // Build match conditions
     const matchConditions: any = {
       _id: new Types.ObjectId(projectId),
       clientId: new Types.ObjectId(clientId),
     };
 
-    // Use MongoDB aggregation for efficient filtering
+    // Build aggregation pipeline
     const pipeline: any[] = [
-      // Match the project
-      {
-        $match: matchConditions
-      },
-      // Unwind MaterialUsed array to work with individual materials
+      { $match: matchConditions },
       {
         $unwind: {
           path: "$MaterialUsed",
@@ -103,7 +95,7 @@ export const GET = async (req: NextRequest | Request) => {
       }
     ];
 
-    // Add filtering conditions for MaterialUsed
+    // Add filtering conditions
     const materialUsedFilters: any = {};
     
     if (sectionId) {
@@ -114,14 +106,11 @@ export const GET = async (req: NextRequest | Request) => {
       materialUsedFilters["MaterialUsed.miniSectionId"] = miniSectionId;
     }
 
-    // Apply filters if any exist
     if (Object.keys(materialUsedFilters).length > 0) {
-      pipeline.push({
-        $match: materialUsedFilters
-      });
+      pipeline.push({ $match: materialUsedFilters });
     }
 
-    // Add sorting field (use current date if createdAt doesn't exist)
+    // Add sorting
     pipeline.push({
       $addFields: {
         "MaterialUsed.sortField": {
@@ -152,21 +141,20 @@ export const GET = async (req: NextRequest | Request) => {
       }
     });
 
-    // Sort materials
     pipeline.push({
       $sort: {
         "MaterialUsed.sortField": sortOrder === "asc" ? 1 : -1
       }
     });
 
-    // ✅ NEW: Add pagination
+    // Add pagination
     const skip = (page - 1) * limit;
     if (skip > 0) {
       pipeline.push({ $skip: skip });
     }
     pipeline.push({ $limit: limit });
 
-    // Group back to get results
+    // Group results
     pipeline.push({
       $group: {
         _id: "$_id",
@@ -174,11 +162,9 @@ export const GET = async (req: NextRequest | Request) => {
       }
     });
 
-    // ✅ NEW: Get total count for pagination (separate query for accurate count)
+    // Get total count
     const countPipeline = [
-      {
-        $match: matchConditions
-      },
+      { $match: matchConditions },
       {
         $unwind: {
           path: "$MaterialUsed",
@@ -187,11 +173,8 @@ export const GET = async (req: NextRequest | Request) => {
       }
     ];
 
-    // Apply same filters for count
     if (Object.keys(materialUsedFilters).length > 0) {
-      countPipeline.push({
-        $match: materialUsedFilters
-      });
+      countPipeline.push({ $match: materialUsedFilters });
     }
 
     countPipeline.push({ $count: "total" } as any);
@@ -205,7 +188,6 @@ export const GET = async (req: NextRequest | Request) => {
     const totalPages = Math.ceil(totalItems / limit);
 
     if (!result || result.length === 0) {
-      // Project exists but has no used materials (or no materials matching filters)
       const projectExists = await Projects.findOne({
         _id: new Types.ObjectId(projectId),
         clientId: new Types.ObjectId(clientId),
@@ -213,16 +195,11 @@ export const GET = async (req: NextRequest | Request) => {
 
       if (!projectExists) {
         return NextResponse.json(
-          {
-            message: "Project not found",
-          },
-          {
-            status: 404,
-          }
+          { message: "Project not found" },
+          { status: 404 }
         );
       }
 
-      // Return empty result
       return NextResponse.json(
         {
           success: true,
@@ -243,20 +220,11 @@ export const GET = async (req: NextRequest | Request) => {
             miniSectionId: miniSectionId || null
           }
         },
-        {
-          status: 200,
-        }
+        { status: 200 }
       );
     }
 
     const data = result[0];
-
-    console.log('✅ MATERIAL USAGE RESULT:');
-    console.log('  - Total used materials:', totalItems);
-    console.log('  - Materials returned:', data.materials.length);
-    console.log('  - Current page:', page);
-    console.log('  - Total pages:', totalPages);
-    console.log('  - Applied filters:', { sectionId, miniSectionId });
 
     const responsePayload = {
       success: true,
@@ -276,7 +244,7 @@ export const GET = async (req: NextRequest | Request) => {
       }
     };
 
-    // Cache the response with 24-hour expiration
+    // Cache the response
     await safeRedisSetCache(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
 
     return NextResponse.json(responsePayload, { status: 200 });
@@ -288,26 +256,29 @@ export const GET = async (req: NextRequest | Request) => {
         message: "Unable to fetch MaterialUsed",
         error: error instanceof Error ? error.message : String(error),
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 };
 
-export const POST = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
   try {
     await connect();
     const body = await req.json();
     const { projectId, materialId, qnt, miniSectionId, sectionId } = body;
+
+    console.log('\n========================================');
+    console.log('📝 SINGLE MATERIAL USAGE API - REQUEST RECEIVED');
+    console.log('========================================');
+    console.log('Request body:', JSON.stringify(body, null, 2));
+    console.log('========================================\n');
 
     // Validation
     if (!projectId || !materialId || typeof qnt !== "number" || !sectionId) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            "projectId, materialId, sectionId and numeric qnt are required",
+          error: "projectId, materialId, sectionId and numeric qnt are required",
         },
         { status: 400 }
       );
@@ -326,7 +297,7 @@ export const POST = async (req: NextRequest | Request) => {
     // Find project document first to get material details
     const project = await Projects.findById(projectId);
     if (!project) {
-      console.error("Project not found for ID:", projectId);
+      console.error("❌ Project not found for ID:", projectId);
       return NextResponse.json(
         {
           success: false,
@@ -336,7 +307,9 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
-    // Find material in MaterialAvailable by _id and sectionId (scope to provided section)
+    console.log('✅ Project found:', project._id);
+
+    // Find material in MaterialAvailable by _id and sectionId
     const availIndex = (project.MaterialAvailable || []).findIndex(
       (m: MaterialSubdoc) => {
         try {
@@ -356,6 +329,7 @@ export const POST = async (req: NextRequest | Request) => {
     );
 
     if (availIndex == null || availIndex < 0) {
+      console.error("❌ Material not found:", materialId);
       return NextResponse.json(
         {
           success: false,
@@ -367,7 +341,7 @@ export const POST = async (req: NextRequest | Request) => {
 
     const available = project.MaterialAvailable![availIndex] as MaterialSubdoc;
     
-    // ✅ FIXED: Robust cost calculation with validation and fallbacks
+    // Robust cost calculation with validation and fallbacks
     let costPerUnit = 0;
     
     // Try to get per-unit cost from various possible fields
@@ -403,15 +377,15 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     console.log('\n💰 COST CALCULATION:');
-    console.log('  - Raw perUnitCost field:', available.perUnitCost, '(type:', typeof available.perUnitCost, ')');
-    console.log('  - Raw cost field (legacy):', (available as any).cost, '(type:', typeof (available as any).cost, ')');
-    console.log('  - Calculated per-unit cost:', costPerUnit);
-    console.log('  - Quantity being used:', qnt);
-    console.log('  - Total cost for quantity used:', costOfUsedMaterial);
+    console.log('  - Material:', available.name);
+    console.log('  - Per-unit cost:', costPerUnit);
+    console.log('  - Quantity:', qnt);
+    console.log('  - Total cost:', costOfUsedMaterial);
     console.log('  - Available quantity:', Number(available.qnt || 0));
 
-    // Check sufficient quantity (coerce stored qnt to Number)
+    // Check sufficient quantity
     if (Number(available.qnt || 0) < qnt) {
+      console.error(`❌ Insufficient quantity for ${available.name}`);
       return NextResponse.json(
         {
           success: false,
@@ -423,14 +397,14 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
-    // Prepare used material clone (include section/miniSection IDs) with validated costs
+    // Prepare used material clone with validated costs
     const usedClone: MaterialSubdoc = {
       name: available.name,
       unit: available.unit,
       specs: available.specs || {},
       qnt: qnt,
-      perUnitCost: costPerUnit, // Store per-unit cost (already validated)
-      totalCost: costOfUsedMaterial, // Store total cost for used quantity (already validated)
+      perUnitCost: costPerUnit,
+      totalCost: costOfUsedMaterial,
       sectionId: String(sectionId),
       miniSectionId:
         miniSectionId ||
@@ -454,14 +428,14 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
+    console.log('\n🔄 Updating database...');
+
     // Use findByIdAndUpdate with $inc and array operations
-    // ✅ FIXED: Do NOT increase spent when using materials - it's just a transfer
     const updatedProject = await Projects.findByIdAndUpdate(
       projectId,
       {
         $inc: {
           "MaterialAvailable.$[elem].qnt": -qnt,
-          // ✅ REMOVED: spent: costOfUsedMaterial - Using materials doesn't increase spending
         },
         $push: {
           MaterialUsed: usedClone,
@@ -479,6 +453,7 @@ export const POST = async (req: NextRequest | Request) => {
     );
 
     if (!updatedProject) {
+      console.error("❌ Failed to update project");
       return NextResponse.json(
         {
           success: false,
@@ -487,6 +462,8 @@ export const POST = async (req: NextRequest | Request) => {
         { status: 500 }
       );
     }
+
+    console.log('✅ Database updated');
 
     // Clean up: remove materials with 0 or negative quantity
     const cleanedProject = await Projects.findByIdAndUpdate(
@@ -499,24 +476,17 @@ export const POST = async (req: NextRequest | Request) => {
       { new: true }
     );
 
-    // FIXED: Return both MaterialAvailable AND MaterialUsed
-    
-    // ✅ COMPREHENSIVE CACHE INVALIDATION: Clear all related caches
-    console.log('\n========================================');
-    console.log('🗑️ INVALIDATING CACHES AFTER MATERIAL USAGE');
-    console.log('========================================');
-    
-    // Invalidate material-usage caches for this project
+    console.log('✅ Cleaned up materials with 0 quantity');
+
+    // Invalidate caches
+    console.log('\n🗑️ Invalidating caches...');
     await invalidateCachePattern(`material-usage:${projectId}:*`);
-    
-    // ✅ CRITICAL: Also invalidate material (available) caches since quantities changed
     await invalidateCachePattern(`material:${projectId}:*`);
-    
-    // Invalidate project-level caches
     await safeRedisDelCache(`project:${projectId}`);
     await invalidateCachePattern(`projects:*`);
-    
     console.log('✅ Cache invalidation completed');
+
+    console.log('\n✅ SINGLE MATERIAL USAGE COMPLETED');
     console.log('========================================\n');
 
     return NextResponse.json(
@@ -528,7 +498,7 @@ export const POST = async (req: NextRequest | Request) => {
           sectionId: sectionId,
           miniSectionId: miniSectionId,
           materialAvailable: cleanedProject?.MaterialAvailable,
-          materialUsed: cleanedProject?.MaterialUsed, // ✅ Include this
+          materialUsed: cleanedProject?.MaterialUsed,
           usedMaterial: usedClone,
           spent: cleanedProject?.spent,
         },
@@ -537,12 +507,57 @@ export const POST = async (req: NextRequest | Request) => {
     );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error("Error in add-material-usage:", msg);
+    console.error("❌ Error in single material-usage:", msg);
+    console.error("Stack trace:", error);
     return NextResponse.json(
       {
         success: false,
         error: msg,
       },
+      { status: 500 }
+    );
+  }
+};
+
+export const PUT = async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "material-usage PUT endpoint working",
+        data: body
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("material-usage PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "material-usage DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("material-usage DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

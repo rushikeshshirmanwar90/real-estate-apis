@@ -266,6 +266,7 @@ export const POST = async (req: NextRequest | Request) => {
   }
 };
 
+// DELETE: Delete material activities
 export const DELETE = async (req: NextRequest | Request) => {
   try {
     await connect();

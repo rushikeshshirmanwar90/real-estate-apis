@@ -1,7 +1,8 @@
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { NextRequest } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
@@ -144,6 +145,16 @@ function securityLog(req: NextRequest, message: string, level: 'INFO' | 'WARN' |
 
 // POST: Register or update push token
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Security: Rate limiting
     const rateLimitResult = checkRateLimit(req);
@@ -151,7 +162,6 @@ export const POST = async (req: NextRequest) => {
       securityLog(req, 'Rate limit exceeded for push token registration', 'WARN');
       return errorResponse(rateLimitResult.error!, 429);
     }
-
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {
@@ -267,6 +277,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET: Get push tokens for a user
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Security: Rate limiting
     const rateLimitResult = checkRateLimit(req);
@@ -274,7 +294,6 @@ export const GET = async (req: NextRequest) => {
       securityLog(req, 'Rate limit exceeded for push token retrieval', 'WARN');
       return errorResponse(rateLimitResult.error!, 429);
     }
-
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {
@@ -335,6 +354,16 @@ export const GET = async (req: NextRequest) => {
 
 // DELETE: Deactivate push token
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Security: Rate limiting
     const rateLimitResult = checkRateLimit(req);
@@ -342,7 +371,6 @@ export const DELETE = async (req: NextRequest) => {
       securityLog(req, 'Rate limit exceeded for push token deactivation', 'WARN');
       return errorResponse(rateLimitResult.error!, 429);
     }
-
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRetryManager } from '@/lib/services/retryManager';
+import { checkValidClient } from "@/lib/auth";
 
 /**
  * Retry Management API

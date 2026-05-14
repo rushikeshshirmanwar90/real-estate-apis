@@ -1,18 +1,21 @@
+import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
-import { NextRequest, NextResponse } from "next/server";
 
-export const POST = async (req: NextRequest | Request) => {
+// POST /api/findUser - Check if user exists (NO AUTH REQUIRED - used during login flow)
+export async function POST(req: NextRequest) {
   try {
     await connect();
-
     const body = await req.json();
     const { email } = body;
+
+    console.log("🔍 Finding user with email:", email);
 
     const isUser = await LoginUser.findOne({ email });
 
     // ✅ FIX: Check if user exists first
     if (!isUser) {
+      console.log("❌ User not found with email:", email);
       return NextResponse.json(
         {
           message: "User not found with this email address",
@@ -21,6 +24,8 @@ export const POST = async (req: NextRequest | Request) => {
       );
     }
 
+    console.log("✅ User found:", { email: isUser.email, userType: isUser.userType, hasPassword: !!isUser.password });
+
     // Check if user has password set (verified)
     if (
       isUser.password == "" ||
@@ -28,6 +33,7 @@ export const POST = async (req: NextRequest | Request) => {
       isUser.password == undefined
     ) {
       // User exists but password not set - needs verification
+      console.log("⚠️ User exists but password not set - needs verification");
       return NextResponse.json(
         {
           isUser,
@@ -37,6 +43,7 @@ export const POST = async (req: NextRequest | Request) => {
     }
 
     // User exists and has password - verified user
+    console.log("✅ User exists and has password - verified user");
     return NextResponse.json(
       {
         isUser,
@@ -44,14 +51,13 @@ export const POST = async (req: NextRequest | Request) => {
       { status: 200 }
     );
   } catch (error: unknown) {
-    console.log(error);
+    console.error("❌ Error in findUser:", error);
     return NextResponse.json(
       {
-        message:
-          "Can't able to find the user, something went wrong, please try again",
+        message: "Can't able to find the user, something went wrong, please try again",
         error: error,
       },
       { status: 500 }
     );
   }
-};
+}

@@ -4,6 +4,7 @@ import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
+import { checkValidClient } from "@/lib/auth";
 
 // Interface for notification payload
 interface StaffWelcomeNotification {
@@ -23,6 +24,16 @@ interface StaffWelcomeNotification {
 }
 
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
     try {
         await connect();
         
@@ -185,6 +196,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET endpoint to retrieve notification history (optional)
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
     try {
         await connect();
         

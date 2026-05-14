@@ -1,15 +1,22 @@
-import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
 import { FAQ } from "@/lib/models/homepage/FAQ";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     await connect();
-
     if (clientId) {
       const data = await FAQ.findOne({ clientId });
       if (!data) {
@@ -29,7 +36,6 @@ export const GET = async (req: NextRequest) => {
         { status: 200 }
       );
     }
-
     const data = await FAQ.find();
     if (!data || data.length === 0) {
       return NextResponse.json(
@@ -40,7 +46,6 @@ export const GET = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,
@@ -59,13 +64,20 @@ export const GET = async (req: NextRequest) => {
     );
   }
 };
-
 export const POST = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const body = await req.json();
-
     // Basic validation
     if (
       !body.clientId ||
@@ -82,7 +94,6 @@ export const POST = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     if (
       body.FAQs.some(
         (faq: { title: string; description: string }) =>
@@ -97,7 +108,6 @@ export const POST = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     // Check if FAQ data already exists for this client
     const existingData = await FAQ.findOne({ clientId: body.clientId });
     if (existingData) {
@@ -109,10 +119,8 @@ export const POST = async (req: NextRequest) => {
         { status: 409 }
       );
     }
-
     const newFAQ = new FAQ(body);
     const savedFAQ = await newFAQ.save();
-
     return NextResponse.json(
       {
         success: true,
@@ -132,13 +140,19 @@ export const POST = async (req: NextRequest) => {
     );
   }
 };
-
 export const DELETE = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-
   try {
     if (!id) {
       return NextResponse.json(
@@ -149,10 +163,8 @@ export const DELETE = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     await connect();
     const deletedData = await FAQ.findByIdAndDelete(id);
-
     if (!deletedData) {
       return NextResponse.json(
         {
@@ -162,7 +174,6 @@ export const DELETE = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,
@@ -181,13 +192,19 @@ export const DELETE = async (req: NextRequest) => {
     );
   }
 };
-
 export const PUT = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-
   try {
     if (!id) {
       return NextResponse.json(
@@ -198,10 +215,8 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     await connect();
     const body = await req.json();
-
     // Basic validation
     if (
       !body.clientId ||
@@ -222,12 +237,10 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     const updatedData = await FAQ.findByIdAndUpdate(id, body, {
       new: true,
       runValidators: true,
     });
-
     if (!updatedData) {
       return NextResponse.json(
         {
@@ -237,7 +250,6 @@ export const PUT = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,

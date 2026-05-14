@@ -4,18 +4,18 @@ import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
 import { Client } from "@/lib/models/super-admin/Client";
 import { assignStaffToProject, removeStaffFromProject } from "@/lib/utils/staffProjectUtils";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
-  invalidateCachePattern,
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
-import { addLicenseStatusToProjects } from "@/lib/middleware/projectLicenseFilter";
+
+import { checkValidClient } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -23,6 +23,16 @@ const isValidObjectId = (id: string): boolean => {
 };
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -180,37 +190,7 @@ export const GET = async (req: NextRequest) => {
             })
             .filter((project: any) => project !== null);
           
-          // Add license status to all projects (staff role)
-          const projectsWithLicenseStatus = await addLicenseStatusToProjects(projectsToCheck, 'staff');
-          
-          console.log('🔍 Projects with license status:', JSON.stringify(projectsWithLicenseStatus.map((p: any) => ({
-            name: p.name,
-            _id: p._id,
-            isAccessible: p.isAccessible,
-            licenseStatus: p.licenseStatus,
-            blockReason: p.blockReason
-          })), null, 2));
-          
-          // Map the license status back to assignments
-          staffObj.assignedProjects = staffObj.assignedProjects.map((assignment: any) => {
-            const projectData = assignment.projectData || assignment.projectId;
-            if (projectData && projectData._id) {
-              // Find the corresponding project with license status
-              const projectWithStatus = projectsWithLicenseStatus.find(
-                (p: any) => p._id.toString() === projectData._id.toString()
-              );
-              
-              if (projectWithStatus) {
-                return {
-                  ...assignment,
-                  projectData: projectWithStatus // Replace with project that has license status
-                };
-              }
-            }
-            return assignment;
-          });
-          
-          console.log('✅ License status added to all staff projects');
+          console.log('✅ Projects loaded for staff');
         } else {
           console.log('⚠️ Staff has no assigned projects');
         }
@@ -357,6 +337,16 @@ export const GET = async (req: NextRequest) => {
 };
 
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const data = await req.json();
@@ -611,6 +601,16 @@ export const POST = async (req: NextRequest) => {
 };
 
 export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -714,6 +714,16 @@ export const PUT = async (req: NextRequest) => {
 };
 
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const { searchParams } = new URL(req.url);

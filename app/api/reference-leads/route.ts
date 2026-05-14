@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { ReferenceLeads } from "@/lib/models/ReferencedLeads";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: Request | NextRequest) => {

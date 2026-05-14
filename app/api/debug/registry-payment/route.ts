@@ -3,6 +3,7 @@ import connect from "@/lib/db";
 import { Registry } from "@/lib/models/Shivai/Registry";
 import { PaymentSchedule } from "@/lib/models/Shivai/Payment";
 import { Booking } from "@/lib/models/Shivai/Booking";
+import { checkValidClient } from "@/lib/auth";
 
 // GET - Debug endpoint to check registry and payment schedule data
 export async function GET(request: NextRequest) {

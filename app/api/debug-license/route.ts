@@ -3,6 +3,7 @@ import connect from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
+import { checkValidClient } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
     try {
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
             for (const cId of clientIds) {
                 const client = await Client.findById(cId).select('name companyName license isLicenseActive licenseExpiryDate').lean() as any;
                 if (client) {
-                    const hasAccess = client.license === -1 || (client.license > 0 && client.isLicenseActive);
+                    const hasAccess = client.license !== 0;
                     debugInfo.clients.push({
                         _id: client._id,
                         name: client.name || client.companyName,
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest) {
                 }, { status: 404 });
             }
             
-            const hasAccess = client.license === -1 || (client.license > 0 && client.isLicenseActive);
+            const hasAccess = client.license !== 0;
             
             debugInfo.client = {
                 _id: client._id,
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
                 status: hasAccess ? '✅ ACTIVE' : '❌ EXPIRED',
                 explanation: hasAccess 
                     ? `License is ${client.license === -1 ? 'LIFETIME' : `active with ${client.license} days`}`
-                    : `License is ${client.license === 0 ? 'EXPIRED (0 days)' : `inactive (${client.license} days but isLicenseActive=false)`}`
+                    : `License is EXPIRED (0 days)`
             };
             
             // Get projects for this client

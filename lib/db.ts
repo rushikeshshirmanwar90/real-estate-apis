@@ -6,22 +6,25 @@ const connect = async () => {
   const connectionState = mongoose.connection.readyState;
 
   if (connectionState == 1) {
-    console.log("Connected to Database Successfully..!");
+    console.log("✅ Already connected to Database");
     return;
   }
 
   if (connectionState == 2) {
-    console.log("Connecting to the Database..!");
+    console.log("⏳ Connecting to the Database...");
     return;
   }
 
   try {
-    mongoose.connect(DB_URL!, {
+    console.log("🔌 Initiating database connection...");
+    await mongoose.connect(DB_URL!, {
       dbName: "realEstate",
       bufferCommands: true,
     });
+    console.log("✅ Connected to Database Successfully!");
   } catch (error: unknown) {
-    console.log("Error : " + error);
+    console.error("❌ Database connection error:", error);
+    throw error; // Re-throw to propagate error
   }
 };
 

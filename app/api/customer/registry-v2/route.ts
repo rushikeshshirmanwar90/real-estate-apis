@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Registry } from "@/lib/models/Shivai/Registry";
 import { Booking } from "@/lib/models/Shivai/Booking";
+import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Helper function to create a temporary booking

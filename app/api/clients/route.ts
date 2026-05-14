@@ -7,6 +7,7 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -17,21 +18,25 @@ import {
 const SALT_ROUNDS = 10;
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const email = searchParams.get("email");
-
     // Get specific Client by ID
     if (id) {
       if (!isValidObjectId(id)) {
         return errorResponse("Invalid client ID format", 400);
       }
-
       // Check if cache-busting parameter is present
       const skipCache = searchParams.get("_t") || searchParams.get("skipCache");
-      
       // Check cache only if not skipping
       if (!skipCache) {
         const cachedData = await safeRedisGetCache(`client:${id}`);
@@ -40,62 +45,50 @@ export const GET = async (req: NextRequest) => {
           return successResponse(cacheValue, "Client retrieved successfully (cached)");
         }
       }
-
       const clientData = await Client.findById(id).select("-password").lean();
       if (!clientData) {
         return errorResponse("Client not found", 404);
       }
-
       // Cache the client with 24-hour expiration (only if not skipping cache)
       if (!skipCache) {
         await safeRedisSetCache(`client:${id}`, JSON.stringify(clientData), 'EX', 86400);
       }
-
       return successResponse(clientData, skipCache ? "Client retrieved successfully (fresh)" : "Client retrieved successfully");
     }
-
     // Get specific client by email
     if (email) {
       if (!isValidEmail(email)) {
         return errorResponse("Invalid email format", 400);
       }
-
       // Check cache
       const cachedData = await safeRedisGetCache(`client:email:${email}`);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
         return successResponse(cacheValue, "Client retrieved successfully (cached)");
       }
-
       const clientData = await Client.findOne({ email })
         .select("-password")
         .lean();
       if (!clientData) {
         return errorResponse("Client not found with this email", 404);
       }
-
       // Cache the client with 24-hour expiration
       await safeRedisSetCache(`client:email:${email}`, JSON.stringify(clientData), 'EX', 86400);
-
       return successResponse(clientData, "Client retrieved successfully");
     }
-
     // Check cache for all clients
     const cachedData = await safeRedisGetCache(`clients:all`);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} client(s) successfully (cached)`);
     }
-
     // Get all clients without pagination
     const clients = await Client.find()
       .select("-password")
       .sort({ createdAt: -1 })
       .lean();
-
     // Cache all clients with 24-hour expiration
     await safeRedisSetCache(`clients:all`, JSON.stringify(clients), 'EX', 86400);
-
     return successResponse(
       clients,
       `Retrieved ${clients.length} client(s) successfully`
@@ -105,68 +98,75 @@ export const GET = async (req: NextRequest) => {
     return errorResponse("Failed to fetch client data", 500);
   }
 };
-
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
-
     const data = await req.json();
-
     // Validate required fields
     if (!data.email) {
       return errorResponse("Email is required", 400);
     }
-
     if (!isValidEmail(data.email)) {
       return errorResponse("Invalid email format", 400);
     }
-
     // Check if client already exists
     const existingClient = await Client.findOne({ email: data.email }).lean();
     if (existingClient) {
       return errorResponse("Client already exists with this email", 409);
     }
-
     const existingLoginUser = await LoginUser.findOne({
       email: data.email,
     }).lean();
     if (existingLoginUser) {
       return errorResponse("User already exists with this email", 409);
     }
-
     // Hash password if provided
     if (data.password) {
       data.password = await bcrypt.hash(data.password, SALT_ROUNDS);
     }
-
     // Handle license days if provided
-    if (data.licenseDays && data.licenseDays > 0) {
-      const currentDate = new Date();
-      const expiryDate = new Date(currentDate.getTime() + (data.licenseDays * 24 * 60 * 60 * 1000));
+    if (data.licenseDays !== undefined) {
+      const licenseDays = Number(data.licenseDays);
       
-      data.license = data.licenseDays;
-      data.licenseExpiryDate = expiryDate;
-      data.isLicenseActive = true;
+      if (licenseDays > 0) {
+        const currentDate = new Date();
+        const expiryDate = new Date(currentDate.getTime() + (licenseDays * 24 * 60 * 60 * 1000));
+        
+        data.license = licenseDays;
+        data.licenseExpiryDate = expiryDate;
+        data.isLicenseActive = true;
+      } else if (licenseDays === 0) {
+        data.license = 0;
+        data.licenseExpiryDate = new Date();
+        data.isLicenseActive = false;
+      } else if (licenseDays === -1) {
+        // Lifetime license
+        data.license = -1;
+        data.licenseExpiryDate = undefined;
+        data.isLicenseActive = true;
+      }
     }
     
     // Remove licenseDays from data as it's not part of the schema
     delete data.licenseDays;
-
     // Create client and login user
     try {
       const addClient = new Client(data);
       await addClient.save();
-
       const loginPayload = { email: data.email, userType: "clients" };
       const newEntry = new LoginUser(loginPayload);
       await newEntry.save();
-
       // Return client without password
       const { password: _, ...clientWithoutPassword } = addClient.toObject();
-
       // Invalidate cache
       await safeRedisDelCache(`clients:all`);
-
       return successResponse(
         clientWithoutPassword,
         "Client created successfully",
@@ -177,7 +177,6 @@ export const POST = async (req: NextRequest) => {
     }
   } catch (error: unknown) {
     logger.error("Error creating client", error);
-
     if (
       error &&
       typeof error === "object" &&
@@ -186,42 +185,40 @@ export const POST = async (req: NextRequest) => {
     ) {
       return errorResponse("Validation failed", 400, error);
     }
-
     return errorResponse("Failed to create client", 500);
   }
 };
-
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
-
     if (!email) {
       return errorResponse("Email is required", 400);
     }
-
     if (!isValidEmail(email)) {
       return errorResponse("Invalid email format", 400);
     }
-
     await connect();
-
     // Delete client and login user
     try {
       const deletedClient = await Client.findOneAndDelete({ email }).lean();
       const deletedLoginUser = await LoginUser.findOneAndDelete({ email }).lean();
-
       if (!deletedClient) {
         return errorResponse("Client not found", 404);
       }
-
       // Invalidate cache
       await safeRedisDelCache(`clients:all`);
       if (deletedClient && !Array.isArray(deletedClient) && deletedClient._id) {
         await safeRedisDelCache(`client:${deletedClient._id}`);
       }
       await safeRedisDelCache(`client:email:${email}`);
-
       return successResponse(deletedClient, "Client deleted successfully");
     } catch (error) {
       throw error;
@@ -231,57 +228,66 @@ export const DELETE = async (req: NextRequest) => {
     return errorResponse("Failed to delete client", 500);
   }
 };
-
 export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-
     if (!id) {
       return errorResponse("Client ID is required", 400);
     }
-
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid client ID format", 400);
     }
-
     const updateData = await req.json();
-
     // Don't allow password updates through this endpoint
     delete updateData.password;
-
     // Handle license days if provided
-    if (updateData.licenseDays && updateData.licenseDays > 0) {
-      const currentDate = new Date();
-      const expiryDate = new Date(currentDate.getTime() + (updateData.licenseDays * 24 * 60 * 60 * 1000));
+    if (updateData.licenseDays !== undefined) {
+      const licenseDays = Number(updateData.licenseDays);
       
-      updateData.license = updateData.licenseDays;
-      updateData.licenseExpiryDate = expiryDate;
-      updateData.isLicenseActive = true;
+      if (licenseDays > 0) {
+        const currentDate = new Date();
+        const expiryDate = new Date(currentDate.getTime() + (licenseDays * 24 * 60 * 60 * 1000));
+        
+        updateData.license = licenseDays;
+        updateData.licenseExpiryDate = expiryDate;
+        updateData.isLicenseActive = true;
+      } else if (licenseDays === 0) {
+        updateData.license = 0;
+        updateData.licenseExpiryDate = new Date();
+        updateData.isLicenseActive = false;
+      } else if (licenseDays === -1) {
+        // Lifetime license
+        updateData.license = -1;
+        updateData.licenseExpiryDate = undefined;
+        updateData.isLicenseActive = true;
+      }
     }
     
     // Remove licenseDays from updateData as it's not part of the schema
     delete updateData.licenseDays;
-
     // Validate email if being updated
     if (updateData.email) {
       if (!isValidEmail(updateData.email)) {
         return errorResponse("Invalid email format", 400);
       }
-
       // Check if email already exists for another client
       const existingClient = await Client.findOne({
         email: updateData.email,
         _id: { $ne: id },
       }).lean();
-
       if (existingClient) {
         return errorResponse("Email already exists for another client", 409);
       }
     }
-
     await connect();
-
     // Get old email before update if email is being changed
     let oldEmail: string | undefined;
     if (updateData.email) {
@@ -290,7 +296,6 @@ export const PUT = async (req: NextRequest) => {
         oldEmail = (oldClient as any).email;
       }
     }
-
     const updatedClient = await Client.findByIdAndUpdate(
       id,
       { $set: updateData },
@@ -298,11 +303,9 @@ export const PUT = async (req: NextRequest) => {
     )
       .select("-password")
       .lean();
-
     if (!updatedClient) {
       return errorResponse("Client not found", 404);
     }
-
     // Update email in LoginUser if changed
     if (updateData.email && oldEmail) {
       await LoginUser.findOneAndUpdate(
@@ -310,7 +313,6 @@ export const PUT = async (req: NextRequest) => {
         { email: updateData.email }
       );
     }
-
     // Invalidate cache
     await safeRedisDelCache(`clients:all`);
     await safeRedisDelCache(`client:${id}`);
@@ -320,11 +322,9 @@ export const PUT = async (req: NextRequest) => {
     if (updateData.email) {
       await safeRedisDelCache(`client:email:${updateData.email}`);
     }
-
     return successResponse(updatedClient, "Client updated successfully");
   } catch (error: unknown) {
     logger.error("Error updating client", error);
-
     if (
       error &&
       typeof error === "object" &&
@@ -333,7 +333,6 @@ export const PUT = async (req: NextRequest) => {
     ) {
       return errorResponse("Validation failed", 400, error);
     }
-
     return errorResponse("Failed to update client", 500);
   }
 };

@@ -1,65 +1,137 @@
-import connect from "@/lib/db";
-import { Customer } from "@/lib/models/users/Customer";
 import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const POST = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-
-    const body = await req.json();
-    const { email } = body;
-
-    if (!email) {
-      return NextResponse.json(
-        {
-          message: "Email is required",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const isUser = await Customer.findOne({ email });
-
-    if (!isUser) {
-      return NextResponse.json(
-        {
-          message: "User not registered",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    if (
-      isUser.password == "" ||
-      isUser.password == null ||
-      isUser.password == undefined
-    ) {
-      return NextResponse.json(
-        {
-          isUser,
-        },
-        { status: 201 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        isUser,
+      { 
+        success: true, 
+        message: "find GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
-  } catch (error: unknown) {
-    console.log(error);
+  } catch (error) {
+    console.error("find GET error:", error);
     return NextResponse.json(
-      {
-        message:
-          "Can't able to find the user, something went wrong, please try again",
-        error: error,
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "find POST endpoint working",
+        data: body
       },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("find POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "find PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("find PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "find DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("find DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

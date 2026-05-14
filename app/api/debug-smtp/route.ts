@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
 
 /**
  * Debug SMTP Configuration Endpoint
@@ -10,6 +11,16 @@ import { NextRequest } from "next/server";
  * Usage: GET /api/debug-smtp
  */
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   // Check if we're in production and add a warning
   const isProduction = process.env.NODE_ENV === 'production';
   
@@ -43,7 +54,7 @@ export const GET = async (req: NextRequest) => {
         "Render: Environment tab",
   };
 
-  return Response.json(config, {
+  return NextResponse.json(config, {
     headers: {
       'Content-Type': 'application/json',
     },

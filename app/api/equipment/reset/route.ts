@@ -1,11 +1,22 @@
 import connect from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 import mongoose from "mongoose";
 
 // POST - Reset Equipment model and clear cache
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     
@@ -14,7 +25,6 @@ export const POST = async (req: NextRequest) => {
       delete mongoose.models.Equipment;
       logger.info("Equipment model cleared from cache");
     }
-    
     // Re-import the Equipment model to ensure fresh schema
     const { Equipment } = await import("@/lib/models/Xsite/Equipment");
     
@@ -38,6 +48,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET - Check current Equipment model status
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     

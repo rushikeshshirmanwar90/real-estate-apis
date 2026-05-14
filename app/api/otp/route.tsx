@@ -6,13 +6,15 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
 import { rateLimit } from "@/lib/utils/rate-limiter";
 import { logger } from "@/lib/utils/logger";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
 
 /**
  * Send OTP Email Endpoint
  * Accepts custom OTP from client and sends it via email
  * Does NOT store OTP in database - verification happens on client side
+ * NO AUTH REQUIRED - used during registration/login process
  */
-export const POST = async (req: NextRequest) => {
+export async function POST(req: NextRequest) {
   try {
     // Rate limiting: 5 OTP requests per 5 minutes
     const rateLimitResult = rateLimit(req, {
@@ -92,4 +94,4 @@ export const POST = async (req: NextRequest) => {
     logger.error("Error in OTP endpoint", error);
     return errorResponse("Failed to send OTP", 500);
   }
-};
+}

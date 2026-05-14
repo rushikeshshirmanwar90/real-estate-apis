@@ -524,7 +524,7 @@ export const POST = async (req: NextRequest | Request) => {
         
         if (usageKeys.length > 0) {
           // For material-usage, it's simpler to invalidate since the data structure is complex
-          if (usageKeys.length > 0) await safeRedisDelCache(...usageKeys);
+          await safeRedisDelCache(...usageKeys);
           console.log(`🗑️ Invalidated ${usageKeys.length} material-usage cache keys`);
         }
         
@@ -567,7 +567,7 @@ export const POST = async (req: NextRequest | Request) => {
           } else {
             console.warn(`⚠️ cleanedProject is null - falling back to invalidation`);
             // If cleanedProject is null, invalidate cache
-            if (materialKeys.length > 0) await safeRedisDelCache(...materialKeys);
+            await safeRedisDelCache(...materialKeys);
           }
         }
         

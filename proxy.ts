@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Import scheduler initialization to ensure it starts
+import '@/lib/init/scheduler';
+
 // Helper function to apply CORS headers
 function applyCorsHeaders(response: NextResponse, request: NextRequest) {
   const origin = request.headers.get("origin");

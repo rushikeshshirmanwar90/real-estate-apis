@@ -3,9 +3,20 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Projects } from "@/lib/models/Project";
 import { MiniSection } from "@/lib/models/MiniSection";
 import { Section } from "@/lib/models/Section";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
     try {
         await connect();
         
@@ -244,8 +255,7 @@ export const GET = async (req: NextRequest) => {
             console.log(`    - Activity: ${activity.activity}`);
             console.log(`    - Message: "${activity.message || 'No message'}"`);
             console.log('');
-            
-            
+
             return {
                 _id: activity._id,
                 user: {

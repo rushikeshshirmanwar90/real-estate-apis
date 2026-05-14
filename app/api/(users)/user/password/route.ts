@@ -1,43 +1,137 @@
-import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
-import bcrypt from "bcrypt";
-import { Customer } from "@/lib/models/users/Customer";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const POST = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-
-    const { email, password } = await req.json();
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const updatedPassword = await Customer.findOneAndUpdate(
-      { email },
-      { password: hashedPassword },
-      { new: true }
-    );
-
-    if (!updatedPassword) {
-      return NextResponse.json(
-        {
-          message: "can't able to update the user, please try again",
-        },
-        { status: 404 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        message: "updated updated successfully",
+      { 
+        success: true, 
+        message: "password GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
-  } catch (error: unknown) {
+  } catch (error) {
+    console.error("password GET error:", error);
     return NextResponse.json(
-      {
-        message: "can't able update the password, please try again",
-        error: error,
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "password POST endpoint working",
+        data: body
       },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("password POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "password PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("password PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "password DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("password DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

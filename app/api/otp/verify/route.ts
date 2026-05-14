@@ -5,8 +5,16 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
 import { verifyOTP } from "@/lib/utils/otp";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { email, otp } = await req.json();

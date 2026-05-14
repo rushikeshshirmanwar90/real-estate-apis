@@ -1,18 +1,29 @@
 import { EmailTemplate } from "@/components/mail/EmailTemplate";
 import connect from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { render } from "@react-email/components";
 import { transporter } from "@/lib/transporter";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
 import { rateLimit } from "@/lib/utils/rate-limiter";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 
 /**
  * Send Custom OTP Endpoint
  * Used by mobile app to send a pre-generated OTP via email
  */
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Rate limiting: 5 OTP requests per 5 minutes
     const rateLimitResult = rateLimit(req, {

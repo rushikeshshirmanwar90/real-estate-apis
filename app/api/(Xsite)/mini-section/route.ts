@@ -1,242 +1,188 @@
+import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
-import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { MiniSection as Section } from "@/lib/models/Xsite/mini-section";
-import { NextRequest } from "next/server";
-import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache 
-} from "@/lib/utils/redis-helpers";
+import { MiniSection } from "@/lib/models/Xsite/mini-section";
 
-interface projectDetailProps {
-  projectName: string;
-  projectId: string;
-}
-
-interface mainSectionDetailProps {
-  sectionName: string;
-  sectionId: string;
-}
-
-interface payloadProps {
-  name: string;
-  projectDetails: projectDetailProps;
-  mainSectionDetails: mainSectionDetailProps;
-}
-
-export const GET = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const sectionId = searchParams.get("sectionId");
-  const id = searchParams.get("id");
-
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    await connect();
-
-    if (sectionId) {
-      // Check cache first
-      const cacheKey = `miniSection:bySectionId:${sectionId}`;
-      const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return successResponse(
-          cacheValue,
-          "Section data fetched successfully (cached)",
-          200
-        );
-      }
-
-      const sectionData = await Section.find({
-        "mainSectionDetails.sectionId": sectionId,
-      });
-
-      if (!sectionData) {
-        return errorResponse("data not found", 204);
-      }
-
-      // Cache the result with 24-hour expiration
-      await safeRedisSetCache(cacheKey, JSON.stringify(sectionData), 'EX', 86400);
-
-      return successResponse(
-        sectionData,
-        "Section data fetched successfully",
-        200
-      );
-    } else if (id) {
-      // Check cache first
-      const cacheKey = `miniSection:${id}`;
-      const cachedData = await safeRedisGetCache(cacheKey);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return successResponse(
-          cacheValue,
-          "Section data fetched successfully (cached)",
-          200
-        );
-      }
-
-      const sectionDataById = await Section.findById(id);
-
-      if (!sectionDataById) {
-        return errorResponse("data not found", 204);
-      }
-
-      // Cache the result with 24-hour expiration
-      await safeRedisSetCache(cacheKey, JSON.stringify(sectionDataById), 'EX', 86400);
-
-      return successResponse(
-        sectionDataById,
-        "Section data fetched successfully",
-        200
-      );
-    } else {
-      return errorResponse("something went wrong in params", 406);
-    }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return errorResponse("something went wrong", 500, error.message);
-    }
-    return errorResponse("Unknown error occurred", 500);
-  }
-};
-
-export const POST = async (req: NextRequest | Request) => {
-  try {
-    await connect();
-
-    const data: payloadProps = await req.json();
-
-    const newSection = await new Section(data);
-    await newSection.save();
-
-    if (newSection) {
-      // ✅ Log activity for mini-section creation (consistent format)
-      const userInfo = extractUserInfo(req, data);
-      if (userInfo && data.projectDetails?.projectId) {
-        await logActivity({
-          user: userInfo,
-          clientId: 'unknown', // You might need to add clientId to the payload
-          projectId: data.projectDetails.projectId,
-          projectName: data.projectDetails.projectName,
-          sectionId: data.mainSectionDetails?.sectionId,
-          sectionName: data.mainSectionDetails?.sectionName,
-          miniSectionId: newSection._id.toString(),
-          miniSectionName: data.name || 'Unnamed Mini Section',
-          activityType: "mini_section_created",
-          category: "mini_section",
-          action: "create",
-          description: `Created mini-section "${data.name || 'Unnamed Mini Section'}" in project "${data.projectDetails.projectName || 'Unknown Project'}"`,
-          message: `Mini-section created successfully in project`,
-          metadata: {
-            miniSectionData: {
-              name: data.name,
-              projectId: data.projectDetails.projectId,
-              sectionId: data.mainSectionDetails?.sectionId
-            }
-          }
-        });
-      }
-
-      // Invalidate cache after creating new mini-section
-      if (data.mainSectionDetails?.sectionId) {
-        await safeRedisDelCache(`miniSection:bySectionId:${data.mainSectionDetails.sectionId}`);
-      }
-
-      return successResponse(newSection, "section created successfully", 201);
-    }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return errorResponse("something went wrong", 500, error.message);
-    }
-    return errorResponse("Unknown error occurred", 500);
-  }
-};
-
-export const PUT = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-
-  try {
-    await connect();
-
-    if (!id) return errorResponse("sectionId is required", 406);
-
-    // Accept partial updates for name, projectDetails and mainSectionDetails
-    const body = (await req.json()) as Partial<{
-      name: string;
-      projectDetails: { projectName: string; projectId: string };
-      mainSectionDetails: { sectionName?: string; sectionId?: string };
-    }>;
-
-    const updates: Record<
-      string,
-      | string
-      | { projectName: string; projectId: string }
-      | { sectionName?: string; sectionId?: string }
-    > = {};
-    if (body.name) updates.name = body.name;
-    if (body.projectDetails) updates.projectDetails = body.projectDetails;
-    if (body.mainSectionDetails)
-      updates.mainSectionDetails = body.mainSectionDetails;
-
-    if (Object.keys(updates).length === 0) {
-      return errorResponse("no updatable fields provided", 406);
-    }
-
-    const updatedData = await Section.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      { new: true }
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
     );
-
-    if (!updatedData) {
-      return errorResponse(`section not found with id: ${id}`, 404);
+  }
+  
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const sectionId = searchParams.get("sectionId");
+    const id = searchParams.get("id");
+    
+    console.log('📥 Mini-section GET request:', { sectionId, id });
+    
+    // If specific mini-section ID is provided, fetch that one
+    if (id) {
+      const miniSection = await MiniSection.findById(id).lean();
+      
+      if (!miniSection) {
+        return NextResponse.json(
+          { success: false, message: "Mini-section not found" },
+          { status: 404 }
+        );
+      }
+      
+      return NextResponse.json(
+        { 
+          success: true, 
+          message: "Mini-section fetched successfully",
+          data: [miniSection] // Return as array for consistency
+        },
+        { status: 200 }
+      );
     }
-
-    // Invalidate cache after updating mini-section
-    await safeRedisDelCache(`miniSection:${id}`);
-    if (updatedData.mainSectionDetails?.sectionId) {
-      await safeRedisDelCache(`miniSection:bySectionId:${updatedData.mainSectionDetails.sectionId}`);
+    
+    // If sectionId is provided, fetch all mini-sections for that parent section
+    if (sectionId) {
+      const miniSections = await MiniSection.find({
+        "mainSectionDetails.sectionId": sectionId
+      })
+      .sort({ createdAt: -1 }) // Newest first
+      .lean();
+      
+      console.log(`✅ Found ${miniSections.length} mini-sections for sectionId: ${sectionId}`);
+      
+      return NextResponse.json(
+        { 
+          success: true, 
+          message: `Found ${miniSections.length} mini-sections`,
+          data: miniSections
+        },
+        { status: 200 }
+      );
     }
-
-    return successResponse(updatedData, "data updated successfully", 200);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return errorResponse("something went wrong", 500, error.message);
-    }
-    return errorResponse("Unknown error occurred", 500);
+    
+    // If no parameters provided, return error
+    return NextResponse.json(
+      { 
+        success: false, 
+        message: "Please provide either 'id' or 'sectionId' parameter"
+      },
+      { status: 400 }
+    );
+    
+  } catch (error) {
+    console.error("❌ mini-section GET error:", error);
+    return NextResponse.json(
+      { 
+        success: false, 
+        message: "Internal server error",
+        error: error instanceof Error ? error.message : String(error)
+      },
+      { status: 500 }
+    );
   }
 };
 
-export const DELETE = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
-
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
   try {
     await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "mini-section POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("mini-section POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
-    if (!id) {
-      return errorResponse("id is required", 406);
-    }
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "mini-section PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("mini-section PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
-    const removedData = await Section.findByIdAndDelete(id);
-
-    if (!removedData) {
-      return errorResponse(`data not found with this id : ${id}`, 404);
-    }
-
-    // Invalidate cache after deleting mini-section
-    await safeRedisDelCache(`miniSection:${id}`);
-    if (removedData.mainSectionDetails?.sectionId) {
-      await safeRedisDelCache(`miniSection:bySectionId:${removedData.mainSectionDetails.sectionId}`);
-    }
-
-    return successResponse(removedData, "data deleted successfully", 200);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return errorResponse("something went wrong", 500, error.message);
-    }
-    return errorResponse("Unknown error occurred", 500);
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "mini-section DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("mini-section DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
   }
 };

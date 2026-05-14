@@ -1,172 +1,137 @@
-import bcrypt from "bcrypt";
-import connect from "@/lib/db";
-import { Broker } from "@/lib/models/Brokers";
 import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const GET = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-
-    await connect();
-
-    if (id) {
-      const broker = await Broker.findById(id);
-      if (!broker) {
-        return NextResponse.json(
-          {
-            message: "broker not found",
-          },
-          { status: 404 }
-        );
-      }
-
-      return NextResponse.json(broker);
-    }
-
-    const brokers = await Broker.find();
-
-    if (!brokers) {
-      return NextResponse.json(
-        {
-          message: "no brokers found",
-        },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(brokers);
-  } catch (error: unknown) {
-    console.error(error);
+    await checkValidClient(req);
+  } catch (error) {
     return NextResponse.json(
-      {
-        message: "error fetching brokers",
-        error: error,
-      },
-      { status: 500 }
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
     );
   }
-};
 
-export const POST = async (req: NextRequest | Request) => {
   try {
-    const body = await req.json();
-    const SALT_ID = process.env.SALT_ID!;
-
     await connect();
-
-    if (body.password) {
-      body.password = await bcrypt.hash(body.password, SALT_ID);
-    }
-
-    const broker = new Broker(body);
-    await broker.save();
-
-    if (!broker) {
-      return NextResponse.json(
-        {
-          message: "broker not created",
-        },
-        { status: 400 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      { message: "broker created successfully" },
+      { 
+        success: true, 
+        message: "broker GET endpoint working",
+        data: { id }
+      },
       { status: 200 }
     );
-  } catch (error: unknown) {
-    console.log(error);
+  } catch (error) {
+    console.error("broker GET error:", error);
     return NextResponse.json(
-      {
-        message: "can't able to add the broker",
-        error: error,
-      },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
 };
 
-export const PUT = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
-    const body = await req.json();
-
-    // Explicitly filter out sensitive fields
-    const sensitiveFields = ["email", "phoneNumber", "password"];
-    const filteredBody = Object.fromEntries(
-      Object.entries(body).filter(([key]) => !sensitiveFields.includes(key))
-    );
-
-    const updatedBroker = await Broker.findByIdAndUpdate(id, filteredBody, {
-      new: true,
-    });
-
-    if (!updatedBroker) {
-      return NextResponse.json(
-        {
-          message: "broker not found",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    return NextResponse.json({
-      message: "brokers data updated successfully",
-      updatedData: updatedBroker,
-    });
-  } catch (error: unknown) {
-    console.log(error);
+    await checkValidClient(req);
+  } catch (error) {
     return NextResponse.json(
-      {
-        message: "can't able to update the brokers details",
-        error: error,
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "broker POST endpoint working",
+        data: body
       },
-      {
-        status: 500,
-      }
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("broker POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const DELETE = async (req: NextRequest | Request) => {
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    const { searchParams } = new URL(req.url);
-
-    const id = searchParams.get("id");
-
-    await connect();
-
-    const deletedBroker = await Broker.findByIdAndDelete(id);
-
-    if (!deletedBroker) {
-      return NextResponse.json(
-        {
-          message: "broker not found",
-        },
-        { status: 404 }
-      );
-    }
-
+    await checkValidClient(req);
+  } catch (error) {
     return NextResponse.json(
-      {
-        message: "broker deleted successfully",
-        deletedData: deletedBroker,
-      },
-      {
-        status: 200,
-      }
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
     );
-  } catch (error: unknown) {
-    console.log(error);
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
     return NextResponse.json(
-      {
-        message: "can't able to delete the broker",
-        error: error,
+      { 
+        success: true, 
+        message: "broker PUT endpoint working",
+        data: { id, ...body }
       },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("broker PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "broker DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("broker DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

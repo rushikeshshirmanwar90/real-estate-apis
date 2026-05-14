@@ -399,13 +399,13 @@ const LaborSchema = new Schema(
     // Audit fields
     addedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'Admin',
       required: false,
     },
     
     updatedBy: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'Admin',
       required: false,
     },
   },

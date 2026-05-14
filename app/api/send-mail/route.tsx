@@ -3,11 +3,10 @@ import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { render } from '@react-email/components';
 import { transporter } from "@/lib/transporter";
-
-export const POST = async (req: NextRequest | Request) => {
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+export const POST = withBearerAuth(async (req: NextRequest) => {
     try {
         await connect();
-
         const body = await req.json();
         if (!body.email) {
             return NextResponse.json(
@@ -15,18 +14,14 @@ export const POST = async (req: NextRequest | Request) => {
                 { status: 400 }
             );
         }
-
         const { email, staffName, companyName } = body;
-
         const emailHtml = await render(<EmailTemplate staffName={staffName} companyName={companyName} />);
-
         const info = await transporter.sendMail({
             from: `"Rushikesh Shrimanwar"`,
             to: email,
             subject: "Your Email Verification Code",
             html: emailHtml
         });
-
         return NextResponse.json(
             {
                 message: "Email sent successfully!",
@@ -34,7 +29,6 @@ export const POST = async (req: NextRequest | Request) => {
             },
             { status: 200 }
         );
-
     } catch (error: unknown) {
         console.error("Email sending error:", error);
         return NextResponse.json(
@@ -42,4 +36,4 @@ export const POST = async (req: NextRequest | Request) => {
             { status: 500 }
         );
     }
-};
+});

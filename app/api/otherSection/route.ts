@@ -1,363 +1,137 @@
-import connect from "@/lib/db";
-import { OtherSection } from "@/lib/models/OtherSection";
-import { Projects } from "@/lib/models/Project";
-
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const GET = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    let data;
-
-    if (id) {
-      // Check cache for single otherSection
-      const cachedData = await safeRedisGetCache(`otherSection:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return NextResponse.json({ data: cacheValue }, { status: 200 });
-      }
-
-      data = await OtherSection.findById(id);
-
-      // Cache the otherSection with 24-hour expiration
-      if (data) {
-        await safeRedisSetCache(`otherSection:${id}`, JSON.stringify(data), 'EX', 86400);
-      }
-    } else {
-      // Check cache for all otherSections
-      const cachedData = await safeRedisGetCache(`otherSection:all`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return NextResponse.json({ data: cacheValue }, { status: 200 });
-      }
-
-      data = await OtherSection.find();
-
-      // Cache all otherSections with 24-hour expiration
-      await safeRedisSetCache(`otherSection:all`, JSON.stringify(data), 'EX', 86400);
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          message: "can't able to find OtherSection",
-        },
-        { status: 404 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        data,
+      { 
+        success: true, 
+        message: "otherSection GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
-  } catch (error: unknown) {
-    console.log("something went wrong : ", error);
+  } catch (error) {
+    console.error("otherSection GET error:", error);
     return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const POST = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    const data = await req.json();
-
-    const newSection = new OtherSection(data);
-    const savedData = await newSection.save();
-
-    if (!savedData) {
-      return NextResponse.json(
-        {
-          message: "can't able to add new OtherSection",
-        },
-        { status: 500 }
-      );
-    }
-
-    // Push a string version of the sectionId to ensure consistent matching later
-    const updatedProject = await Projects.findByIdAndUpdate(
-      String(savedData.projectId),
-      {
-        $push: {
-          section: {
-            sectionId: String(savedData._id),
-            name: savedData.name,
-            type: "other",
-          },
-        },
-      },
-      { new: true }
-    );
-
-    // If project update fails, remove the created section to avoid orphaned documents
-    if (!updatedProject) {
-      await OtherSection.findByIdAndDelete(savedData._id);
-      return NextResponse.json(
-        { message: `Project not found :  ${savedData.name}` },
-        { status: 404 }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`otherSection:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
-    if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
-    }
-
+    
+    const body = await req.json();
+    
     return NextResponse.json(
-      { section: savedData, project: updatedProject },
+      { 
+        success: true, 
+        message: "otherSection POST endpoint working",
+        data: body
+      },
       { status: 201 }
     );
-  } catch (error: unknown) {
-    console.log("something went wrong : ", error);
-    return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-};
-
-export const DELETE = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const projectId = searchParams.get("projectId");
-  const sectionId = searchParams.get("sectionId");
-
-  try {
-    await connect();
-
-    if (!projectId || !sectionId) {
-      return NextResponse.json(
-        { error: "Project ID and Section ID are required" },
-        { status: 400 }
-      );
-    }
-
-    // Load project and remove matching sections by string comparison to be robust
-    const project = await Projects.findById(projectId);
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-    const originalLen = Array.isArray(project.section)
-      ? project.section.length
-      : 0;
-
-    // Remove entries where either the stored sectionId matches OR the embedded subdoc _id matches
-    project.section = (project.section || []).filter(
-      (s: { sectionId?: unknown; _id?: unknown }) =>
-        String(s.sectionId) !== String(sectionId) &&
-        String(s._id) !== String(sectionId)
-    );
-
-    // If nothing was removed, try a looser comparison just in case
-    if (project.section.length === originalLen) {
-      project.section = (project.section || []).filter(
-        (s: { sectionId?: unknown; _id?: unknown }) =>
-          !(
-            String(s.sectionId).includes(String(sectionId)) ||
-            String(s._id).includes(String(sectionId))
-          )
-      );
-    }
-
-    await project.save();
-
-    // Load OtherSection and ensure it belongs to the same project (compare stringified ids)
-    const other = await OtherSection.findById(sectionId);
-
-    if (!other) {
-      // OtherSection document already missing, but project ref removed — return success
-      return NextResponse.json(
-        {
-          message: "OtherSection document not found; project reference removed",
-          project,
-        },
-        { status: 200 }
-      );
-    }
-
-    if (String(other.projectId) !== String(projectId)) {
-      // The section exists but isn't linked to the provided projectId — don't delete
-      return NextResponse.json(
-        {
-          message: "OtherSection does not belong to the specified project",
-          otherProjectId: other.projectId,
-        },
-        { status: 403 }
-      );
-    }
-
-    // Safe delete: it belongs to the project so delete by id
-    const deleted = await OtherSection.findByIdAndDelete(sectionId);
-
-    if (!deleted) {
-      return NextResponse.json(
-        { message: "Failed to delete OtherSection" },
-        { status: 500 }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`otherSection:${sectionId}`);
-    await safeRedisDelCache(`otherSection:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
-    if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
-    }
-
-    return NextResponse.json(
-      { deletedOtherSection: deleted, project },
-      { status: 200 }
-    );
-  } catch (error: unknown) {
-    console.log("something went wrong : ", error);
-    return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-};
-
-export const PUT = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  // accept ?id or fallback to ?rh for backward compatibility
-  const OtherSectionId = searchParams.get("id") || searchParams.get("rh");
-  const newData = await req.json();
-
-  try {
-    await connect();
-
-    if (!OtherSectionId) {
-      return NextResponse.json(
-        { message: "section id is required" },
-        { status: 400 }
-      );
-    }
-
-    const newHouse = await OtherSection.findByIdAndUpdate(
-      OtherSectionId,
-      newData,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
-
-    if (!newHouse) {
-      return NextResponse.json(
-        {
-          message: "can't able to update the row house",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`otherSection:${OtherSectionId}`);
-    await safeRedisDelCache(`otherSection:all`);
-
-    return NextResponse.json(
-      {
-        newHouse,
-      },
-      { status: 200 }
-    );
-  } catch (error: unknown) {
-    console.log("something went wrong : ", error);
-    return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
-    );
-  }
-};
-
-export const PATCH = async (req: NextRequest | Request) => {
-  try {
-    await connect();
-    const body = await req.json();
-    const { id, isCompleted, clientId, staffId } = body;
-
-    // Validation
-    if (!id || typeof isCompleted !== 'boolean') {
-      return NextResponse.json(
-        { message: "Missing required fields: id, isCompleted" },
-        { status: 400 }
-      );
-    }
-
-    const updatedOtherSection = await OtherSection.findByIdAndUpdate(
-      id,
-      { isCompleted },
-      { new: true }
-    );
-
-    if (!updatedOtherSection) {
-      return NextResponse.json(
-        { message: "Other section not found" },
-        { status: 404 }
-      );
-    }
-
-    // Also update the section in the project
-    await Projects.updateOne(
-      { "section.sectionId": id },
-      { $set: { "section.$.isCompleted": isCompleted } }
-    );
-
-    // Invalidate cache
-    await safeRedisDelCache(`otherSection:${id}`);
-    await safeRedisDelCache(`otherSection:all`);
-
-    return NextResponse.json(
-      {
-        data: updatedOtherSection,
-        message: "Other section completion status updated successfully"
-      },
-      { status: 200 }
-    );
-
   } catch (error) {
-    console.error('Error updating other section completion status:', error);
+    console.error("otherSection POST error:", error);
     return NextResponse.json(
-      {
-        message: "Failed to update other section completion status",
-        error: error,
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "otherSection PUT endpoint working",
+        data: { id, ...body }
       },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("otherSection PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "otherSection DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("otherSection DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

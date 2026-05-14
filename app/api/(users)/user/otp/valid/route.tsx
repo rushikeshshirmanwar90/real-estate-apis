@@ -1,66 +1,98 @@
-import connect from "@/lib/db";
-import { Customer } from "@/lib/models/users/Customer";
 import { NextRequest, NextResponse } from "next/server";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+import connect from "@/lib/db";
 
-export const POST = async (req: NextRequest | Request) => {
+export const GET = withBearerAuth(async (req: NextRequest) => {
   try {
     await connect();
-
-    const { email, otp } = await req.json();
-
-    if (!email || otp === undefined) {
-      return NextResponse.json(
-        {
-          message: "Email and OTP are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    const user = await Customer.findOne({ email });
-
-    if (!user) {
-      return NextResponse.json(
-        {
-          message: "user not found with this mail",
-        },
-        { status: 401 }
-      );
-    }
-
-    const userOtp = user.otp;
-
-    if (userOtp != otp) {
-      return NextResponse.json(
-        {
-          message: "invalid OTP",
-        },
-        { status: 404 }
-      );
-    }
-
-    const updateOtp = await Customer.findOneAndUpdate({ email }, { otp: 0 });
-
-    if (!updateOtp) {
-      return NextResponse.json(
-        { message: "can't able to update otp" },
-        { status: 404 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        message: "otp is valid",
+      { 
+        success: true, 
+        message: "valid GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
-  } catch (error: unknown) {
+  } catch (error) {
+    console.error("valid GET error:", error);
     return NextResponse.json(
-      {
-        message: "Failed to verify OTP",
-        error: error,
-      },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
-};
+});
+
+export const POST = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "valid POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("valid POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const PUT = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "valid PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("valid PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const DELETE = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "valid DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("valid DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});

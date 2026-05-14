@@ -1,0 +1,266 @@
+import connect from "@/lib/db";
+import { UserCustomerDetails } from "@/lib/models/UserCustomerDetails";
+import { NextRequest } from "next/server";
+import mongoose from "mongoose";
+import { errorResponse, successResponse } from "@/lib/utils/api-response";
+import { isValidObjectId } from "@/lib/utils/validation";
+import { logger } from "@/lib/utils/logger";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+import { 
+  safeRedisGetCache, 
+  safeRedisSetCache, 
+  invalidateCachePattern,
+  safeRedisDelCache,
+  safeRedisKeysCache 
+} from "@/lib/utils/redis-helpers";
+
+export const GET = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("userId");
+
+    if (!userId) {
+      return errorResponse("userId is required", 400);
+    }
+
+    if (!isValidObjectId(userId)) {
+      return errorResponse("Invalid userId format", 400);
+    }
+
+    // Check cache
+    const cachedData = await safeRedisGetCache(`property:user:${userId}`);
+    if (cachedData) {
+      const cacheValue = JSON.parse(cachedData);
+      return successResponse(cacheValue, "Properties retrieved successfully (cached)");
+    }
+
+    const objectId = new mongoose.Types.ObjectId(userId);
+    const property = await UserCustomerDetails.findOne({ userId: objectId }).lean();
+
+    if (!property) {
+      return errorResponse("No properties found for this user", 404);
+    }
+
+    // Cache the property with 24-hour expiration
+    await safeRedisSetCache(`property:user:${userId}`, JSON.stringify(property), 'EX', 86400);
+
+    return successResponse(property, "Properties retrieved successfully");
+  } catch (error: unknown) {
+    logger.error("Error fetching properties", error);
+    return errorResponse("Failed to fetch properties", 500);
+  }
+});
+
+export const POST = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    const body = await req.json();
+    const { userId, ...propertyData } = body;
+
+    if (!userId) {
+      return errorResponse("userId is required", 400);
+    }
+
+    if (!isValidObjectId(userId)) {
+      return errorResponse("Invalid userId format", 400);
+    }
+
+    // Validate required property fields
+    const requiredFields = [
+      "projectId",
+      "projectName",
+      "sectionId",
+      "sectionName",
+      "sectionType",
+    ];
+    const missingFields = requiredFields.filter(
+      (field) => !propertyData[field]
+    );
+
+    if (missingFields.length > 0) {
+      return errorResponse(
+        `Missing required fields: ${missingFields.join(", ")}`,
+        400
+      );
+    }
+
+    const objectId = new mongoose.Types.ObjectId(userId);
+
+    // Check if customer details exist
+    const existingCustomer = await UserCustomerDetails.findOne({
+      userId: objectId,
+    });
+
+    let result;
+    if (existingCustomer) {
+      // Update existing customer
+      result = await UserCustomerDetails.findOneAndUpdate(
+        { userId: objectId },
+        { $push: { property: propertyData } },
+        { new: true, runValidators: true }
+      ).lean();
+    } else {
+      // Create new customer details
+      const newCustomerDetails = new UserCustomerDetails({
+        userId: objectId,
+        property: [propertyData],
+      });
+      result = await newCustomerDetails.save();
+    }
+
+    if (!result) {
+      return errorResponse("Failed to add property", 500);
+    }
+
+    // Invalidate cache
+    await safeRedisDelCache(`property:user:${userId}`);
+
+    return successResponse(result, "Property added successfully", 201);
+  } catch (error: unknown) {
+    logger.error("Error adding property", error);
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "name" in error &&
+      error.name === "ValidationError"
+    ) {
+      return errorResponse("Validation failed", 400, error);
+    }
+
+    return errorResponse("Failed to add property", 500);
+  }
+});
+
+export const DELETE = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get("userId");
+    const propertyId = searchParams.get("propertyId");
+
+    // Delete specific property
+    if (userId && propertyId) {
+      if (!isValidObjectId(userId) || !isValidObjectId(propertyId)) {
+        return errorResponse("Invalid ID format", 400);
+      }
+
+      const objectId = new mongoose.Types.ObjectId(userId);
+
+      const result = await UserCustomerDetails.findOneAndUpdate(
+        { userId: objectId },
+        { $pull: { property: { _id: propertyId } } },
+        { new: true }
+      ).lean();
+
+      if (!result) {
+        return errorResponse("User or property not found", 404);
+      }
+
+      // Invalidate cache
+      await safeRedisDelCache(`property:user:${userId}`);
+
+      return successResponse(result, "Property deleted successfully");
+    }
+
+    // Delete all properties for a user
+    if (userId) {
+      if (!isValidObjectId(userId)) {
+        return errorResponse("Invalid userId format", 400);
+      }
+
+      const objectId = new mongoose.Types.ObjectId(userId);
+      const deletedData = await UserCustomerDetails.findOneAndDelete({
+        userId: objectId,
+      }).lean();
+
+      if (!deletedData) {
+        return errorResponse("User not found", 404);
+      }
+
+      // Invalidate cache
+      await safeRedisDelCache(`property:user:${userId}`);
+
+      return successResponse(
+        deletedData,
+        "User properties deleted successfully"
+      );
+    }
+
+    // Delete all customer details (admin only - should be protected)
+    const deleteResult = await UserCustomerDetails.deleteMany({});
+
+    if (deleteResult.deletedCount === 0) {
+      return errorResponse("No data found to delete", 404);
+    }
+
+    // Invalidate all property caches
+    const keys = await safeRedisKeysCache(`property:user:*`);
+    if (keys.length > 0) {
+      await safeRedisDelCache(...keys);
+    }
+
+    return successResponse(
+      { deletedCount: deleteResult.deletedCount },
+      "All customer data deleted successfully"
+    );
+  } catch (error: unknown) {
+    logger.error("Error deleting properties", error);
+    return errorResponse("Failed to delete properties", 500);
+  }
+});
+
+export const PUT = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    const body = await req.json();
+    const { userId, propertyId, ...updateData } = body;
+
+    if (!userId || !propertyId) {
+      return errorResponse("userId and propertyId are required", 400);
+    }
+
+    if (!isValidObjectId(userId) || !isValidObjectId(propertyId)) {
+      return errorResponse("Invalid ID format", 400);
+    }
+
+    const objectId = new mongoose.Types.ObjectId(userId);
+
+    // Update specific property in the array
+    const result = await UserCustomerDetails.findOneAndUpdate(
+      {
+        userId: objectId,
+        "property._id": propertyId,
+      },
+      {
+        $set: {
+          "property.$": { _id: propertyId, ...updateData },
+        },
+      },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!result) {
+      return errorResponse("User or property not found", 404);
+    }
+
+    // Invalidate cache
+    await safeRedisDelCache(`property:user:${userId}`);
+
+    return successResponse(result, "Property updated successfully");
+  } catch (error: unknown) {
+    logger.error("Error updating property", error);
+
+    if (
+      error &&
+      typeof error === "object" &&
+      "name" in error &&
+      error.name === "ValidationError"
+    ) {
+      return errorResponse("Validation failed", 400, error);
+    }
+
+    return errorResponse("Failed to update property", 500);
+  }
+});

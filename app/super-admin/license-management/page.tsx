@@ -110,7 +110,7 @@ const LicenseManagementPage = () => {
     );
   }
 
-  const activeClients = clients.filter(client => client.isLicenseActive);
+  const activeClients = clients.filter(client => client.license !== 0);
   const expiredClients = clients.filter(client => {
     if (!client.licenseExpiryDate) return false;
     const expiryDate = new Date(client.licenseExpiryDate);

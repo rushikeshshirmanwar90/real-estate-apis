@@ -6,10 +6,10 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Staff } from "@/lib/models/users/Staff";
 import { Admin } from "@/lib/models/users/Admin";
 
-export const POST = async (req: NextRequest | Request) => {
+// POST /api/forget-password - Reset user password (NO AUTH REQUIRED - used for password recovery)
+export async function POST(req: NextRequest) {
   try {
     await connect();
-
     const { email, userType } = await req.json();
 
     console.log('🔐 FORGET PASSWORD API CALLED');
@@ -97,4 +97,4 @@ export const POST = async (req: NextRequest | Request) => {
       { status: 500 }
     );
   }
-};
+}

@@ -7,9 +7,17 @@ import {
 } from "@/lib/utils/redis-helpers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
+import { checkValidClient } from "@/lib/auth";
 
 // POST - Clear cache for specific client or all clients
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     const body = await req.json();
     const { clientId, clearAll } = body;
@@ -60,6 +68,13 @@ export const POST = async (req: NextRequest) => {
 
 // GET - Check cache status for a client
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");

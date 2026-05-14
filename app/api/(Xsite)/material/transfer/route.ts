@@ -18,7 +18,15 @@ type MaterialSubdoc = {
 
 // POST: Transfer material from one project to another
 export const POST = async (req: NextRequest | Request) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   try {
     await connect();

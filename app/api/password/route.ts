@@ -11,10 +11,12 @@ import { errorResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isStrongPassword } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { withOptionalTransaction } from "@/lib/utils/transaction-helper";
+import { checkValidClient } from "@/lib/auth";
 
 const SALT_ROUNDS = 10;
 
-export const POST = async (req: NextRequest) => {
+// POST /api/password - Set password for new users (NO AUTH REQUIRED - used during registration)
+export async function POST(req: NextRequest) {
   try {
     await connect();
 
@@ -162,4 +164,4 @@ export const POST = async (req: NextRequest) => {
     logger.error("Error updating password", error);
     return errorResponse("Failed to update password", 500);
   }
-};
+}

@@ -1,20 +1,26 @@
-import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
 import { OurTeam } from "@/lib/models/homepage/OurTeam";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
-
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Get clientId from query params if provided
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     await connect();
-
     // If clientId is provided, filter by it
     const query = clientId ? { clientId } : {};
     const data = await OurTeam.find(query);
-
     if (!data || data.length === 0) {
       return NextResponse.json(
         {
@@ -24,7 +30,6 @@ export const GET = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,
@@ -38,7 +43,6 @@ export const GET = async (req: NextRequest) => {
     } else {
       console.error("Unexpected error:", error);
     }
-
     return NextResponse.json(
       {
         success: false,
@@ -48,14 +52,20 @@ export const GET = async (req: NextRequest) => {
     );
   }
 };
-
 export const POST = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   try {
     await connect();
     const body = await req.json();
-
     // Basic validation
     if (
       !body.clientId ||
@@ -72,7 +82,6 @@ export const POST = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     // Check if team data already exists for this client
     const existingData = await OurTeam.findOne({ clientId: body.clientId });
     if (existingData) {
@@ -84,10 +93,8 @@ export const POST = async (req: NextRequest) => {
         { status: 409 }
       );
     }
-
     const newOurTeam = new OurTeam(body);
     const savedOurTeam = await newOurTeam.save();
-
     return NextResponse.json(
       {
         success: true,
@@ -102,7 +109,6 @@ export const POST = async (req: NextRequest) => {
     } else {
       console.error("Unexpected error:", error);
     }
-
     return NextResponse.json(
       {
         success: false,
@@ -112,13 +118,19 @@ export const POST = async (req: NextRequest) => {
     );
   }
 };
-
 export const DELETE = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-
   try {
     if (!id) {
       return NextResponse.json(
@@ -129,10 +141,8 @@ export const DELETE = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     await connect();
     const deletedData = await OurTeam.findByIdAndDelete(id);
-
     if (!deletedData) {
       return NextResponse.json(
         {
@@ -142,7 +152,6 @@ export const DELETE = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,
@@ -156,7 +165,6 @@ export const DELETE = async (req: NextRequest) => {
     } else {
       console.error("Unexpected error:", error);
     }
-
     return NextResponse.json(
       {
         success: false,
@@ -166,13 +174,19 @@ export const DELETE = async (req: NextRequest) => {
     );
   }
 };
-
 export const PUT = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-
   try {
     if (!id) {
       return NextResponse.json(
@@ -183,10 +197,8 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     await connect();
     const body = await req.json();
-
     // Basic validation
     if (Object.keys(body).length === 0) {
       return NextResponse.json(
@@ -197,12 +209,10 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     const updatedData = await OurTeam.findByIdAndUpdate(id, body, {
       new: true,
       runValidators: true, // Run schema validators on update
     });
-
     if (!updatedData) {
       return NextResponse.json(
         {
@@ -212,7 +222,6 @@ export const PUT = async (req: NextRequest) => {
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       {
         success: true,
@@ -227,7 +236,6 @@ export const PUT = async (req: NextRequest) => {
     } else {
       console.error("Unexpected error:", error);
     }
-
     return NextResponse.json(
       {
         success: false,

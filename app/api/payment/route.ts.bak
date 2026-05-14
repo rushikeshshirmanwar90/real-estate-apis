@@ -1,0 +1,98 @@
+import { NextRequest, NextResponse } from "next/server";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+import connect from "@/lib/db";
+
+export const GET = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "payment GET endpoint working",
+        data: { id }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("payment GET error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const POST = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "payment POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("payment POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const PUT = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "payment PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("payment PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const DELETE = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "payment DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("payment DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});

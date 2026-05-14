@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkLicense, withLicenseCheck } from "@/lib/middleware/licenseCheck";
+import { checkValidClient } from "@/lib/auth";
 
-// Example 1: Protected route using withLicenseCheck wrapper
-export const GET = withLicenseCheck(async (req: NextRequest) => {
-  // This handler only runs if the client has valid license access
+// Example 1: Protected route using checkValidClient for Bearer token authentication
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  // This handler only runs if valid Bearer token is provided
   
   return NextResponse.json({
     success: true,
@@ -13,10 +23,20 @@ export const GET = withLicenseCheck(async (req: NextRequest) => {
       message: "This is protected content"
     }
   });
-});
+};
 
-// Example 2: Route that manually checks license
+// Example 2: Simple protected route
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
@@ -28,31 +48,13 @@ export const POST = async (req: NextRequest) => {
       }, { status: 400 });
     }
 
-    // Manual license check
-    const licenseInfo = await checkLicense(clientId);
-    
-    if (!licenseInfo.hasAccess) {
-      // Handle expired license case - maybe return limited data or warning
-      return NextResponse.json({
-        success: true,
-        message: "Limited access due to expired license",
-        warning: licenseInfo.message,
-        license: licenseInfo.license,
-        data: {
-          // Limited data for expired users
-          basicInfo: "Some basic information"
-        }
-      });
-    }
-
-    // Full access for valid license
+    // Process request with Bearer token authentication
     return NextResponse.json({
       success: true,
-      message: "Full access granted",
-      license: licenseInfo.license,
+      message: "Access granted with Bearer token",
       data: {
-        // Full data for valid license users
-        fullData: "Complete information"
+        clientId,
+        message: "Complete information available"
       }
     });
   } catch (error) {

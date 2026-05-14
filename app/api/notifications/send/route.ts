@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 /**

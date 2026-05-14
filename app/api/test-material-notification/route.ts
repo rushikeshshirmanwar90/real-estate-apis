@@ -5,6 +5,7 @@ import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
+import { checkValidClient } from "@/lib/auth";
 
 // Type definitions for test results
 interface AdminData {

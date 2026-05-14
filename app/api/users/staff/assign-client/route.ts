@@ -1,10 +1,11 @@
 import connect from "@/lib/db";
 import { Staff } from "@/lib/models/users/Staff";
 import { Client } from "@/lib/models/super-admin/Client";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import { checkValidClient } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -22,6 +23,16 @@ const isValidObjectId = (id: string): boolean => {
  * }
  */
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const data = await req.json();
@@ -30,7 +41,6 @@ export const POST = async (req: NextRequest) => {
     if (!data.staffId) {
       return errorResponse("Staff ID is required", 400);
     }
-
     if (!data.clientIds || !Array.isArray(data.clientIds) || data.clientIds.length === 0) {
       return errorResponse("At least one client ID is required", 400);
     }
@@ -188,6 +198,16 @@ export const POST = async (req: NextRequest) => {
  * - clientIds: string (required, comma-separated list of client IDs)
  */
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const { searchParams } = new URL(req.url);

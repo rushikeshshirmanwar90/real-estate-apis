@@ -5,6 +5,7 @@ import { Customer } from "@/lib/models/users/Customer";
 import { Booking } from "@/lib/models/Shivai/Booking";
 import { Registry } from "@/lib/models/Shivai/Registry";
 import { PaymentSchedule } from "@/lib/models/Shivai/Payment";
+import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Property assignment interface
@@ -80,6 +81,13 @@ const successResponse = (
 
 // GET: Retrieve property assignments for a customer
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -141,6 +149,13 @@ export const GET = async (req: NextRequest) => {
 
 // POST: Assign property to customer
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 

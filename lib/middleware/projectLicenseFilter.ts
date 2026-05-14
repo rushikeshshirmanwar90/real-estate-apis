@@ -27,8 +27,9 @@ export async function checkClientLicense(clientId: string): Promise<{ hasAccess:
         // Check license status
         // -1 = Lifetime (always access)
         // 0 = Expired (no access)
-        // >0 = Active (has access)
-        const hasAccess = license === -1 || (license > 0 && isLicenseActive);
+        // >0 or -1 = Active (has access)
+        // Simple logic: if license is not 0, grant access
+        const hasAccess = license !== 0;
 
         return { hasAccess, license };
 

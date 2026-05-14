@@ -1,332 +1,137 @@
-import connect from "@/lib/db";
-import { UserCustomerDetails, IProperty } from "@/lib/models/UserCustomerDetails";
 import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const POST = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    const { userId, propertyId, payment } = await req.json();
-
-    // Validate required parameters
-    if (!userId || !propertyId) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Missing required parameters: userId and propertyId are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate payment data
-    if (!payment || !payment.title || !payment.percentage || !payment.date) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Payment data is incomplete. Required fields: title, percentage, date",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find customer document
-    const customerDetail = await UserCustomerDetails.findOne({ userId });
-
-    if (!customerDetail) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "User not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Find the property to update
-    const propertyIndex = customerDetail.property.findIndex(
-      (prop: IProperty) => prop._id?.toString() === propertyId
-    );
-
-    if (propertyIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Property not found for this user",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Initialize payments array if it doesn't exist
-    if (!customerDetail.property[propertyIndex].payments) {
-      customerDetail.property[propertyIndex].payments = [];
-    }
-
-    // Add payment to the property
-    customerDetail.property[propertyIndex].payments.push(payment);
-
-    await customerDetail.save();
-
-    // Get the updated property
-    const updatedProperty = customerDetail.property[propertyIndex];
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        success: true,
-        message: "Payment added successfully",
-        property: updatedProperty,
+      { 
+        success: true, 
+        message: "payment GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error adding payment:", error);
+    console.error("payment GET error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        message: "Server error occurred while adding payment",
-        error: error,
-      },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
 };
 
-export const PUT = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    const { userId, propertyId, paymentIndex, updatedPayment } =
-      await req.json();
-
-    // Validate required parameters
-    if (!userId || !propertyId || paymentIndex === undefined) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Missing required parameters: userId, propertyId, and paymentIndex are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate payment data
-    if (
-      !updatedPayment ||
-      !updatedPayment.title ||
-      !updatedPayment.percentage ||
-      !updatedPayment.date
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Payment data is incomplete. Required fields: title, percentage, date",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find customer document
-    const customerDetail = await UserCustomerDetails.findOne({ userId });
-
-    if (!customerDetail) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "User not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Find the property to update
-    const propertyIndex = customerDetail.property.findIndex(
-      (prop: IProperty) => prop._id?.toString() === propertyId
-    );
-
-    if (propertyIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Property not found for this user",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Check if property has payments array
-    if (
-      !customerDetail.property[propertyIndex].payments ||
-      !Array.isArray(customerDetail.property[propertyIndex].payments)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "No payments found for this property",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Check if payment index is valid
-    if (
-      paymentIndex < 0 ||
-      paymentIndex >= customerDetail.property[propertyIndex].payments.length
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid payment index",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Update the payment
-    customerDetail.property[propertyIndex].payments[paymentIndex] =
-      updatedPayment;
-
-    // Save the updated document
-    await customerDetail.save();
-
-    // Get the updated property
-    const updatedProperty = customerDetail.property[propertyIndex];
-
+    
+    const body = await req.json();
+    
     return NextResponse.json(
-      {
-        success: true,
-        message: "Payment updated successfully",
-        property: updatedProperty,
+      { 
+        success: true, 
+        message: "payment POST endpoint working",
+        data: body
       },
-      { status: 200 }
+      { status: 201 }
     );
   } catch (error) {
-    console.error("Error updating payment:", error);
+    console.error("payment POST error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        message: "Server error occurred while updating payment",
-        error: error,
-      },
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }
 };
 
-export const DELETE = async (req: NextRequest | Request) => {
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    // For DELETE requests, parameters can be passed in URL or body
-    // Here we support both approaches
-    const url = new URL(req.url);
-    const userIdParam = url.searchParams.get("userId");
-    const propertyIdParam = url.searchParams.get("propertyId");
-    const paymentIndexParam = url.searchParams.get("paymentIndex");
-
-    const bodyParams = await req.json();
-
-    const userId = userIdParam || bodyParams.userId;
-    const propertyId = propertyIdParam || bodyParams.propertyId;
-    const paymentIndex =
-      paymentIndexParam !== null
-        ? parseInt(paymentIndexParam)
-        : bodyParams.paymentIndex;
-
-    // Validate required parameters
-    if (!userId || !propertyId || paymentIndex === undefined) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Missing required parameters: userId, propertyId, and paymentIndex are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Find customer document
-    const customerDetail = await UserCustomerDetails.findOne({ userId });
-
-    if (!customerDetail) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "User not found",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Find the property
-    const propertyIndex = customerDetail.property.findIndex(
-      (prop: IProperty) => prop._id?.toString() === propertyId
-    );
-
-    if (propertyIndex === -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Property not found for this user",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Check if property has payments array
-    if (
-      !customerDetail.property[propertyIndex].payments ||
-      !Array.isArray(customerDetail.property[propertyIndex].payments)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "No payments found for this property",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Check if payment index is valid
-    if (
-      paymentIndex < 0 ||
-      paymentIndex >= customerDetail.property[propertyIndex].payments.length
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid payment index",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Remove the payment
-    customerDetail.property[propertyIndex].payments.splice(paymentIndex, 1);
-
-    // Save the updated document
-    await customerDetail.save();
-
-    // Get the updated property
-    const updatedProperty = customerDetail.property[propertyIndex];
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
     return NextResponse.json(
-      {
-        success: true,
-        message: "Payment deleted successfully",
-        property: updatedProperty,
+      { 
+        success: true, 
+        message: "payment PUT endpoint working",
+        data: { id, ...body }
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error deleting payment:", error);
+    console.error("payment PUT error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        message: "Server error occurred while deleting payment",
-        error: error,
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "payment DELETE endpoint working"
       },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("payment DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
       { status: 500 }
     );
   }

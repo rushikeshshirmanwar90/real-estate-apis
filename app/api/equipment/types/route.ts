@@ -1,5 +1,6 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/utils/api-response";
+import { checkValidClient } from "@/lib/auth";
 
 // All equipment types in a flat list (like labor types)
 const equipmentTypes = [
@@ -453,6 +454,16 @@ const equipmentTypes = [
 
 // GET - Retrieve all equipment types in a flat list
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search");

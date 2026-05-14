@@ -1,78 +1,138 @@
-import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { MaterialActivity as ImportedMaterials } from "@/lib/models/Xsite/materials-activity";
-import { MiniSection as Section } from "@/lib/models/Xsite/mini-section";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
 
-export const POST = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
   try {
     await connect();
-
-    const { isApproved, id } = await req.json();
-
-    if (!id) {
-      return errorResponse("id is required", 400);
-    }
-
-    // Fetch the existing request to validate state
-    const existing = await ImportedMaterials.findById(id);
-    if (!existing) {
-      return errorResponse("Material request not found", 404);
-    }
-
-    if (isApproved) {
-      // Prevent double-approving
-      if (existing.status === "approved" || existing.status === "imported") {
-        return errorResponse("Request already approved or imported", 409);
-      }
-
-      // Find the section to push materials into
-      const section = await Section.findById(existing.sectionId);
-      if (!section) {
-        return errorResponse("Section not found to add materials", 404);
-      }
-
-      // After materials successfully pushed, mark the request as approved
-      const updated = await ImportedMaterials.findByIdAndUpdate(
-        id,
-        { status: "approved" },
-        { new: true }
-      );
-
-      if (!updated) {
-        return errorResponse(
-          "unable to approve the request please try again",
-          500
-        );
-      }
-
-      return successResponse(
-        { request: updated },
-        "request approved and materials added to section",
-        200
-      );
-    }
-
-    // If not approved, mark as rejected
-    const rejected = await ImportedMaterials.findByIdAndUpdate(
-      id,
-      { status: "rejected" },
-      { new: true }
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "sanction GET endpoint working",
+        data: { id }
+      },
+      { status: 200 }
     );
+  } catch (error) {
+    console.error("sanction GET error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
-    if (!rejected) {
-      return errorResponse(
-        "unable to reject the request please try again",
-        500
-      );
-    }
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "sanction POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("sanction POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
-    return successResponse(rejected, "request rejected successfully", 200);
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      return errorResponse("something went wrong", 500, error.message);
-    }
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "sanction PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("sanction PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
-    return errorResponse("something went wrong", 500);
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "sanction DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("sanction DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
   }
 };

@@ -15,14 +15,17 @@ interface ActivityLogData {
   miniSectionName?: string;
   activityType: 
     | "project_created" | "project_updated" | "project_deleted"
+    | "project_completed" | "project_reopened"
     | "section_created" | "section_updated" | "section_deleted"
     | "section_completed" | "section_reopened"
     | "mini_section_created" | "mini_section_updated" | "mini_section_deleted"
     | "mini_section_completed" | "mini_section_reopened"
     | "staff_assigned" | "staff_removed" | "staff_added"
+    | "labor_added" | "labor_updated" | "labor_removed"
+    | "equipment_added" | "equipment_updated" | "equipment_removed"
     | "other";
-  category: "project" | "section" | "mini_section" | "material" | "staff" | "other";
-  action: "create" | "update" | "delete" | "assign" | "remove" | "import" | "use" | "complete" | "reopen";
+  category: "project" | "section" | "mini_section" | "material" | "staff" | "labor" | "equipment" | "completion" | "other";
+  action: "add" | "create" | "update" | "delete" | "assign" | "remove" | "import" | "use" | "complete" | "reopen";
   description: string;
   message?: string;
   changedData?: Array<{

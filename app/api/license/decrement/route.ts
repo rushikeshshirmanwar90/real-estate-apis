@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import connectDB  from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
+import { checkValidClient } from "@/lib/auth";
 
 // Helper functions
 const errorResponse = (message: string, status: number, error?: unknown) => {
@@ -24,6 +25,16 @@ const successResponse = (
 
 // POST - Decrement all client licenses by 1 day (for daily cron job)
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
 
@@ -105,6 +116,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET - Get license decrement status and next run info
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
 

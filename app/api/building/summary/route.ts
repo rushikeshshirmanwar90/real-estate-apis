@@ -4,9 +4,17 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 
 // GET: Get building summary and statistics
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -266,6 +274,13 @@ function calculateBuildingSummary(building: any) {
 
 // POST: Generate detailed report
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const body = await req.json();

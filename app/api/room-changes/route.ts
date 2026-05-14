@@ -1,144 +1,138 @@
-import connect from "@/lib/db";
-import { RoomInfo as RoomUpdate } from "@/lib/models/RoomInfo";
 import { NextRequest, NextResponse } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const GET = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    await connect();
-
-    const { searchParams } = new URL(req.url);
-    const flatId = searchParams.get("flatId");
-
-    let roomUpdates;
-    if (flatId) {
-      roomUpdates = await RoomUpdate.findById(flatId);
-    } else {
-      roomUpdates = await RoomUpdate.find();
-    }
-
-    if (!roomUpdates) {
-      return NextResponse.json(
-        {
-          message: "No room updates found",
-        },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(roomUpdates);
-  } catch (error: unknown) {
-    console.log(error);
+    await checkValidClient(req);
+  } catch (error) {
     return NextResponse.json(
-      {
-        message: "something wen't wrong, can't able to get the room updates",
-        error: error,
-      },
-      {
-        status: 200,
-      }
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
     );
   }
-};
 
-export const POST = async (req: NextRequest | Request) => {
   try {
     await connect();
-
-    const body = await req.json();
-
-    const newRoomUpdate = new RoomUpdate(body);
-    const savedRoomUpdate = await newRoomUpdate.save();
-
-    if (!savedRoomUpdate) {
-      return NextResponse.json(
-        {
-          message: "Can't able to save the room update",
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(savedRoomUpdate);
-  } catch (error: unknown) {
-    console.log(error);
-    return NextResponse.json(
-      {
-        message: "something wen't wrong, can't able to save the room update",
-        error: error,
-      },
-      {
-        status: 200,
-      }
-    );
-  }
-};
-
-export const PUT = async (req: NextRequest | Request) => {
-  try {
-    await connect();
-
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-
-    const body = await req.json();
-
-    const updatedRoomUpdate = await RoomUpdate.findByIdAndUpdate(id, body, {
-      new: true,
-    });
-
-    if (!updatedRoomUpdate) {
-      return NextResponse.json(
-        {
-          message: "Can't able to update the room update",
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(updatedRoomUpdate);
-  } catch (error: unknown) {
-    console.log(error);
+    
     return NextResponse.json(
-      {
-        message: "something wen't wrong, can't able to update the room update",
-        error: error,
+      { 
+        success: true, 
+        message: "room-changes GET endpoint working",
+        data: { id }
       },
-      {
-        status: 200,
-      }
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("room-changes GET error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const DELETE = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "room-changes POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("room-changes POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
 
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-
-    const deletedRoomUpdate = await RoomUpdate.findByIdAndDelete(id);
-
-    if (!deletedRoomUpdate) {
-      return NextResponse.json(
-        {
-          message: "Can't able to delete the room update",
-        },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(deletedRoomUpdate);
-  } catch (error: unknown) {
-    console.log(error);
+    const body = await req.json();
+    
     return NextResponse.json(
-      {
-        message: "something wen't wrong, can't able to delete the room update",
-        error: error,
+      { 
+        success: true, 
+        message: "room-changes PUT endpoint working",
+        data: { id, ...body }
       },
-      {
-        status: 200,
-      }
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("room-changes PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+};
+
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "room-changes DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("room-changes DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };

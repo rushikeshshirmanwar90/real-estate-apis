@@ -1,10 +1,21 @@
 import connect from "@/lib/db";
 import { PushNotificationService } from "@/lib/services/pushNotificationService";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { NextRequest } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 
 // GET: Get push notification statistics
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 
@@ -29,6 +40,16 @@ export const GET = async (req: NextRequest) => {
 
 // POST: Cleanup invalid tokens
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 

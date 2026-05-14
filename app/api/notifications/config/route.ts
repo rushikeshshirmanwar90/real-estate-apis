@@ -1,5 +1,6 @@
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { NextRequest } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * GET /api/notifications/config
@@ -7,6 +8,16 @@ import { NextRequest } from "next/server";
  * Get notification service configuration and health status
  */
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     console.log('⚙️ Getting notification service configuration...');
 

@@ -6,9 +6,17 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { checkValidClient } from "@/lib/auth";
 
 // POST: Bulk operations for floors and units
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const body = await req.json();

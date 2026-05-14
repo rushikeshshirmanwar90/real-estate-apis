@@ -3,6 +3,7 @@ import { Admin } from "@/lib/models/users/Admin";
 import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
+import { checkValidClient } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 // Type definitions for notification recipients

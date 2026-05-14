@@ -2,36 +2,40 @@ import { AboutUs } from "@/lib/models/homepage/AboutUs";
 import { NextRequest, NextResponse } from "next/server";
 import connectToDatabase from "@/lib/db";
 import { checkValidClient } from "@/lib/auth";
-
 /**
  * GET request handler to fetch about us section by clientId
  */
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Connect to database
     await connectToDatabase();
-
     // Get clientId from query parameters
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     if (!clientId) {
       return NextResponse.json(
         { message: "Client ID is required" },
         { status: 400 }
       );
     }
-
     // Find about us section by clientId
     const aboutUs = await AboutUs.findOne({ clientId });
-
     if (!aboutUs) {
       return NextResponse.json(
         { message: "About us section not found" },
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       { message: "About us section fetched successfully", data: aboutUs },
       { status: 200 }
@@ -50,21 +54,26 @@ export const GET = async (req: NextRequest) => {
     );
   }
 };
-
 /**
  * POST request handler to create a new about us section
  */
 export const POST = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   try {
     // Connect to database
     await connectToDatabase();
-
     // Parse request body
     const body = await req.json();
     const { clientId, subTitle, description, image, points } = body;
-
     // Validate required fields
     if (
       !clientId ||
@@ -82,7 +91,6 @@ export const POST = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     // Validate each point item
     for (const point of points) {
       const { title, description } = point;
@@ -93,7 +101,6 @@ export const POST = async (req: NextRequest) => {
         );
       }
     }
-
     // Check if about us section already exists for this client
     const existingAboutUs = await AboutUs.findOne({ clientId });
     if (existingAboutUs) {
@@ -102,7 +109,6 @@ export const POST = async (req: NextRequest) => {
         { status: 409 }
       );
     }
-
     // Create new about us section
     const newAboutUs = new AboutUs({
       clientId,
@@ -111,10 +117,8 @@ export const POST = async (req: NextRequest) => {
       image,
       points,
     });
-
     // Save to database
     await newAboutUs.save();
-
     return NextResponse.json(
       { message: "About us section created successfully", data: newAboutUs },
       { status: 201 }
@@ -130,20 +134,26 @@ export const POST = async (req: NextRequest) => {
     );
   }
 };
-
 /**
  * PUT request handler to update an existing about us section
  */
 export const PUT = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Connect to database
     await connectToDatabase();
-
     // Parse request body
     const body = await req.json();
     const { clientId, subTitle, description, image, points } = body;
-
     // Validate required fields
     if (
       !clientId ||
@@ -161,7 +171,6 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
-
     // Validate each point item
     for (const point of points) {
       const { title, description } = point;
@@ -172,14 +181,12 @@ export const PUT = async (req: NextRequest) => {
         );
       }
     }
-
     // Find and update about us section
     const updatedAboutUs = await AboutUs.findOneAndUpdate(
       { clientId },
       { subTitle, description, image, points },
       { new: true, runValidators: true }
     );
-
     if (!updatedAboutUs) {
       // If not found, create a new one
       const newAboutUs = new AboutUs({
@@ -189,15 +196,12 @@ export const PUT = async (req: NextRequest) => {
         image,
         points,
       });
-
       await newAboutUs.save();
-
       return NextResponse.json(
         { message: "About us section created successfully", data: newAboutUs },
         { status: 201 }
       );
     }
-
     return NextResponse.json(
       {
         message: "About us section updated successfully",
@@ -216,37 +220,40 @@ export const PUT = async (req: NextRequest) => {
     );
   }
 };
-
 /**
  * DELETE request handler to delete an about us section
  */
 export const DELETE = async (req: NextRequest) => {
-  await checkValidClient(req);
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     // Connect to database
     await connectToDatabase();
-
     // Get clientId from query parameters
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     if (!clientId) {
       return NextResponse.json(
         { message: "Client ID is required" },
         { status: 400 }
       );
     }
-
     // Delete the about us section
     const result = await AboutUs.deleteOne({ clientId });
-
     if (result.deletedCount === 0) {
       return NextResponse.json(
         { message: "About us section not found" },
         { status: 404 }
       );
     }
-
     return NextResponse.json(
       { message: "About us section deleted successfully" },
       { status: 200 }

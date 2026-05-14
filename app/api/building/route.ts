@@ -7,6 +7,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { checkValidClient } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -16,6 +17,13 @@ import {
 } from "@/lib/utils/redis-helpers";
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -127,6 +135,13 @@ export const GET = async (req: NextRequest) => {
 };
 
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 
@@ -136,7 +151,6 @@ export const POST = async (req: NextRequest) => {
     if (!body.projectId) {
       return errorResponse("Project ID is required", 400);
     }
-
     if (!isValidObjectId(body.projectId)) {
       return errorResponse("Invalid project ID format", 400);
     }
@@ -243,6 +257,13 @@ export const POST = async (req: NextRequest) => {
 };
 
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 
@@ -303,6 +324,13 @@ export const DELETE = async (req: NextRequest) => {
 };
 
 export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -380,6 +408,13 @@ export const PUT = async (req: NextRequest) => {
 };
 
 export const PATCH = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const body = await req.json();

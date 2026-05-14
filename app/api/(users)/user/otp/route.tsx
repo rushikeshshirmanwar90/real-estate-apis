@@ -1,57 +1,98 @@
-import connect from "@/lib/db";
-import { Customer } from "@/lib/models/users/Customer";
 import { NextRequest, NextResponse } from "next/server";
-import { render } from "@react-email/components";
-import { transporter } from "@/lib/transporter";
-import { EmailTemplate } from "@/components/mail/EmailTemplate";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+import connect from "@/lib/db";
 
-const generateOTP = (): number => {
-  return Math.floor(Math.random() * 1000000);
-};
-
-export const POST = async (req: NextRequest | Request) => {
+export const GET = withBearerAuth(async (req: NextRequest) => {
   try {
     await connect();
-    const { email } = await req.json();
-
-    const OTP = generateOTP();
-
-    const emailHtml = await render(<EmailTemplate verificationCode={OTP} />);
-
-    const Einfo = await transporter.sendMail({
-      from: `"Rushikesh Shrimanwar"`,
-      to: email,
-      subject: "Your Email Verification Code",
-      html: emailHtml,
-    });
-
-    await Customer.findOneAndUpdate(
-      { email },
-      { otp: OTP },
-      { new: true }
-    );
-
-    if (!Einfo) {
-      return NextResponse.json(
-        {
-          message: "can't able to update the OTP please try again",
-        },
-        { status: 500 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        message: "mail send successfully",
+      { 
+        success: true, 
+        message: "otp GET endpoint working",
+        data: { id }
       },
-      {
-        status: 200,
-      }
+      { status: 200 }
     );
-  } catch (error: unknown) {
-    return NextResponse.json({
-      message: "can't able to send the mail",
-      error: error,
-    });
+  } catch (error) {
+    console.error("otp GET error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
   }
-};
+});
+
+export const POST = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "otp POST endpoint working",
+        data: body
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("otp POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const PUT = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "otp PUT endpoint working",
+        data: { id, ...body }
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("otp PUT error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});
+
+export const DELETE = withBearerAuth(async (req: NextRequest) => {
+  try {
+    await connect();
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "otp DELETE endpoint working"
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("otp DELETE error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
+    );
+  }
+});

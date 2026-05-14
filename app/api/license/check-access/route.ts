@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import  connectDB  from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Admin } from "@/lib/models/users/Admin";
+import { checkValidClient } from "@/lib/auth";
 
 // Helper functions
 const isValidObjectId = (id: string): boolean => {
@@ -29,6 +30,16 @@ const successResponse = (
 
 // POST - Check if admin has access based on client license
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
 
@@ -77,7 +88,7 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Check license status
-    const hasAccess = client.license === -1 || (client.license > 0 && client.isLicenseActive);
+    const hasAccess = client.license !== 0;
     
     let accessStatus: string;
     let accessMessage: string;
@@ -85,7 +96,7 @@ export const POST = async (req: NextRequest) => {
     if (client.license === -1) {
       accessStatus = 'lifetime';
       accessMessage = 'Lifetime access granted';
-    } else if (client.license > 0 && client.isLicenseActive) {
+    } else if (client.license > 0) {
       accessStatus = client.license <= 7 ? 'expiring_soon' : 'active';
       accessMessage = client.license <= 7 
         ? `Access granted but expires in ${client.license} days` 
@@ -122,6 +133,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET - Check access for admin by query params
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
 
@@ -172,7 +193,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Check license status
-    const hasAccess = client.license === -1 || (client.license > 0 && client.isLicenseActive);
+    const hasAccess = client.license !== 0;
     
     let accessStatus: string;
     let accessMessage: string;
@@ -180,7 +201,7 @@ export const GET = async (req: NextRequest) => {
     if (client.license === -1) {
       accessStatus = 'lifetime';
       accessMessage = 'Lifetime access granted';
-    } else if (client.license > 0 && client.isLicenseActive) {
+    } else if (client.license > 0) {
       accessStatus = client.license <= 7 ? 'expiring_soon' : 'active';
       accessMessage = client.license <= 7 
         ? `Access granted but expires in ${client.license} days` 

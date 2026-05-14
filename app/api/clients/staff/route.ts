@@ -4,6 +4,7 @@ import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
+import { checkValidClient } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -19,6 +20,13 @@ import {
  * - clientId: string (required) - The client ID to fetch staff for
  */
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);

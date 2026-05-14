@@ -1,11 +1,22 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { NotificationMetrics, NotificationQueue } from "@/lib/middleware/notificationMiddleware";
 import { PushNotificationService } from "@/lib/services/pushNotificationService";
 import connect from "@/lib/db";
+import { checkValidClient } from "@/lib/auth";
 
 // GET: Get notification metrics and system status
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     
@@ -91,6 +102,16 @@ export const GET = async (req: NextRequest) => {
 
 // POST: Reset metrics or perform maintenance operations
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { action } = await req.json();
     

@@ -8,8 +8,16 @@ import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { requireValidClient } from "@/lib/utils/client-validation";
+import { checkValidClient } from "@/lib/auth";
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");

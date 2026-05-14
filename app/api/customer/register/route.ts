@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
+import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 import bcrypt from "bcrypt";
 
@@ -26,8 +27,6 @@ interface CustomerResponse {
   isRegistered: boolean;
   createdAt: string;
 }
-
-
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -75,6 +74,13 @@ const generateQRCodeData = (customerId: string, mobileNumber: string): string =>
 
 // GET: Retrieve customer by customerId or mobile number
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -138,6 +144,13 @@ export const GET = async (req: NextRequest) => {
 
 // POST: Register new customer
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 

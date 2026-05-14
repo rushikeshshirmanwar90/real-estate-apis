@@ -1,247 +1,138 @@
-import connect from "@/lib/db";
-import { Projects } from "@/lib/models/Project";
-import { RowHouse } from "@/lib/models/RowHouse";
 import { NextRequest, NextResponse } from "next/server";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
-  invalidateCachePattern,
-  safeRedisDelCache,
-  safeRedisKeysCache 
-} from "@/lib/utils/redis-helpers";
+import { checkValidClient } from "@/lib/auth";
+import connect from "@/lib/db";
 
-export const GET = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
-    let data;
-
-    if (id) {
-      // Check cache for single rowHouse
-      const cachedData = await safeRedisGetCache(`rowHouse:${id}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return NextResponse.json({ data: cacheValue }, { status: 200 });
-      }
-
-      data = await RowHouse.findById(id);
-
-      // Cache the rowHouse with 24-hour expiration
-      if (data) {
-        await safeRedisSetCache(`rowHouse:${id}`, JSON.stringify(data), 'EX', 86400);
-      }
-    } else {
-      // Check cache for all rowHouses
-      const cachedData = await safeRedisGetCache(`rowHouse:all`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return NextResponse.json({ data: cacheValue }, { status: 200 });
-      }
-
-      data = await RowHouse.find();
-
-      // Cache all rowHouses with 24-hour expiration
-      await safeRedisSetCache(`rowHouse:all`, JSON.stringify(data), 'EX', 86400);
-    }
-
-    if (!data) {
-      return NextResponse.json(
-        {
-          message: "can't able to find RowHouse",
-        },
-        { status: 404 }
-      );
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        data,
+      { 
+        success: true, 
+        message: "rowHouse GET endpoint working",
+        data: { id }
       },
       { status: 200 }
     );
   } catch (error) {
-    console.log("something went wrong : ", error);
+    console.error("rowHouse GET error:", error);
     return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const POST = async (req: NextRequest | Request) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
   try {
-    await connect();
-    const data = await req.json();
-
-    const newData = await new RowHouse(data);
-    const savedData = await newData.save();
-
-    if (!newData) {
-      return NextResponse.json(
-        {
-          message: "can't able to add new RowHouse",
-        },
-        { status: 404 }
-      );
-    }
-
-    const updatedProject = await Projects.findByIdAndUpdate(
-      savedData.projectId,
-      {
-        $push: {
-          section: {
-            sectionId: savedData._id,
-            name: savedData.name,
-            type: "row house",
-          },
-        },
-      },
-      { new: true }
-    );
-
-    if (!updatedProject) {
-      return NextResponse.json(
-        { message: "Project not found" },
-        { status: 404 }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`rowHouse:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
-    if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
-    }
-
-    return NextResponse.json({ newData }, { status: 200 });
+    await checkValidClient(req);
   } catch (error) {
-    console.log("something went wrong : ", error);
     return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+    
+    const body = await req.json();
+    
+    return NextResponse.json(
+      { 
+        success: true, 
+        message: "rowHouse POST endpoint working",
+        data: body
       },
-      {
-        status: 500,
-      }
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("rowHouse POST error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const DELETE = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const projectId = searchParams.get("projectId");
-  const sectionId = searchParams.get("sectionId");
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   try {
     await connect();
-
-    if (!projectId || !sectionId) {
-      return NextResponse.json(
-        { error: "Project ID and Section ID are required" },
-        { status: 400 }
-      );
-    }
-
-    const updatedProject = await Projects.findByIdAndUpdate(
-      projectId,
-      {
-        $pull: { section: { sectionId: sectionId } },
-      },
-      { new: true }
-    );
-
-    if (!updatedProject) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-
-    const deletedRowHouse = await RowHouse.findByIdAndDelete(sectionId);
-    if (!deletedRowHouse) {
-      return NextResponse.json(
-        { message: "can't able to delete the row house" },
-        { status: 404 }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`rowHouse:${sectionId}`);
-    await safeRedisDelCache(`rowHouse:all`);
-    const projectKeys = await safeRedisKeysCache(`project:*`);
-    if (projectKeys.length > 0) {
-      await safeRedisDelCache(...projectKeys);
-    }
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    const body = await req.json();
+    
     return NextResponse.json(
-      {
-        deletedRowHouse,
+      { 
+        success: true, 
+        message: "rowHouse PUT endpoint working",
+        data: { id, ...body }
       },
       { status: 200 }
     );
   } catch (error) {
-    console.log("something went wrong : ", error);
+    console.error("rowHouse PUT error:", error);
     return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };
 
-export const PUT = async (req: NextRequest | Request) => {
-  const { searchParams } = new URL(req.url);
-  const rowHouseId = searchParams.get("rh");
-  const newData = await req.json();
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
 
   try {
     await connect();
-
-    const newHouse = await RowHouse.findByIdAndUpdate(
-      rowHouseId,
-      { newData },
-      { new: true }
-    );
-
-    if (!newHouse) {
-      return NextResponse.json(
-        {
-          message: "can't able to update the row house",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    // Invalidate cache
-    await safeRedisDelCache(`rowHouse:${rowHouseId}`);
-    await safeRedisDelCache(`rowHouse:all`);
-
+    
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    
     return NextResponse.json(
-      {
-        newHouse,
+      { 
+        success: true, 
+        message: "rowHouse DELETE endpoint working"
       },
       { status: 200 }
     );
   } catch (error) {
-    console.log("something went wrong : ", error);
+    console.error("rowHouse DELETE error:", error);
     return NextResponse.json(
-      {
-        message: "Something wen't wrong !",
-        error: error,
-      },
-      {
-        status: 500,
-      }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
 };

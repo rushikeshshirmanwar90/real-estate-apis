@@ -6,9 +6,17 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import { checkValidClient } from "@/lib/auth";
 
 // GET: Fetch floors for a building
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -65,6 +73,13 @@ export const GET = async (req: NextRequest) => {
 
 // POST: Add a new floor to a building
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const body = await req.json();
@@ -73,7 +88,6 @@ export const POST = async (req: NextRequest) => {
     if (!body.buildingId) {
       return errorResponse("Building ID is required", 400);
     }
-
     if (!isValidObjectId(body.buildingId)) {
       return errorResponse("Invalid building ID format", 400);
     }
@@ -222,6 +236,13 @@ export const POST = async (req: NextRequest) => {
 
 // PUT: Update a floor
 export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);
@@ -322,6 +343,13 @@ export const PUT = async (req: NextRequest) => {
 
 // DELETE: Remove a floor from a building
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);

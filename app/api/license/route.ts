@@ -2,12 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import connectDB  from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Admin } from "@/lib/models/users/Admin";
-
+import { checkValidClient } from "@/lib/auth";
 // Helper functions
 const isValidObjectId = (id: string): boolean => {
   return /^[0-9a-fA-F]{24}$/.test(id);
 };
-
 const errorResponse = (message: string, status: number, error?: unknown) => {
   console.error(`Error: ${message}`, error);
   return NextResponse.json(
@@ -15,7 +14,6 @@ const errorResponse = (message: string, status: number, error?: unknown) => {
     { status }
   );
 };
-
 const successResponse = (
   data: any,
   message: string = "Success",
@@ -26,7 +24,6 @@ const successResponse = (
     { status }
   );
 };
-
 // Convert months/years to days
 const convertToDays = (value: number, unit: 'days' | 'months' | 'years' | 'lifetime'): number => {
   switch (unit) {
@@ -42,29 +39,32 @@ const convertToDays = (value: number, unit: 'days' | 'months' | 'years' | 'lifet
       return value;
   }
 };
-
 // GET - Get license information for a client
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
-
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
-
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
-
     const client = await Client.findById(clientId).select('license isLicenseActive name email');
-
     if (!client) {
       return errorResponse("Client not found", 404);
     }
-
     return successResponse({
       clientId: client._id,
       clientName: client.name,
@@ -75,49 +75,48 @@ export const GET = async (req: NextRequest) => {
                    client.license === 0 ? 'expired' : 
                    client.license <= 7 ? 'expiring_soon' : 'active'
     }, "License information retrieved successfully");
-
   } catch (error) {
     return errorResponse("Failed to retrieve license information", 500, error);
   }
 };
-
 // POST - Update license for a client
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
-
     const body = await req.json();
     const { clientId, licenseValue, licenseUnit } = body;
-
     // Validation
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
-
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
-
     if (licenseValue === undefined || licenseValue === null) {
       return errorResponse("License value is required", 400);
     }
-
     if (!licenseUnit || !['days', 'months', 'years', 'lifetime'].includes(licenseUnit)) {
       return errorResponse("Valid license unit is required (days, months, years, lifetime)", 400);
     }
-
     // Find the client
     const client = await Client.findById(clientId);
     if (!client) {
       return errorResponse("Client not found", 404);
     }
-
     // Convert to days
     const daysToAdd = convertToDays(licenseValue, licenseUnit);
-    
     let newLicenseValue: number;
     let licenseExpiryDate: Date | undefined;
-
     if (licenseUnit === 'lifetime') {
       newLicenseValue = -1; // Lifetime access
       licenseExpiryDate = undefined;
@@ -128,12 +127,10 @@ export const POST = async (req: NextRequest) => {
       } else {
         newLicenseValue = daysToAdd;
       }
-      
       // Calculate expiry date
       licenseExpiryDate = new Date();
       licenseExpiryDate.setDate(licenseExpiryDate.getDate() + newLicenseValue);
     }
-
     // Update client license
     const updatedClient = await Client.findByIdAndUpdate(
       clientId,
@@ -144,7 +141,6 @@ export const POST = async (req: NextRequest) => {
       },
       { new: true }
     ).select('license isLicenseActive licenseExpiryDate name email');
-
     return successResponse({
       clientId: updatedClient._id,
       clientName: updatedClient.name,
@@ -158,48 +154,47 @@ export const POST = async (req: NextRequest) => {
       addedDays: daysToAdd,
       unit: licenseUnit
     }, `License updated successfully. Added ${licenseValue} ${licenseUnit} (${daysToAdd === -1 ? 'lifetime' : daysToAdd + ' days'})`);
-
   } catch (error) {
     return errorResponse("Failed to update license", 500, error);
   }
 };
-
 // PUT - Set specific license value (replace current license)
 export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
-
     const body = await req.json();
     const { clientId, licenseValue, licenseUnit } = body;
-
     // Validation
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
-
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
-
     if (licenseValue === undefined || licenseValue === null) {
       return errorResponse("License value is required", 400);
     }
-
     if (!licenseUnit || !['days', 'months', 'years', 'lifetime'].includes(licenseUnit)) {
       return errorResponse("Valid license unit is required (days, months, years, lifetime)", 400);
     }
-
     // Find the client
     const client = await Client.findById(clientId);
     if (!client) {
       return errorResponse("Client not found", 404);
     }
-
     // Convert to days
     const newLicenseValue = convertToDays(licenseValue, licenseUnit);
-    
     let licenseExpiryDate: Date | undefined;
-
     if (licenseUnit === 'lifetime') {
       licenseExpiryDate = undefined;
     } else {
@@ -207,7 +202,6 @@ export const PUT = async (req: NextRequest) => {
       licenseExpiryDate = new Date();
       licenseExpiryDate.setDate(licenseExpiryDate.getDate() + newLicenseValue);
     }
-
     // Update client license (replace current value)
     const updatedClient = await Client.findByIdAndUpdate(
       clientId,
@@ -218,7 +212,6 @@ export const PUT = async (req: NextRequest) => {
       },
       { new: true }
     ).select('license isLicenseActive licenseExpiryDate name email');
-
     return successResponse({
       clientId: updatedClient._id,
       clientName: updatedClient.name,
@@ -232,34 +225,37 @@ export const PUT = async (req: NextRequest) => {
       setDays: newLicenseValue,
       unit: licenseUnit
     }, `License set successfully. Set to ${licenseValue} ${licenseUnit} (${newLicenseValue === -1 ? 'lifetime' : newLicenseValue + ' days'})`);
-
   } catch (error) {
     return errorResponse("Failed to set license", 500, error);
   }
 };
-
 // DELETE - Revoke license (set to 0)
 export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connectDB();
-
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");
-
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
-
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
-
     // Find the client
     const client = await Client.findById(clientId);
     if (!client) {
       return errorResponse("Client not found", 404);
     }
-
     // Revoke license
     const updatedClient = await Client.findByIdAndUpdate(
       clientId,
@@ -270,7 +266,6 @@ export const DELETE = async (req: NextRequest) => {
       },
       { new: true }
     ).select('license isLicenseActive licenseExpiryDate name email');
-
     return successResponse({
       clientId: updatedClient._id,
       clientName: updatedClient.name,
@@ -280,7 +275,6 @@ export const DELETE = async (req: NextRequest) => {
       licenseExpiryDate: updatedClient.licenseExpiryDate,
       licenseStatus: 'expired'
     }, "License revoked successfully");
-
   } catch (error) {
     return errorResponse("Failed to revoke license", 500, error);
   }

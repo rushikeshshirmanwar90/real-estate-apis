@@ -7,14 +7,23 @@ const REDIS_ENABLED = process.env.REDIS_ENABLED === 'true';
 let client: Redis | null = null;
 
 if (REDIS_ENABLED) {
+  const redisHost = process.env.REDIS_HOST || 'localhost';
+  const redisPort = parseInt(process.env.REDIS_PORT || '6379');
+  
+  console.log(`🔧 Redis configuration: host=${redisHost}, port=${redisPort}`);
+  
   client = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
+    host: redisHost,
+    port: redisPort,
     password: process.env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null,
+    maxRetriesPerRequest: 3,
     enableReadyCheck: true,
-    enableOfflineQueue: true,
+    enableOfflineQueue: false,
     retryStrategy(times) {
+      if (times > 5) {
+        console.error(`❌ Redis max retries (5) exceeded`);
+        return null;
+      }
       const delay = Math.min(times * 50, 2000);
       return delay;
     },
@@ -27,7 +36,9 @@ if (REDIS_ENABLED) {
     },
     keepAlive: 30000,
     connectTimeout: 10000,
-    lazyConnect: false,
+    commandTimeout: 5000,
+    lazyConnect: true,
+    family: 4,
   });
 
   // Handle connection events
@@ -50,6 +61,16 @@ if (REDIS_ENABLED) {
   client.on('reconnecting', () => {
     console.log('🔄 Redis reconnecting...');
   });
+
+  client.on('end', () => {
+    console.warn('⚠️ Redis connection ended');
+  });
+
+  // Try to connect with error handling
+  client.connect().catch((err) => {
+    console.error('❌ Failed to connect to Redis:', err.message);
+    console.warn('⚠️ Continuing without Redis cache');
+  });
 } else {
   console.log('ℹ️ Redis is DISABLED (set REDIS_ENABLED=true to enable)');
 }
@@ -61,7 +82,6 @@ export async function safeRedisOperation<T>(
   operation: () => Promise<T>,
   fallback: T
 ): Promise<T> {
-  // If Redis is disabled, return fallback immediately
   if (!REDIS_ENABLED || !client) {
     return fallback;
   }
@@ -70,7 +90,6 @@ export async function safeRedisOperation<T>(
     if (client.status === 'ready' || client.status === 'connect') {
       return await operation();
     }
-    console.warn('⚠️ Redis not ready, using fallback');
     return fallback;
   } catch (error) {
     console.error('❌ Redis operation failed:', error);

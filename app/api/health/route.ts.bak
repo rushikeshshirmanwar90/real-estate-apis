@@ -1,0 +1,21 @@
+import { NextRequest } from "next/server";
+import { successResponse } from "@/lib/utils/api-response";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+
+/**
+ * GET /api/health
+ * 
+ * Simple health check endpoint to verify the server is running
+ * Protected with Bearer token authentication
+ */
+export const GET = withBearerAuth(async (request: NextRequest) => {
+  return successResponse(
+    {
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      server: "Real Estate APIs",
+      version: "1.0.0"
+    },
+    "Server is healthy and running"
+  );
+});

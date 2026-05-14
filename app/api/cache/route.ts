@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import redis, { safeRedisGet, safeRedisSet, safeRedisDel } from "@/lib/services/redis";
+import { checkValidClient } from "@/lib/auth";
 
 // GET - Retrieve cached data
 export async function GET(request: NextRequest) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { Booking } from "@/lib/models/Shivai/Booking";
+import { checkValidClient } from "@/lib/auth";
 
 // GET - Debug endpoint to check customer data and bookings
 export async function GET(request: NextRequest) {

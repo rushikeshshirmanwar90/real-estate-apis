@@ -1,10 +1,21 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { licenseScheduler } from "@/lib/utils/license-scheduler";
 import { logger } from "@/lib/utils/logger";
+import { checkValidClient } from "@/lib/auth";
 
 // Get scheduler status
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const status = licenseScheduler.getStatus();
     return successResponse(status, "Scheduler status retrieved successfully");
@@ -16,6 +27,16 @@ export const GET = async (req: NextRequest) => {
 
 // Control scheduler (start/stop/trigger)
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { action } = await req.json();
     

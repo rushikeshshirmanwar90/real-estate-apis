@@ -1,9 +1,10 @@
 import { Projects } from "@/lib/models/Project";
 import connect from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
+import { checkValidClient } from "@/lib/auth";
 
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
@@ -16,10 +17,19 @@ import {
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
-import { withLicenseCheck } from "@/lib/middleware/licenseCheck";
-import { addLicenseStatusToProjects, canAccessProject } from "@/lib/middleware/projectLicenseFilter";
+
 
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
@@ -91,16 +101,7 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Project not found or not assigned to this staff member", 404);
       }
 
-      // For staff users, check if they can access this project based on client license
-      if (userRole !== 'admin') {
-        const clientId = (project as any).clientId?._id || (project as any).clientId;
-        const accessCheck = await canAccessProject(clientId.toString());
-        
-        if (!accessCheck.canAccess) {
-          return errorResponse(accessCheck.reason || "Access denied", 403);
-        }
-      }
-
+      // Project found and accessible
       // Cache the project with 24-hour expiration
       await safeRedisOperation(
         async () => await safeRedisSetCache(`project:${id}`, JSON.stringify(project), 'EX', 86400),
@@ -134,27 +135,6 @@ export const GET = async (req: NextRequest) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // Add license status to projects (for staff, marks blocked projects)
-    console.log(`📊 Adding license status to ${projects.length} projects for userRole: "${userRole}"`);
-    
-    // Log first project's clientId for debugging
-    if (projects.length > 0) {
-        console.log(`🔍 First project clientId:`, projects[0].clientId);
-    }
-    
-    projects = await addLicenseStatusToProjects(projects, userRole);
-    
-    // Log result for debugging
-    if (projects.length > 0) {
-        console.log(`✅ First project after status:`, {
-            name: projects[0].name,
-            isAccessible: projects[0].isAccessible,
-            licenseStatus: projects[0].licenseStatus,
-            blockReason: projects[0].blockReason
-        });
-    }
-    console.log(`✅ Projects with status added`);
-
     console.log(`📊 Returning ${projects.length} projects for clientId: ${clientId}${staffId ? `, staffId: ${staffId}` : ''}${excludeMaterials ? ' (materials excluded)' : ''}`);
 
     // Cache the projects list with 24-hour expiration
@@ -173,7 +153,17 @@ export const GET = async (req: NextRequest) => {
   }
 };
 
-export const POST = withLicenseCheck(async (req: NextRequest) => {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 
@@ -293,11 +283,21 @@ export const POST = withLicenseCheck(async (req: NextRequest) => {
 
     return errorResponse("Failed to create project", 500);
   }
-});
+};
 
 // DELETE and PUT methods moved to /api/project/[id]/route.ts for proper dynamic routing
 
-export const PATCH = withLicenseCheck(async (req: NextRequest) => {
+export const PATCH = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
     const body = await req.json();
@@ -365,4 +365,4 @@ export const PATCH = withLicenseCheck(async (req: NextRequest) => {
     console.error('Error updating project completion status:', error);
     return errorResponse("Failed to update project completion status", 500);
   }
-});
+};

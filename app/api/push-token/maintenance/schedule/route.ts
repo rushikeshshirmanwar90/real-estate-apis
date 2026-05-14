@@ -1,7 +1,8 @@
 import connect from "@/lib/db";
 import { PushTokenMaintenanceService } from "@/lib/services/pushTokenMaintenanceService";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { NextRequest } from "next/server";
+import { checkValidClient } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Scheduled Push Token Maintenance API
@@ -15,6 +16,16 @@ import { NextRequest } from "next/server";
 
 // POST: Run scheduled maintenance job
 export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 
@@ -178,6 +189,16 @@ export const POST = async (req: NextRequest) => {
 
 // GET: Get scheduled maintenance status (for monitoring)
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
   try {
     await connect();
 

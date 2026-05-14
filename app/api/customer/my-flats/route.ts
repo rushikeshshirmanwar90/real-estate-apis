@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { Building } from "@/lib/models/Building";
+import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Helper function to validate MongoDB ObjectId
@@ -41,6 +42,13 @@ const successResponse = (
 
 // GET: Retrieve customer's flats from myFlats field
 export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
     const { searchParams } = new URL(req.url);

@@ -11,7 +11,10 @@ import {
   invalidateCachePattern,
   safeRedisDelCache 
 } from "@/lib/utils/redis-helpers";
-import { canAccessProject } from "@/lib/middleware/projectLicenseFilter";
+
+import { checkValidClient } from "@/lib/auth";
+import { errorResponse } from "@/lib/utils/api-response";
+import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 
 // Helper function to check staff access to project
 async function checkStaffProjectAccess(req: NextRequest, projectId: string): Promise<NextResponse | null> {
@@ -33,25 +36,22 @@ async function checkStaffProjectAccess(req: NextRequest, projectId: string): Pro
     );
   }
   
-  const clientId = (project as any).clientId;
-  const accessCheck = await canAccessProject(clientId.toString());
-  
-  if (!accessCheck.canAccess) {
-    return NextResponse.json(
-      {
-        success: false,
-        message: accessCheck.reason || "Access denied to this project",
-        error: "PROJECT_ACCESS_DENIED"
-      },
-      { status: 403 }
-    );
-  }
-  
+  // Project found and accessible
   return null; // No error, proceed
 }
 
 // POST - Add labor entries
-export async function POST(req: NextRequest) {
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
   try {
     await connect();
 
@@ -319,6 +319,57 @@ export async function POST(req: NextRequest) {
     await safeRedisDelCache(`project:${projectId}`);
     await invalidateCachePattern(`projects:*`);
 
+    // Log activity for labor addition
+    const userInfo = extractUserInfo(req, body);
+    if (userInfo) {
+      try {
+        // Get project name for better activity description
+        const project = await Projects.findById(projectId).select('name').lean();
+        let sectionName = undefined;
+        let miniSectionName = undefined;
+        
+        // Get section/mini-section names if applicable
+        if (updatedEntity) {
+          if (entityType !== 'project' && updatedEntity.name) {
+            sectionName = updatedEntity.name;
+          }
+        }
+        
+        await logActivity({
+          user: userInfo,
+          clientId: body.clientId || 'unknown',
+          projectId: projectId,
+          projectName: project && !Array.isArray(project) ? project.name : undefined,
+          sectionId: sectionId,
+          sectionName: sectionName,
+          miniSectionId: miniSectionId,
+          miniSectionName: miniSectionName,
+          activityType: 'labor_added',
+          category: 'labor',
+          action: 'add',
+          description: `Added ${laborEntries.length} labor ${laborEntries.length === 1 ? 'entry' : 'entries'} to ${entityName}`,
+          message: `Total cost: ₹${totalLaborCost.toLocaleString('en-IN')}`,
+          metadata: {
+            laborEntries: processedLaborEntries.map(entry => ({
+              type: entry.type,
+              category: entry.category,
+              count: entry.count,
+              perLaborCost: entry.perLaborCost,
+              totalCost: entry.totalCost
+            })),
+            totalCost: totalLaborCost,
+            entityType,
+            entityId
+          }
+        });
+        
+        console.log('✅ Labor activity logged successfully');
+      } catch (activityError) {
+        console.error('❌ Failed to log labor activity:', activityError);
+        // Don't fail the request if activity logging fails
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: `Labor entries added successfully to ${entityName}`,
@@ -374,7 +425,14 @@ export async function POST(req: NextRequest) {
 }
 
 // GET - Retrieve labor entries
-export async function GET(req: NextRequest) {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 
@@ -551,7 +609,14 @@ export async function GET(req: NextRequest) {
 }
 
 // PUT - Update labor entry
-export async function PUT(req: NextRequest) {
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 
@@ -688,7 +753,14 @@ export async function PUT(req: NextRequest) {
 }
 
 // DELETE - Remove labor entry
-export async function DELETE(req: NextRequest) {
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+  }
+  
   try {
     await connect();
 

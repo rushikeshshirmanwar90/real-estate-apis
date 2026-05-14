@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
+import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { checkValidClient } from "@/lib/auth";
@@ -10,6 +11,8 @@ import {
   safeRedisKeysCache,
   safeRedisDelCache
 } from "@/lib/utils/redis-helpers";
+import { errorResponse } from "@/lib/utils/api-response";
+import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
 
 type Specs = Record<string, unknown>;
 
@@ -33,10 +36,17 @@ type MaterialSubdoc = {
   totalCost: number;
 };
 
-
-
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
-export const GET = async (req: NextRequest | Request) => {
+export const GET = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
   try {
     const { searchParams } = new URL(req.url);
     const projectId    = searchParams.get("projectId");
@@ -71,15 +81,13 @@ export const GET = async (req: NextRequest | Request) => {
       );
     }
 
-    // Add basic client validation (optional - you might want to implement checkValidClient here too)
-    // await checkValidClient(req);
-
+    // Bearer token authentication complete
     await connect();
 
     // Check cache first (exclude cache buster from cache key)
     const cacheKey = `material:${projectId}:${clientId}:${sectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
-    
+
     const cachedData = await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
@@ -258,9 +266,16 @@ export const GET = async (req: NextRequest | Request) => {
 };
 
 // ─── POST: Add or merge materials ────────────────────────────────────────────
-export const POST = async (req: NextRequest | Request) => {
-  await checkValidClient(req);
-
+export const POST = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
   try {
     await connect();
     const raw = await req.json();
@@ -342,7 +357,6 @@ export const POST = async (req: NextRequest | Request) => {
 
       if (mergeIfExists) {
         let exactMatchIndex = -1;
-
         for (let i = 0; i < availableArr.length; i++) {
           const existing = availableArr[i];
           const nameMatch  = existing.name === materialName;
@@ -368,12 +382,14 @@ export const POST = async (req: NextRequest | Request) => {
         const oldQnt        = Number(existing.qnt       || 0);
         const oldPerUnit    = Number(existing.perUnitCost || 0);
         const oldTotalCost  = Number(existing.totalCost  || 0);
+
         const newQnt        = oldQnt + qnt;
         const newTotalCost  = oldTotalCost + totalCost;
 
         existing.qnt        = newQnt;
         existing.perUnitCost = oldPerUnit;
         existing.totalCost  = newTotalCost;
+
         project.spent       = (project.spent || 0) + totalCost;
 
         const saved = await project.save();
@@ -397,6 +413,7 @@ export const POST = async (req: NextRequest | Request) => {
         } else {
           results.push({ ...resultBase, success: false, error: "Failed to merge material" });
         }
+
         continue;
       }
 
@@ -433,16 +450,143 @@ export const POST = async (req: NextRequest | Request) => {
       }
     }
 
+    // ✅ CREATE MATERIAL ACTIVITY ENTRIES for successful imports
+    console.log('\n========================================');
+    console.log('📝 CREATING MATERIAL ACTIVITY ENTRIES');
+    console.log('========================================');
+    
+    try {
+      // Get user info from request headers
+      const userDetailsHeader = req.headers.get('x-user-details');
+      let user = {
+        userId: 'unknown',
+        fullName: 'Unknown User'
+      };
+      
+      if (userDetailsHeader) {
+        try {
+          const userDetails = JSON.parse(userDetailsHeader);
+          user = {
+            userId: userDetails._id || userDetails.id || 'unknown',
+            fullName: userDetails.fullName || 
+                     (userDetails.firstName && userDetails.lastName 
+                         ? `${userDetails.firstName} ${userDetails.lastName}` 
+                         : userDetails.firstName || userDetails.lastName || userDetails.name || 'Unknown User')
+          };
+        } catch (parseError) {
+          console.warn('⚠️ Failed to parse user details from header:', parseError);
+        }
+      }
+      
+      // Group successful results by projectId
+      const successfulByProject = new Map<string, typeof results>();
+      
+      for (const result of results) {
+        if (result.success && result.input.projectId) {
+          const projectId = result.input.projectId;
+          if (!successfulByProject.has(projectId)) {
+            successfulByProject.set(projectId, []);
+          }
+          successfulByProject.get(projectId)!.push(result);
+        }
+      }
+      
+      // Create MaterialActivity for each project
+      for (const [projectId, projectResults] of successfulByProject.entries()) {
+        try {
+          const project = await Projects.findById(projectId);
+          if (!project) {
+            console.warn(`⚠️ Project ${projectId} not found for activity logging`);
+            continue;
+          }
+          
+          // Get clientId from project
+          const clientId = project.clientId;
+          
+          // Create materials array for activity
+          const materials = projectResults.map(result => ({
+            name: result.material?.name || result.input.materialName || 'Unknown',
+            unit: result.material?.unit || result.input.unit || 'unit',
+            specs: result.material?.specs || result.input.specs || {},
+            qnt: result.material?.qnt || Number(result.input.qnt) || 0,
+            perUnitCost: result.material?.perUnitCost || Number(result.input.perUnitCost) || 0,
+            totalCost: result.material?.totalCost || 0,
+            cost: result.material?.totalCost || 0, // For backward compatibility
+            addedAt: new Date(),
+          }));
+          
+          const totalCost = materials.reduce((sum, m) => sum + (m.cost || 0), 0);
+          const materialCount = materials.length;
+          
+          // Create material activity payload
+          const materialActivityPayload = {
+            clientId: String(clientId),
+            projectId: String(projectId),
+            projectName: project.name || 'Unknown Project',
+            materials: materials,
+            message: materialCount === 1
+              ? `Added ${materials[0].qnt} ${materials[0].unit} of ${materials[0].name}`
+              : `Added ${materialCount} materials to project`,
+            activity: 'imported' as const,
+            date: new Date().toISOString(),
+            user: user,
+          };
+          
+          console.log(`📦 Creating MaterialActivity for project ${projectId}:`, {
+            materialCount,
+            totalCost,
+            projectName: project.name
+          });
+          
+          const materialActivity = new MaterialActivity(materialActivityPayload);
+          await materialActivity.save();
+          
+          console.log(`✅ MaterialActivity created: ${materialActivity._id}`);
+          
+          // Invalidate material activity cache
+          const activityKeys = await safeRedisKeysCache(`materialActivity:*`);
+          if (activityKeys.length > 0) {
+            await safeRedisDelCache(...activityKeys);
+            console.log(`🗑️ Invalidated ${activityKeys.length} material activity cache keys`);
+          }
+          
+          // Send notification (async, don't wait for it)
+          notifyMaterialActivityCreated(materialActivity)
+            .then(result => {
+              if (result.success) {
+                console.log(`✅ Material import notification completed: ${result.deliveredCount}/${result.recipientCount} delivered`);
+              } else {
+                console.error(`❌ Material import notification failed: ${result.errors.length} errors`);
+              }
+            })
+            .catch(notifError => {
+              console.error('⚠️ Notification error (non-critical):', notifError);
+            });
+            
+        } catch (activityError) {
+          console.error(`⚠️ Failed to create MaterialActivity for project ${projectId}:`, activityError);
+          // Don't fail the request if activity creation fails
+        }
+      }
+      
+      console.log('✅ Material activity creation completed');
+      console.log('========================================\n');
+      
+    } catch (activityError) {
+      console.error('⚠️ Material activity creation error (non-critical):', activityError);
+      // Don't fail the request if activity creation fails
+    }
+
     // ✅ OPTIMIZED: Update cache instead of just invalidating
     console.log('\n========================================');
     console.log('🔄 UPDATING CACHE AFTER MATERIAL ADD');
     console.log('========================================');
-    
+
     try {
       // Get all cache keys for this project's materials
       const materialKeys = await safeRedisKeysCache(`material:*`);
       console.log(`📋 Found ${materialKeys.length} cache keys to update`);
-      
+
       if (materialKeys.length > 0) {
         // Update each cached response with the new materials
         for (const cacheKey of materialKeys) {
@@ -450,21 +594,17 @@ export const POST = async (req: NextRequest | Request) => {
             const cachedData = await safeRedisGetCache(cacheKey);
             if (cachedData) {
               const parsedCache = JSON.parse(cachedData);
-              
               // Check if this cache entry is for the same project
               if (parsedCache.MaterialAvailable && Array.isArray(parsedCache.MaterialAvailable)) {
                 console.log(`🔄 Updating cache key: ${cacheKey}`);
-                
                 // Get fresh data from database for this specific cache configuration
                 const cacheKeyParts = cacheKey.split(':');
                 const cachedProjectId = cacheKeyParts[1];
-                const cachedClientId = cacheKeyParts[2];
-                
+
                 // Only update if it matches our project
                 if (cachedProjectId && materialItems[0]?.projectId === cachedProjectId) {
                   // Fetch fresh data from database
                   const freshProject = await Projects.findById(cachedProjectId);
-                  
                   if (freshProject && freshProject.MaterialAvailable) {
                     // Update the cached response with fresh data
                     parsedCache.MaterialAvailable = freshProject.MaterialAvailable;
@@ -472,7 +612,7 @@ export const POST = async (req: NextRequest | Request) => {
                     parsedCache.pagination.totalPages = Math.ceil(
                       freshProject.MaterialAvailable.length / (parsedCache.pagination.itemsPerPage || 20)
                     );
-                    
+
                     // Save updated cache with same expiration (24 hours)
                     await safeRedisSetCache(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
                     console.log(`✅ Cache updated: ${cacheKey}`);
@@ -487,14 +627,13 @@ export const POST = async (req: NextRequest | Request) => {
           }
         }
       }
-      
+
       // Also invalidate project-level caches (these are simpler to regenerate)
       await invalidateCachePattern(`project:*`);
       await invalidateCachePattern(`projects:*`);
-      
+
       console.log('✅ Cache update completed successfully');
       console.log('========================================\n');
-      
     } catch (cacheError) {
       console.error('❌ Cache update error:', cacheError);
       // If cache update fails, fall back to invalidation
@@ -516,9 +655,17 @@ export const POST = async (req: NextRequest | Request) => {
 };
 
 // ─── PUT: Replace MaterialAvailable array ────────────────────────────────────
-export const PUT = async (req: NextRequest | Request) => {
-  await checkValidClient(req);
-
+export const PUT = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
@@ -538,7 +685,6 @@ export const PUT = async (req: NextRequest | Request) => {
     }
 
     await connect();
-
     const body = await req.json();
     const { MaterialAvailable } = body;
 
@@ -589,9 +735,17 @@ export const PUT = async (req: NextRequest | Request) => {
 };
 
 // ─── DELETE: Remove a material from MaterialAvailable ────────────────────────
-export const DELETE = async (req: NextRequest | Request) => {
-  await checkValidClient(req);
-
+export const DELETE = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+  
   try {
     const { searchParams } = new URL(req.url);
     const projectId  = searchParams.get("projectId");

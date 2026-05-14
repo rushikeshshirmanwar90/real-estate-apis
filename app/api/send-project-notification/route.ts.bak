@@ -1,0 +1,36 @@
+import { NextRequest } from "next/server";
+import { errorResponse, successResponse } from "@/lib/utils/api-response";
+import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+
+// Simple notification endpoint - replace with full implementation later
+export const POST = withBearerAuth(async (req: NextRequest) => {
+  try {
+    const body = await req.json();
+    const { projectId, type, title, message, recipientType } = body;
+
+    // Basic validation
+    if (!projectId || !type || !title || !message || !recipientType) {
+      return errorResponse("Missing required fields", 400);
+    }
+
+    // For now, just return success - implement actual notification logic later
+    console.log('📤 Notification request received:', {
+      projectId,
+      type,
+      title,
+      recipientType
+    });
+
+    return successResponse(
+      {
+        sent: 0,
+        message: "Notification endpoint is working - full implementation needed"
+      },
+      "Notification processed successfully"
+    );
+
+  } catch (error: unknown) {
+    console.error('❌ Send notification error:', error);
+    return errorResponse("Failed to send notification", 500);
+  }
+});
