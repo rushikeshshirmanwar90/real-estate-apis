@@ -253,10 +253,11 @@ async function resolvePrimaryRecipients(clientId: string, projectId?: string): P
   ]);
 
   // Add timeout to prevent hanging queries
+  // ✅ FIX: Reduced timeout from 5s to 2s for faster failure detection
   const [admins, staff] = await Promise.race([
     queryPromise,
     new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Primary resolution query timeout')), 5000)
+      setTimeout(() => reject(new Error('Primary resolution query timeout')), 2000) // 2 seconds
     )
   ]) as [any[], any[]];
   
@@ -377,6 +378,7 @@ async function resolveFallbackRecipients(clientId: string, projectId?: string): 
   
   try {
     // Query project with assigned staff with timeout
+    // ✅ FIX: Reduced timeout from 3s to 1.5s for faster failure detection
     const projectPromise = Projects.findById(projectId)
       .select('assignedStaff name clientId')
       .lean();
@@ -384,7 +386,7 @@ async function resolveFallbackRecipients(clientId: string, projectId?: string): 
     const project = await Promise.race([
       projectPromise,
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Fallback resolution query timeout')), 3000)
+        setTimeout(() => reject(new Error('Fallback resolution query timeout')), 1500) // 1.5 seconds
       )
     ]) as any;
 

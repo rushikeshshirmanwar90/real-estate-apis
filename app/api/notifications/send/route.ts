@@ -1,12 +1,15 @@
 import connect from "@/lib/db";
+import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
 import { NextRequest } from "next/server";
+
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_BATCH_SIZE = 100; // Expo's hard limit
 
 /**
  * POST /api/notifications/send
  * 
- * Processes and sends notifications to multiple users
+ * Sends push notifications to multiple users via Expo Push Notification Service
  * Used by the notification system for multi-user notification delivery
  */
 export async function POST(request: NextRequest) {
@@ -19,7 +22,7 @@ export async function POST(request: NextRequest) {
       body: notificationBody, 
       category, 
       action, 
-      data, 
+      data = {}, 
       recipients, 
       timestamp 
     } = body;
@@ -35,83 +38,163 @@ export async function POST(request: NextRequest) {
       return errorResponse('Title and body are required', 400);
     }
     
-    if (!recipients || !Array.isArray(recipients)) {
-      return errorResponse('Recipients array is required', 400);
+    if (!recipients || !Array.isArray(recipients) || recipients.length === 0) {
+      return errorResponse('Recipients array is required and must not be empty', 400);
     }
     
-    // Process each recipient
-    const results = [];
-    let successCount = 0;
-    let failedCount = 0;
+    // Step 1: Collect userIds from the recipients already resolved by /recipients endpoint
+    // ✅ FIX: Deduplicate userIds to prevent sending duplicate notifications
+    const recipientUserIds = [...new Set(
+      recipients
+        .map((r: any) => r.userId)
+        .filter(Boolean)
+    )];
     
-    for (const recipient of recipients) {
+    if (recipientUserIds.length === 0) {
+      return errorResponse('No valid userIds found in recipients', 400);
+    }
+    
+    const originalCount = recipients.length;
+    const deduplicatedCount = recipientUserIds.length;
+    const duplicatesRemoved = originalCount - deduplicatedCount;
+    
+    if (duplicatesRemoved > 0) {
+      console.log(`🔄 Deduplicated ${duplicatesRemoved} duplicate recipients (${originalCount} → ${deduplicatedCount})`);
+    }
+    
+    console.log(`🔍 Looking up push tokens for ${recipientUserIds.length} unique users...`);
+    
+    // Step 2: Look up their Expo push tokens in the database
+    const tokenDocs = await PushToken.find({ 
+      userId: { $in: recipientUserIds } 
+    }).lean();
+    
+    console.log(`📱 Found ${tokenDocs.length} push tokens`);
+    
+    // ✅ FIX: Return error status when no tokens found instead of 200 OK
+    if (tokenDocs.length === 0) {
+      console.error(`❌ No push tokens found for users: ${recipientUserIds.join(', ')}`);
+      return errorResponse(
+        'No push tokens found for any recipients. Users may not have registered for notifications.',
+        424, // 424 Failed Dependency - the request was valid but couldn't be completed
+        { 
+          notificationsSent: 0,
+          notificationsFailed: recipientUserIds.length,
+          totalProcessed: 0,
+          missingTokens: recipientUserIds
+        }
+      );
+    }
+    
+    // Step 3: Build Expo messages
+    const messages = tokenDocs.map((doc) => ({
+      to: doc.token,
+      title,
+      body: notificationBody,
+      data: { 
+        ...data, 
+        category, 
+        action, 
+        timestamp: timestamp || new Date().toISOString() 
+      },
+      sound: "default",
+      priority: "high",
+      channelId: "default",
+    }));
+    
+    console.log(`📨 Prepared ${messages.length} messages for Expo`);
+    
+    // Step 4: Send in batches of 100 (Expo hard limit)
+    let totalSent = 0;
+    let totalFailed = 0;
+    const errors: any[] = [];
+    
+    for (let i = 0; i < messages.length; i += EXPO_BATCH_SIZE) {
+      const batch = messages.slice(i, i + EXPO_BATCH_SIZE);
+      
+      console.log(`📤 Sending batch ${Math.floor(i / EXPO_BATCH_SIZE) + 1} (${batch.length} messages)...`);
+      
       try {
-        // Validate recipient structure
-        if (!recipient.userId || !recipient.fullName) {
-          throw new Error('Invalid recipient structure - userId and fullName required');
-        }
-        
-        // Here you can add additional notification processing:
-        // 1. Store notification in database (optional)
-        // 2. Send push notification via Expo (optional)
-        // 3. Send email notification (optional)
-        // 4. Send SMS notification (optional)
-        
-        // For now, we'll just log and mark as processed
-        console.log(`✅ Notification processed for ${recipient.fullName} (${recipient.userType || 'unknown'})`);
-        
-        // You can extend this to actually send notifications:
-        /*
-        // Example: Send push notification
-        if (recipient.pushToken) {
-          await sendPushNotification(recipient.pushToken, title, notificationBody, data);
-        }
-        
-        // Example: Send email notification
-        if (recipient.email) {
-          await sendEmailNotification(recipient.email, title, notificationBody, data);
-        }
-        */
-        
-        results.push({
-          userId: recipient.userId,
-          fullName: recipient.fullName,
-          userType: recipient.userType || 'unknown',
-          status: 'sent',
-          timestamp: new Date().toISOString()
+        const expoRes = await fetch(EXPO_PUSH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            ...(process.env.EXPO_ACCESS_TOKEN
+              ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` }
+              : {}),
+          },
+          body: JSON.stringify(batch),
         });
         
-        successCount++;
+        if (!expoRes.ok) {
+          const errorText = await expoRes.text();
+          console.error(`❌ Expo API error: ${expoRes.status} ${expoRes.statusText}`, errorText);
+          
+          // Mark all messages in this batch as failed
+          batch.forEach((msg) => {
+            totalFailed++;
+            errors.push({ 
+              token: msg.to, 
+              error: `Expo API error: ${expoRes.status} ${expoRes.statusText}` 
+            });
+          });
+          continue;
+        }
         
-      } catch (recipientError) {
-        console.error(`❌ Failed to process notification for ${recipient.fullName}:`, recipientError);
+        const expoData = await expoRes.json();
         
-        results.push({
-          userId: recipient.userId,
-          fullName: recipient.fullName,
-          userType: recipient.userType || 'unknown',
-          status: 'failed',
-          error: (recipientError as Error).message,
-          timestamp: new Date().toISOString()
+        console.log(`📥 Expo response:`, JSON.stringify(expoData, null, 2));
+        
+        // Process individual ticket results
+        if (Array.isArray(expoData.data)) {
+          expoData.data.forEach((ticket: any, idx: number) => {
+            if (ticket.status === "ok") {
+              totalSent++;
+              console.log(`✅ Message sent successfully: ${ticket.id}`);
+            } else {
+              totalFailed++;
+              const errorMsg = ticket.message || ticket.details?.error || 'Unknown error';
+              console.error(`❌ Message failed: ${errorMsg}`);
+              errors.push({ 
+                token: batch[idx].to, 
+                error: errorMsg,
+                details: ticket.details 
+              });
+            }
+          });
+        } else {
+          console.warn('⚠️ Unexpected Expo response format:', expoData);
+          // Assume success if no error array
+          totalSent += batch.length;
+        }
+        
+      } catch (fetchError) {
+        console.error(`❌ Error sending batch to Expo:`, fetchError);
+        
+        // Mark all messages in this batch as failed
+        batch.forEach((msg) => {
+          totalFailed++;
+          errors.push({ 
+            token: msg.to, 
+            error: fetchError instanceof Error ? fetchError.message : 'Unknown fetch error' 
+          });
         });
-        
-        failedCount++;
       }
     }
     
-    console.log(`✅ Notification processing completed:`);
-    console.log(`   - Successfully sent: ${successCount}`);
-    console.log(`   - Failed: ${failedCount}`);
-    console.log(`   - Total processed: ${results.length}`);
+    console.log(`✅ Notification sending completed:`);
+    console.log(`   - Successfully sent: ${totalSent}`);
+    console.log(`   - Failed: ${totalFailed}`);
+    console.log(`   - Total processed: ${totalSent + totalFailed}`);
     
     // Return success response with detailed results
     return successResponse(
       {
-        notificationsSent: successCount,
-        notificationsFailed: failedCount,
-        totalProcessed: results.length,
-        failedRecipients: results.filter(r => r.status === 'failed'),
-        results: results,
+        notificationsSent: totalSent,
+        notificationsFailed: totalFailed,
+        totalProcessed: totalSent + totalFailed,
+        errors: errors.length > 0 ? errors : undefined,
         summary: {
           title,
           category,
@@ -119,48 +202,19 @@ export async function POST(request: NextRequest) {
           timestamp: timestamp || new Date().toISOString(),
           clientId: data?.clientId,
           projectId: data?.projectId,
-          triggeredBy: data?.triggeredBy
+          triggeredBy: data?.triggeredBy,
+          recipientCount: recipients.length,
+          tokensFound: tokenDocs.length
         }
       },
-      `Notifications processed successfully: ${successCount} sent, ${failedCount} failed`
+      `Notifications sent: ${totalSent} delivered, ${totalFailed} failed`
     );
     
   } catch (error: unknown) {
     console.error('❌ Send notifications error:', error);
-    return errorResponse(
-      'Failed to send notifications', 
-      500, 
-      error
-    );
+    if (error instanceof Error) {
+      return errorResponse('Failed to send notifications', 500, error.message);
+    }
+    return errorResponse('Failed to send notifications', 500, error);
   }
-}
-
-/**
- * Helper function to send push notifications (placeholder)
- * You can implement this using Expo Push Notifications or other services
- */
-async function sendPushNotification(
-  pushToken: string, 
-  title: string, 
-  body: string, 
-  data: any
-) {
-  // Implementation placeholder
-  // Use Expo Push Notifications, Firebase, or other push service
-  console.log(`📱 Would send push notification to ${pushToken}: ${title}`);
-}
-
-/**
- * Helper function to send email notifications (placeholder)
- * You can implement this using your existing email service
- */
-async function sendEmailNotification(
-  email: string, 
-  title: string, 
-  body: string, 
-  data: any
-) {
-  // Implementation placeholder
-  // Use your existing email service (Nodemailer, etc.)
-  console.log(`📧 Would send email notification to ${email}: ${title}`);
 }

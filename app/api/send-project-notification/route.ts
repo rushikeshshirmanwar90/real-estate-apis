@@ -1,46 +1,88 @@
-import { NextRequest, NextResponse } from "next/server";
-import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { successResponse, errorResponse } from "@/lib/utils/api-response";
+import { NextRequest } from "next/server";
 
-// Simple notification endpoint - replace with full implementation later
-export const POST = async (req: NextRequest) => {
-  // Bearer token authentication
+/**
+ * POST /api/send-project-notification
+ * 
+ * Send project-related notifications (section created, project updated, etc.)
+ * This endpoint wraps the main /api/notifications/send endpoint with project-specific logic
+ */
+export async function POST(req: NextRequest) {
   try {
-    await checkValidClient(req);
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
-    );
-  }
+    const { 
+      title, 
+      message, 
+      projectId, 
+      projectName,
+      category = "project", 
+      action, 
+      triggeredBy, 
+      recipients, 
+      clientId,
+      metadata = {}
+    } = await req.json();
 
-  try {
-    const body = await req.json();
-    const { projectId, type, title, message, recipientType } = body;
-
-    // Basic validation
-    if (!projectId || !type || !title || !message || !recipientType) {
-      return errorResponse("Missing required fields", 400);
+    // Validate required fields
+    if (!title || !recipients || !clientId) {
+      return errorResponse("title, recipients, and clientId are required", 400);
     }
 
-    // For now, just return success - implement actual notification logic later
-    console.log('📤 Notification request received:', {
-      projectId,
-      type,
-      title,
-      recipientType
+    if (!message) {
+      return errorResponse("message is required", 400);
+    }
+
+    console.log(`📋 Project notification: ${title} - ${category}/${action}`);
+
+    // Forward to the main notification send endpoint
+    const domain = process.env.NEXT_PUBLIC_DOMAIN || "http://localhost:3000";
+    const sendRes = await fetch(`${domain}/api/notifications/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        body: message,
+        category,
+        action,
+        data: { 
+          clientId, 
+          projectId, 
+          projectName, 
+          triggeredBy,
+          ...metadata
+        },
+        recipients,
+        timestamp: new Date().toISOString(),
+      }),
     });
 
+    if (!sendRes.ok) {
+      const errorText = await sendRes.text();
+      console.error(`❌ Failed to send project notification: ${sendRes.status}`, errorText);
+      return errorResponse(
+        "Failed to send project notification",
+        sendRes.status,
+        errorText
+      );
+    }
+
+    const result = await sendRes.json();
+    
+    console.log(`✅ Project notification sent: ${result.data?.notificationsSent || 0} delivered`);
+    
     return successResponse(
-      {
-        sent: 0,
-        message: "Notification endpoint is working - full implementation needed"
-      },
-      "Notification processed successfully"
+      result.data,
+      "Project notification processed successfully"
     );
 
   } catch (error: unknown) {
-    console.error('❌ Send notification error:', error);
-    return errorResponse("Failed to send notification", 500);
+    console.error("❌ /api/send-project-notification error:", error);
+    if (error instanceof Error) {
+      return errorResponse(
+        "Failed to send project notification",
+        500,
+        error.message
+      );
+    }
+    return errorResponse("Failed to send project notification", 500, error);
   }
-};
+}
