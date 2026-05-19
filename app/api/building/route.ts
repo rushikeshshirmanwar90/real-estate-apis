@@ -8,10 +8,9 @@ import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 import { checkValidClient } from "@/lib/auth";
-import { 
+import {
   safeRedisGetCache, 
   safeRedisSetCache, 
-  invalidateCachePattern,
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
@@ -176,24 +175,58 @@ export const POST = async (req: NextRequest) => {
       const newBuilding = new Building(buildingData);
       const savedBuilding = await newBuilding.save();
 
-      const updatedProject = await Projects.findByIdAndUpdate(
-        savedBuilding.projectId,
-        {
-          $push: {
-            section: {
-              sectionId: savedBuilding._id,
-              name: savedBuilding.name,
-              type: "Buildings",
+      // ✅ Check if section already exists in project before adding
+      const project = await Projects.findById(savedBuilding.projectId);
+      
+      if (!project) {
+        // Rollback: delete the created building
+        await Building.findByIdAndDelete(savedBuilding._id);
+        return errorResponse("Project not found", 404);
+      }
+
+      // Check if this section already exists in the project
+      const sectionExists = project.section?.some((s: any) => 
+        s.sectionId?.toString() === savedBuilding._id.toString()
+      );
+
+      let updatedProject;
+      if (sectionExists) {
+        // Section already exists, just update its name if needed
+        console.log('Section already exists in project, updating name...');
+        updatedProject = await Projects.findOneAndUpdate(
+          { 
+            _id: savedBuilding.projectId,
+            'section.sectionId': savedBuilding._id
+          },
+          {
+            $set: {
+              'section.$.name': savedBuilding.name
+            }
+          },
+          { new: true }
+        );
+      } else {
+        // Section doesn't exist, add it
+        console.log('Section does not exist, adding to project...');
+        updatedProject = await Projects.findByIdAndUpdate(
+          savedBuilding.projectId,
+          {
+            $push: {
+              section: {
+                sectionId: savedBuilding._id,
+                name: savedBuilding.name,
+                type: "Buildings",
+              },
             },
           },
-        },
-        { new: true }
-      );
+          { new: true }
+        );
+      }
 
       if (!updatedProject) {
         // Rollback: delete the created building
         await Building.findByIdAndDelete(savedBuilding._id);
-        return errorResponse("Project not found", 404);
+        return errorResponse("Failed to update project", 500);
       }
 
       // ✅ Log activity for building creation (consistent with section creation)
@@ -271,16 +304,23 @@ export const DELETE = async (req: NextRequest) => {
     const projectId = searchParams.get("projectId");
     const sectionId = searchParams.get("sectionId");
 
+    console.log('🗑️ DELETE /api/building - Request received');
+    console.log('   Project ID:', projectId);
+    console.log('   Section ID:', sectionId);
+
     if (!projectId || !sectionId) {
+      console.error('❌ Missing required parameters');
       return errorResponse("Project ID and Section ID are required", 400);
     }
 
     if (!isValidObjectId(projectId) || !isValidObjectId(sectionId)) {
+      console.error('❌ Invalid ID format');
       return errorResponse("Invalid ID format", 400);
     }
 
     // Delete building and update project
     try {
+      console.log('🔄 Removing section from project...');
       const updatedProject = await Projects.findByIdAndUpdate(
         projectId,
         { $pull: { section: { sectionId: sectionId } } },
@@ -288,26 +328,42 @@ export const DELETE = async (req: NextRequest) => {
       );
 
       if (!updatedProject) {
+        console.error('❌ Project not found:', projectId);
         return errorResponse("Project not found", 404);
       }
+
+      console.log('✅ Section removed from project');
+      console.log('🔄 Deleting building record...');
 
       const deletedBuilding = await Building.findByIdAndDelete(sectionId).lean();
 
       if (!deletedBuilding) {
-        // Rollback: restore the section in project
-        await Projects.findByIdAndUpdate(
-          projectId,
-          { $push: { section: { sectionId: sectionId } } }
+        console.warn('⚠️ Building record not found, but section was removed from project');
+        // Don't rollback - the section removal is what matters
+        // The building record might not exist (which is fine)
+        console.log('✅ Section deleted successfully (building record did not exist)');
+        
+        // Invalidate cache
+        await safeRedisDelCache(`building:${sectionId}`);
+        await safeRedisDelCache(`buildings:all`);
+        await safeRedisDelCache(`buildings:project:${projectId}`);
+        const projectKeys = await safeRedisKeysCache(`project:*`);
+        if (projectKeys.length > 0) {
+          await safeRedisDelCache(...projectKeys);
+        }
+        
+        return successResponse(
+          { _id: sectionId, projectId }, 
+          "Section deleted successfully (building record did not exist)"
         );
-        return errorResponse("Building not found", 404);
       }
+
+      console.log('✅ Building record deleted');
 
       // Invalidate cache
       await safeRedisDelCache(`building:${sectionId}`);
       await safeRedisDelCache(`buildings:all`);
-      if (updatedProject.projectId) {
-        await safeRedisDelCache(`buildings:project:${updatedProject.projectId}`);
-      }
+      await safeRedisDelCache(`buildings:project:${projectId}`);
       const projectKeys = await safeRedisKeysCache(`project:*`);
       if (projectKeys.length > 0) {
         await safeRedisDelCache(...projectKeys);
@@ -315,11 +371,15 @@ export const DELETE = async (req: NextRequest) => {
 
       return successResponse(deletedBuilding, "Building deleted successfully");
     } catch (error) {
+      console.error('❌ Error in delete operation:', error);
       throw error;
     }
   } catch (error: unknown) {
+    console.error('❌ Error deleting building:', error);
     logger.error("Error deleting building", error);
-    return errorResponse("Failed to delete building", 500);
+    return errorResponse("Failed to delete building", 500, {
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 };
 
@@ -335,21 +395,35 @@ export const PUT = async (req: NextRequest) => {
     await connect();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
+    const projectId = searchParams.get("projectId");
+
+    console.log('🔍 PUT /api/building - Request received');
+    console.log('   Building ID:', id);
+    console.log('   Project ID:', projectId);
 
     if (!id) {
+      console.error('❌ Building ID is missing');
       return errorResponse("Building ID is required", 400);
     }
 
     if (!isValidObjectId(id)) {
+      console.error('❌ Invalid building ID format:', id);
       return errorResponse("Invalid building ID format", 400);
     }
 
     const body = await req.json();
+    console.log('📦 Request body:', JSON.stringify(body, null, 2));
+
+    // Remove immutable fields from update payload
+    const updatePayload = { ...body };
+    delete updatePayload._id;
+    delete updatePayload.projectId;
+    delete updatePayload.clientId;
 
     // Handle automatic floor creation if floors array is provided
-    if (body.floors && Array.isArray(body.floors)) {
+    if (updatePayload.floors && Array.isArray(updatePayload.floors)) {
       // Create floors with proper ObjectIds
-      const floorsWithIds = body.floors.map((floor: any) => ({
+      const floorsWithIds = updatePayload.floors.map((floor: any) => ({
         ...floor,
         _id: new mongoose.Types.ObjectId(),
         unitTypes: floor.unitTypes || [],
@@ -360,27 +434,42 @@ export const PUT = async (req: NextRequest) => {
         updatedAt: new Date()
       }));
 
-      body.floors = floorsWithIds;
-      
-      // DO NOT modify totalFloors here - it should represent only upper floors (1, 2, 3, etc.)
-      // The totalFloors field is the user's input for "Number of Upper Floors"
-      // Basement (-1) and Ground Floor (0) are tracked separately via hasBasement and hasGroundFloor
+      updatePayload.floors = floorsWithIds;
       
       logger.info(`Creating ${floorsWithIds.length} floors for building ${id}`);
     }
 
+    console.log('🔄 Attempting to update building...');
     const updatedBuilding = await Building.findByIdAndUpdate(
       id,
-      { $set: body },
+      { $set: updatePayload },
       { new: true, runValidators: true }
     ).lean();
 
     if (!updatedBuilding) {
+      console.error('❌ Building not found:', id);
       return errorResponse("Building not found", 404);
     }
 
-    const responseMessage = body.floors && Array.isArray(body.floors) 
-      ? `Building updated successfully with ${body.floors.length} floors created`
+    console.log('✅ Building updated successfully:', id);
+
+    // Also update the section name in the project if name was changed
+    if (updatePayload.name && projectId) {
+      console.log('🔄 Updating section name in project...');
+      try {
+        await Projects.updateOne(
+          { _id: projectId, "section.sectionId": id },
+          { $set: { "section.$.name": updatePayload.name } }
+        );
+        console.log('✅ Section name updated in project');
+      } catch (projectUpdateError) {
+        console.error('⚠️ Failed to update section name in project:', projectUpdateError);
+        // Don't fail the request if project update fails
+      }
+    }
+
+    const responseMessage = updatePayload.floors && Array.isArray(updatePayload.floors) 
+      ? `Building updated successfully with ${updatePayload.floors.length} floors created`
       : "Building updated successfully";
 
     // Invalidate cache
@@ -389,9 +478,20 @@ export const PUT = async (req: NextRequest) => {
     if (updatedBuilding && !Array.isArray(updatedBuilding) && updatedBuilding.projectId) {
       await safeRedisDelCache(`buildings:project:${updatedBuilding.projectId}`);
     }
+    if (projectId) {
+      const projectKeys = await safeRedisKeysCache(`project:*`);
+      if (projectKeys.length > 0) {
+        await safeRedisDelCache(...projectKeys);
+      }
+    }
 
     return successResponse(updatedBuilding, responseMessage);
   } catch (error: unknown) {
+    console.error('❌ Error updating building:', error);
+    console.error('❌ Error type:', error instanceof Error ? error.constructor.name : typeof error);
+    console.error('❌ Error message:', error instanceof Error ? error.message : String(error));
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
     logger.error("Error updating building", error);
 
     if (
@@ -400,10 +500,14 @@ export const PUT = async (req: NextRequest) => {
       "name" in error &&
       error.name === "ValidationError"
     ) {
+      console.error('❌ Validation error details:', error);
       return errorResponse("Validation failed", 400, error);
     }
 
-    return errorResponse("Failed to update building", 500);
+    return errorResponse("Failed to update building", 500, {
+      error: error instanceof Error ? error.message : String(error),
+      type: error instanceof Error ? error.constructor.name : typeof error
+    });
   }
 };
 
