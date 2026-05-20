@@ -43,6 +43,12 @@ export const MaterialSchema = new Schema(
       }
     },
 
+    contractor_name: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+
     sectionId: {
       type: String,
       required: false,
@@ -116,6 +122,12 @@ const MaterialActivitySchema = new Schema({
   materials: {
     type: [MaterialSchema],
     required: true,
+  },
+
+  contractor_name: {
+    type: String,
+    required: false,
+    trim: true,
   },
 
   message: {

@@ -204,12 +204,37 @@ export const POST = async (req: NextRequest) => {
     // Security: Encrypt token before storing
     const encryptedToken = encryptToken(token);
 
+    // ✅ NEW: Get clientId from user data based on userType
+    let clientId: string | undefined;
+    try {
+      if (userType === 'admin') {
+        const { Admin } = await import("@/lib/models/users/Admin");
+        const admin = await Admin.findById(userId).select('clientId').lean() as { clientId?: string } | null;
+        if (admin) {
+          clientId = admin.clientId;
+          console.log(`📋 Found clientId for admin ${userId}: ${clientId}`);
+        }
+      } else if (userType === 'staff') {
+        const { Staff } = await import("@/lib/models/users/Staff");
+        const staff = await Staff.findById(userId).select('clients').lean() as { clients?: Array<{ clientId: string }> } | null;
+        if (staff && staff.clients && staff.clients.length > 0) {
+          // Use the first client for staff (they can have multiple)
+          clientId = staff.clients[0].clientId;
+          console.log(`📋 Found clientId for staff ${userId}: ${clientId}`);
+        }
+      }
+    } catch (clientError) {
+      console.warn(`⚠️ Could not fetch clientId for user ${userId}:`, clientError);
+      // Continue without clientId - it's optional
+    }
+
     // Check if token already exists
     const existingToken = await PushToken.findOne({ token: encryptedToken });
 
     if (existingToken) {
       // Update existing token
       existingToken.userId = userId;
+      existingToken.clientId = clientId;
       existingToken.userType = userType;
       existingToken.platform = platform;
       existingToken.deviceId = deviceId;
@@ -243,6 +268,7 @@ export const POST = async (req: NextRequest) => {
     // Create new token
     const newToken = new PushToken({
       userId,
+      clientId, // ✅ NEW: Include clientId
       userType,
       token: encryptedToken, // Store encrypted token
       platform,

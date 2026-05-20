@@ -24,6 +24,7 @@ type AddMaterialStockItem = {
   qnt: number | string;
   perUnitCost: number | string;
   mergeIfExists?: boolean;
+  contractor_name?: string; // ✅ NEW: Contractor name field
 };
 
 type MaterialSubdoc = {
@@ -34,6 +35,7 @@ type MaterialSubdoc = {
   qnt: number;
   perUnitCost: number;
   totalCost: number;
+  contractor_name?: string; // ✅ NEW: Contractor name field
 };
 
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
@@ -304,7 +306,17 @@ export const POST = async (req: NextRequest) => {
         qnt: rawQnt,
         perUnitCost: rawPerUnitCost,
         mergeIfExists = true,
+        contractor_name, // ✅ NEW: Extract contractor_name
       } = item as AddMaterialStockItem;
+
+      // 🔍 DEBUG: Log contractor_name extraction
+      console.log('🏗️ Material Item Debug:', {
+        materialName,
+        contractor_name,
+        hasContractorName: !!contractor_name,
+        contractorNameType: typeof contractor_name,
+        fullItem: item,
+      });
 
       const resultBase = { input: item, success: false };
 
@@ -426,6 +438,7 @@ export const POST = async (req: NextRequest) => {
         qnt:         Number(qnt),
         perUnitCost: Number(perUnitCost),
         totalCost:   Number(totalCost),
+        contractor_name: contractor_name || undefined, // ✅ NEW: Include contractor_name
       };
 
       const updatedProject = await Projects.findByIdAndUpdate(
@@ -514,11 +527,25 @@ export const POST = async (req: NextRequest) => {
             perUnitCost: result.material?.perUnitCost || Number(result.input.perUnitCost) || 0,
             totalCost: result.material?.totalCost || 0,
             cost: result.material?.totalCost || 0, // For backward compatibility
+            contractor_name: result.material?.contractor_name || result.input.contractor_name || undefined, // ✅ NEW: Include contractor_name
             addedAt: new Date(),
           }));
           
           const totalCost = materials.reduce((sum, m) => sum + (m.cost || 0), 0);
           const materialCount = materials.length;
+          
+          // ✅ NEW: Extract contractor_name from first material (if available)
+          const contractor_name = materials[0]?.contractor_name || undefined;
+          
+          // 🔍 DEBUG: Log contractor_name before creating activity
+          console.log('🏗️ MaterialActivity Payload Debug:', {
+            projectId,
+            materialCount,
+            contractor_name,
+            hasContractorName: !!contractor_name,
+            firstMaterialContractorName: materials[0]?.contractor_name,
+            allMaterialsContractorNames: materials.map(m => m.contractor_name),
+          });
           
           // Create material activity payload
           const materialActivityPayload = {
@@ -532,6 +559,7 @@ export const POST = async (req: NextRequest) => {
             activity: 'imported' as const,
             date: new Date().toISOString(),
             user: user,
+            contractor_name: contractor_name, // ✅ NEW: Include contractor_name at activity level
           };
           
           console.log(`📦 Creating MaterialActivity for project ${projectId}:`, {

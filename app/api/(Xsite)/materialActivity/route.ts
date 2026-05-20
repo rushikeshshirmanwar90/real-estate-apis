@@ -79,6 +79,23 @@ export const GET = async (req: NextRequest | Request) => {
     const materials = await MaterialActivity.find(query)
       .sort({ date: -1, createdAt: -1 });
 
+    // 🔍 DEBUG: Log contractor_name in fetched activities
+    if (materials.length > 0) {
+      console.log('🏗️ MaterialActivity GET Debug:', {
+        totalActivities: materials.length,
+        firstActivityContractorName: materials[0]?.contractor_name,
+        activitiesWithContractorName: materials.filter(m => m.contractor_name).length,
+        sampleActivity: {
+          _id: materials[0]?._id,
+          contractor_name: materials[0]?.contractor_name,
+          materials: materials[0]?.materials?.map((m: any) => ({
+            name: m.name,
+            contractor_name: m.contractor_name,
+          })),
+        },
+      });
+    }
+
     if (!materials || materials.length === 0) {
       return successResponse({
         activities: [],
@@ -124,6 +141,7 @@ export const POST = async (req: NextRequest | Request) => {
       user,
       date,
       transferDetails,
+      contractor_name, // ✅ NEW: Extract contractor_name
     } = (await req.json()) as {
       clientId: string;
       projectId: string;
@@ -139,6 +157,7 @@ export const POST = async (req: NextRequest | Request) => {
         fromProject: { id: string; name: string };
         toProject: { id: string; name: string };
       };
+      contractor_name?: string; // ✅ NEW: Add contractor_name type
     };
 
     // Validation
@@ -208,6 +227,7 @@ export const POST = async (req: NextRequest | Request) => {
         fromProject: { id: string; name: string };
         toProject: { id: string; name: string };
       };
+      contractor_name?: string; // ✅ NEW: Add contractor_name type
     } = {
       clientId,
       projectId: reqProjectId,
@@ -227,6 +247,7 @@ export const POST = async (req: NextRequest | Request) => {
       date: dateStr,
       user,
       ...(activity === "transferred" && transferDetails ? { transferDetails } : {}),
+      ...(contractor_name ? { contractor_name } : {}), // ✅ NEW: Include contractor_name if provided
     };
 
     const newImportedMaterial = new MaterialActivity(payload);

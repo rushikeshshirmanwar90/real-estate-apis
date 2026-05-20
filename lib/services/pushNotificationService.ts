@@ -123,6 +123,8 @@ export class PushNotificationService {
         badge: options?.badge,
         priority: options?.priority || 'high',
         ttl: options?.ttl || 3600, // 1 hour default
+        // ✅ FIX: Add channelId for Android 8.0+ (required for notifications to appear)
+        channelId: tokenDoc.platform === 'android' ? 'project-updates' : undefined,
       }));
 
       // Send in batches with enhanced error handling
