@@ -215,10 +215,11 @@ export const POST = async (req: NextRequest) => {
         // Log the staff assignment activity
         try {
           const activityPayload = {
-            user: data.user || {
-              userId: 'system',
-              fullName: 'System',
-              email: 'system@admin.com'
+            user: {
+              userId: data.user?.userId || 'system',
+              fullName: data.user?.fullName || 'System',
+              email: data.user?.email || 'system@admin.com',
+              userType: data.user?.userType || 'admin', // Default to admin for backend operations
             },
             clientId: project.clientId._id || 'unknown',
             projectId: data.projectId,
@@ -584,7 +585,8 @@ export const DELETE = async (req: NextRequest) => {
             user: {
               userId: 'system',
               fullName: 'System',
-              email: 'system@admin.com'
+              email: 'system@admin.com',
+              userType: 'admin', // System operations are admin-level
             },
             clientId: project.clientId || 'unknown',
             projectId: projectId,

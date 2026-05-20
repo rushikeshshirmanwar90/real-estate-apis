@@ -356,7 +356,15 @@ export async function notifyActivityCreated(activity: any): Promise<Notification
     }
 
     // Send directly to project admins using the push notification service with detailed error tracking
+    // If the performing user is an admin, exclude them from notifications
     try {
+      const isPerformingUserAdmin = activity.user?.userType === 'admin';
+      const excludeUserId = isPerformingUserAdmin ? activity.user.userId : undefined;
+      
+      if (excludeUserId) {
+        NotificationLogger.info(context, `Excluding performing admin (${excludeUserId}) from notifications`);
+      }
+      
       const pushResult = await PushNotificationService.sendToProjectAdmins(
         activity.projectId,
         payload.title,
@@ -366,6 +374,7 @@ export async function notifyActivityCreated(activity: any): Promise<Notification
           sound: payload.sound || 'default',
           priority: 'high',
           ttl: 3600,
+          excludeUserId: excludeUserId, // Exclude performing admin
         }
       );
 
@@ -720,11 +729,20 @@ export async function notifyMaterialActivityCreated(materialActivity: any): Prom
     }
 
     // Send notifications to main project recipients with detailed error tracking
+    // If the performing user is an admin, exclude them from notifications
+    const isPerformingUserAdmin = materialActivity.user?.userType === 'admin';
+    const excludeUserId = isPerformingUserAdmin ? materialActivity.user.userId : undefined;
+    
+    if (excludeUserId) {
+      NotificationLogger.info(context, `Excluding performing admin (${excludeUserId}) from material activity notifications`);
+    }
+    
     const mainDeliveryResult = await sendNotificationWithErrorHandling(
       context,
       recipientResult.recipients,
       payload,
-      'main_project'
+      'main_project',
+      excludeUserId // Pass excludeUserId to filter out performing admin
     );
     
     result.deliveredCount += mainDeliveryResult.deliveredCount;
@@ -736,7 +754,8 @@ export async function notifyMaterialActivityCreated(materialActivity: any): Prom
       const sourceProjectResult = await handleTransferSourceNotification(
         context,
         materialActivity,
-        payload
+        payload,
+        excludeUserId // Pass excludeUserId to also exclude from source project notifications
       );
       
       result.deliveredCount += sourceProjectResult.deliveredCount;
@@ -1001,17 +1020,35 @@ async function sendNotificationWithErrorHandling(
   context: NotificationContext,
   userIds: string[],
   payload: NotificationPayload,
-  target: string
+  target: string,
+  excludeUserId?: string // Add excludeUserId parameter
 ): Promise<{ deliveredCount: number, failedCount: number, errors: NotificationError[] }> {
   const errors: NotificationError[] = [];
   let deliveredCount = 0;
   let failedCount = 0;
 
   try {
-    NotificationLogger.info(context, `Sending notifications to ${userIds.length} users for ${target}`);
+    // Filter out the excluded user if provided
+    let filteredUserIds = userIds;
+    if (excludeUserId) {
+      const beforeCount = userIds.length;
+      filteredUserIds = userIds.filter(id => id !== excludeUserId);
+      const afterCount = filteredUserIds.length;
+      
+      if (beforeCount > afterCount) {
+        NotificationLogger.info(context, `Filtered out performing user (${excludeUserId}) from ${target} notifications`);
+      }
+    }
+    
+    if (filteredUserIds.length === 0) {
+      NotificationLogger.info(context, `No recipients remaining after filtering for ${target}`);
+      return { deliveredCount: 0, failedCount: 0, errors: [] };
+    }
+    
+    NotificationLogger.info(context, `Sending notifications to ${filteredUserIds.length} users for ${target}`);
 
     const result = await PushNotificationService.sendToUsers(
-      userIds,
+      filteredUserIds,
       payload.title,
       payload.body,
       payload.data,
@@ -1023,7 +1060,7 @@ async function sendNotificationWithErrorHandling(
     );
 
     deliveredCount = result.messagesSent;
-    failedCount = userIds.length - result.messagesSent;
+    failedCount = filteredUserIds.length - result.messagesSent;
 
     if (result.success) {
       NotificationLogger.info(context, `Successfully sent ${deliveredCount} notifications for ${target}`);
@@ -1126,7 +1163,8 @@ async function sendNotificationWithErrorHandling(
 async function handleTransferSourceNotification(
   context: NotificationContext,
   materialActivity: any,
-  originalPayload: NotificationPayload
+  originalPayload: NotificationPayload,
+  excludeUserId?: string // Add excludeUserId parameter
 ): Promise<{ deliveredCount: number, failedCount: number, errors: NotificationError[] }> {
   const sourceProjectId = materialActivity.transferDetails.fromProject.id;
   
@@ -1160,12 +1198,13 @@ async function handleTransferSourceNotification(
     return { deliveredCount: 0, failedCount: 0, errors: sourceRecipientResult.errors };
   }
 
-  // Send notifications to source project recipients
+  // Send notifications to source project recipients (also exclude performing admin)
   const sourceDeliveryResult = await sendNotificationWithErrorHandling(
     sourceContext,
     sourceRecipientResult.recipients,
     sourcePayload,
-    'source_project'
+    'source_project',
+    excludeUserId // Pass excludeUserId to filter out performing admin
   );
 
   // Combine errors from recipient resolution and delivery

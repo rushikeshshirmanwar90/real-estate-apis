@@ -152,7 +152,7 @@ export const POST = async (req: NextRequest) => {
             try {
               await Projects.findByIdAndUpdate(
                 projectId,
-                { $inc: { spent: -costToSubtract } },
+                { $inc: { spent: -(costToSubtract as number) } },
                 { new: true }
               );
               console.log(`Updated project ${projectId} spent amount by -${costToSubtract}`);
@@ -257,7 +257,7 @@ export const POST = async (req: NextRequest) => {
 
         const equipmentToDuplicate = await Equipment.find(filters).lean();
         const duplicatedEquipment = equipmentToDuplicate.map(equipment => {
-          const { _id, createdAt, updatedAt, ...equipmentData } = equipment;
+          const { _id, createdAt, updatedAt, ...equipmentData } = equipment as any;
           return {
             ...equipmentData,
             projectSectionId: data.targetEntityId,

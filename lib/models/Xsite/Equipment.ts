@@ -1,10 +1,5 @@
 import { Schema, model, models } from "mongoose";
 
-// Clear any existing Equipment model to avoid schema conflicts
-if (models.Equipment) {
-  delete models.Equipment;
-}
-
 // Equipment Schema for standalone Equipment documents
 const EquipmentSchema = new Schema(
   {
@@ -352,7 +347,24 @@ EquipmentSchema.methods.markMaintenance = function() {
   return this.save();
 };
 
-// Create Equipment model with fresh schema
-const Equipment = model("Equipment", EquipmentSchema);
+// Create Equipment model with proper Next.js pattern (check if exists first)
+// Force clear if schema mismatch detected
+try {
+  if (models.Equipment) {
+    // Check if we need to recompile due to schema changes
+    const existingModel = models.Equipment;
+    if (existingModel.schema !== EquipmentSchema) {
+      console.log('⚠️ Equipment schema mismatch detected, clearing model...');
+      delete models.Equipment;
+    }
+  }
+} catch (error) {
+  console.log('⚠️ Error checking Equipment model, will recreate:', error);
+  if (models.Equipment) {
+    delete models.Equipment;
+  }
+}
+
+const Equipment = models.Equipment || model("Equipment", EquipmentSchema);
 
 export { EquipmentSchema, Equipment };

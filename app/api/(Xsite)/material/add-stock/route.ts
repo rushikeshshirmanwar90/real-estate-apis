@@ -199,7 +199,8 @@ export const POST = async (request: NextRequest) => {
             const userDetailsHeader = request.headers.get('x-user-details');
             let user = {
                 userId: clientId,
-                fullName: 'Unknown User'
+                fullName: 'Unknown User',
+                userType: undefined as string | undefined // Add userType field
             };
             if (userDetailsHeader) {
                 try {
@@ -209,7 +210,8 @@ export const POST = async (request: NextRequest) => {
                         fullName: userDetails.fullName || 
                                  (userDetails.firstName && userDetails.lastName 
                                      ? `${userDetails.firstName} ${userDetails.lastName}` 
-                                     : userDetails.firstName || userDetails.lastName || userDetails.name || 'Unknown User')
+                                     : userDetails.firstName || userDetails.lastName || userDetails.name || 'Unknown User'),
+                        userType: userDetails.userType || undefined // Extract userType from header
                     };
                 } catch (parseError) {
                     console.warn('⚠️ Failed to parse user details from header:', parseError);

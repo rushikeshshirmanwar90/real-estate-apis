@@ -239,6 +239,7 @@ export class PushNotificationService {
 
   /**
    * Send push notifications to project admins
+   * @param excludeUserId - Optional userId to exclude from notifications (e.g., the performing admin)
    */
   static async sendToProjectAdmins(
     projectId: string,
@@ -250,6 +251,7 @@ export class PushNotificationService {
       badge?: number;
       priority?: 'default' | 'normal' | 'high';
       ttl?: number;
+      excludeUserId?: string; // Add this parameter
     }
   ): Promise<PushNotificationResult> {
     try {
@@ -273,6 +275,7 @@ export class PushNotificationService {
 
       // Get ONLY admins for this client (NO STAFF)
       const recipientIds: string[] = [];
+      const excludeUserId = options?.excludeUserId;
 
       if (project.clientId) {
         try {
@@ -280,10 +283,22 @@ export class PushNotificationService {
             .select('_id firstName lastName')
             .lean() as any[];
           
-          const adminIds = admins.map((admin: any) => admin._id.toString());
+          let adminIds = admins.map((admin: any) => admin._id.toString());
+          
+          // Filter out the performing user if excludeUserId is provided
+          if (excludeUserId) {
+            const beforeCount = adminIds.length;
+            adminIds = adminIds.filter(id => id !== excludeUserId);
+            const afterCount = adminIds.length;
+            
+            if (beforeCount > afterCount) {
+              console.log(`🚫 Excluded performing admin (${excludeUserId}) from notifications`);
+            }
+          }
+          
           recipientIds.push(...adminIds);
           
-          console.log(`📱 Found ${adminIds.length} admins for client ${project.clientId} (staff excluded)`);
+          console.log(`📱 Found ${adminIds.length} admins for client ${project.clientId} (staff excluded${excludeUserId ? ', performing admin excluded' : ''})`);
         } catch (adminError) {
           console.error('❌ Error fetching admins:', adminError);
         }

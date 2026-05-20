@@ -161,9 +161,5 @@ RegistrySchema.index({ aadharNumber: 1 });
 RegistrySchema.index({ panNumber: 1 });
 RegistrySchema.index({ status: 1 });
 
-// Clear the model cache if it exists to ensure schema updates are applied
-if (models.Registry) {
-  delete models.Registry;
-}
-
-export const Registry = model("Registry", RegistrySchema);
+// Use proper Next.js pattern for model registration
+export const Registry = models.Registry || model("Registry", RegistrySchema);

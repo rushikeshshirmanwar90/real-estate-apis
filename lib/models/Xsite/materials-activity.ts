@@ -72,6 +72,12 @@ const UserSchema = new Schema(
       type: String,
       required: true,
     },
+
+    userType: {
+      type: String,
+      enum: ["admin", "staff"],
+      required: false, // Optional for backward compatibility
+    },
   },
   { _id: false, timestamps: false }
 );

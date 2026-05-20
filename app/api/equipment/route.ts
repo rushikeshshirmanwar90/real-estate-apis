@@ -1,7 +1,4 @@
 import connect from "@/lib/db";
-import { Equipment } from "@/lib/models/Xsite/Equipment";
-import { Projects } from "@/lib/models/Project";
-import { Admin } from "@/lib/models/users/Admin";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
@@ -15,6 +12,23 @@ import {
 } from "@/lib/utils/redis-helpers";
 import { checkValidClient } from "@/lib/auth";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+
+// Import models AFTER connecting to database
+let Equipment: any;
+let Projects: any;
+let Admin: any;
+
+async function loadModels() {
+  if (!Equipment) {
+    await connect(); // Ensure connection first
+    Equipment = (await import("@/lib/models/Xsite/Equipment")).Equipment;
+    Projects = (await import("@/lib/models/Project")).Projects;
+    Admin = (await import("@/lib/models/users/Admin")).Admin;
+    console.log('✅ Models loaded successfully');
+  }
+  return { Equipment, Projects, Admin };
+}
+
 // Helper function to check staff access to project
 async function checkStaffProjectAccess(req: NextRequest, projectId: string): Promise<NextResponse | null> {
   const { searchParams } = new URL(req.url);
@@ -45,7 +59,9 @@ export const GET = async (req: NextRequest) => {
   }
 
   try {
-    await connect();
+    // Load models dynamically
+    const { Equipment, Projects, Admin } = await loadModels();
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const projectId = searchParams.get("projectId");
@@ -105,10 +121,21 @@ export const GET = async (req: NextRequest) => {
       return successResponse(cacheValue, `Retrieved ${Array.isArray(cacheValue) ? cacheValue.length : 0} equipment entries successfully (cached)`);
     }
     // Execute query without pagination
-    const equipment = await Equipment.find(query)
-      .populate('addedBy', 'fullName name email')
-      .sort({ createdAt: -1 })
-      .lean();
+    let equipment;
+    try {
+      console.log('🔍 Attempting to query Equipment model with:', query);
+      equipment = await Equipment.find(query)
+        .populate('addedBy', 'fullName name email')
+        .sort({ createdAt: -1 })
+        .lean();
+      console.log('✅ Equipment query successful, found:', equipment.length, 'items');
+    } catch (queryError) {
+      console.error('❌ Equipment.find() failed:', queryError);
+      console.error('   Query was:', JSON.stringify(query));
+      console.error('   Error name:', queryError instanceof Error ? queryError.name : 'Unknown');
+      console.error('   Error message:', queryError instanceof Error ? queryError.message : String(queryError));
+      throw queryError; // Re-throw to be caught by outer catch
+    }
     // Cache the equipment list with 24-hour expiration
     await safeRedisSetCache(cacheKey, JSON.stringify(equipment), 'EX', 86400);
     return successResponse(
@@ -133,7 +160,9 @@ export const POST = async (req: NextRequest) => {
   }
 
   try {
-    await connect();
+    // Load models dynamically
+    const { Equipment, Projects, Admin } = await loadModels();
+    
     const data = await req.json();
     // Validate required fields
     const requiredFields = ['type', 'category', 'quantity', 'perUnitCost', 'projectId', 'projectName', 'projectSectionId', 'projectSectionName'];
@@ -334,6 +363,9 @@ export const PUT = async (req: NextRequest) => {
   }
 
   try {
+    // Load models dynamically
+    const { Equipment, Projects } = await loadModels();
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -420,6 +452,9 @@ export const DELETE = async (req: NextRequest) => {
   }
 
   try {
+    // Load models dynamically
+    const { Equipment, Projects } = await loadModels();
+    
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) {
@@ -428,7 +463,7 @@ export const DELETE = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid equipment ID format", 400);
     }
-    await connect();
+    
     // Get the equipment before deleting to calculate cost to subtract
     const equipment = await Equipment.findById(id);
     if (!equipment) {
