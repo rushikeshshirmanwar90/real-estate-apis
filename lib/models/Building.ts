@@ -261,6 +261,18 @@ buildingSchema.index({ 'floors.floorNumber': 1 });
 buildingSchema.index({ 'floors.units.status': 1 });
 buildingSchema.index({ 'floors.units.type': 1 });
 
-const Building = models.Building || model("Building", buildingSchema);
+// Safe model registration to prevent data loss during redeployment
+let Building;
+try {
+  // In production, always reuse existing model to prevent schema conflicts
+  if (models.Building) {
+    Building = models.Building;
+  } else {
+    Building = model("Building", buildingSchema);
+  }
+} catch (error) {
+  // Fallback to existing model if registration fails
+  Building = models.Building || model("Building", buildingSchema);
+}
 
 export { Building, FloorSchema, UnitSchema };

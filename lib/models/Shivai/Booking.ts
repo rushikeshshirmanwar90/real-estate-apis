@@ -119,4 +119,16 @@ BookingSchema.index({ status: 1 });
 BookingSchema.index({ customerMobile: 1 });
 BookingSchema.index({ bookingDate: -1 });
 
-export const Booking = models.Booking || model("Booking", BookingSchema);
+// Safe model registration to prevent data loss during redeployment
+let Booking;
+try {
+  if (models.Booking) {
+    Booking = models.Booking;
+  } else {
+    Booking = model("Booking", BookingSchema);
+  }
+} catch (error) {
+  Booking = models.Booking || model("Booking", BookingSchema);
+}
+
+export { Booking };

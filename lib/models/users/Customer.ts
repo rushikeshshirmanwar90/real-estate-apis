@@ -88,4 +88,16 @@ const CustomerSchema = new Schema(
   }
 );
 
-export const Customer = models.Customers || model("Customers", CustomerSchema);
+// Safe model registration to prevent data loss during redeployment
+let Customer;
+try {
+  if (models.Customers) {
+    Customer = models.Customers;
+  } else {
+    Customer = model("Customers", CustomerSchema);
+  }
+} catch (error) {
+  Customer = models.Customers || model("Customers", CustomerSchema);
+}
+
+export { Customer };

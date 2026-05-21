@@ -309,7 +309,7 @@ export const PUT = async (req: NextRequest) => {
     console.log('🔄 Updating otherSection...');
     const updatedSection = await OtherSection.findByIdAndUpdate(
       sectionId,
-      newData,
+      { $set: newData },
       { new: true, runValidators: true }
     );
 

@@ -229,7 +229,7 @@ export const PUT = async (req: NextRequest) => {
 
     await connect();
 
-    const updatedUpdate = await Updates.findByIdAndUpdate(id, body, {
+    const updatedUpdate = await Updates.findByIdAndUpdate(id, { $set: body }, {
       new: true,
       runValidators: true,
     });

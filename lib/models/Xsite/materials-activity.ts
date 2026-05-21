@@ -162,5 +162,16 @@ const MaterialActivitySchema = new Schema({
   },
 });
 
-export const MaterialActivity =
-  models.MaterialActivity || model("MaterialActivity", MaterialActivitySchema);
+// Safe model registration to prevent data loss during redeployment
+let MaterialActivity;
+try {
+  if (models.MaterialActivity) {
+    MaterialActivity = models.MaterialActivity;
+  } else {
+    MaterialActivity = model("MaterialActivity", MaterialActivitySchema);
+  }
+} catch (error) {
+  MaterialActivity = models.MaterialActivity || model("MaterialActivity", MaterialActivitySchema);
+}
+
+export { MaterialActivity };

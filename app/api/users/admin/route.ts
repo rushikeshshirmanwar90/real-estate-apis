@@ -316,7 +316,7 @@ export const PUT = async (req: NextRequest) => {
     // Find and update the admin
     const updatedAdmin = await Admin.findByIdAndUpdate(
       id,
-      { ...updateData, updatedAt: new Date() },
+      { $set: { ...updateData, updatedAt: new Date() } },
       { new: true, runValidators: true }
     );
 

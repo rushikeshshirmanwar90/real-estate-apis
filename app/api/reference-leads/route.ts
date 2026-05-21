@@ -81,7 +81,7 @@ export const POST = async (req: Request | NextRequest) => {
 
       const updated = await ReferenceLeads.findByIdAndUpdate(
         existingReference._id,
-        { leads: updatedLeads },
+        { $set: { leads: updatedLeads } },
         { new: true }
       );
 
@@ -208,7 +208,7 @@ export const PUT = async (req: Request | NextRequest) => {
 
     const updatedReferenceLeads = await ReferenceLeads.findOneAndUpdate(
       { "referenceCustomer.id": referenceCustomerId },
-      { leads },
+      { $set: { leads } },
       { new: true }
     );
 

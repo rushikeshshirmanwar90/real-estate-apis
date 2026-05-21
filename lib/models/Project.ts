@@ -231,6 +231,18 @@ projectSchema.pre("validate", function (this: unknown, next) {
   next();
 });
 
-const Projects = models.Projects || model("Projects", projectSchema);
+// Safe model registration to prevent data loss during redeployment
+let Projects;
+try {
+  // In production, always reuse existing model to prevent schema conflicts
+  if (models.Projects) {
+    Projects = models.Projects;
+  } else {
+    Projects = model("Projects", projectSchema);
+  }
+} catch (error) {
+  // Fallback to existing model if registration fails
+  Projects = models.Projects || model("Projects", projectSchema);
+}
 
 export { Projects };

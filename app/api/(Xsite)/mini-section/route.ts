@@ -188,8 +188,10 @@ export const PUT = async (req: NextRequest) => {
     const updatedMiniSection = await MiniSection.findByIdAndUpdate(
       id,
       {
-        ...body,
-        updatedAt: new Date(),
+        $set: {
+          ...body,
+          updatedAt: new Date(),
+        }
       },
       { new: true, runValidators: true }
     ).lean();

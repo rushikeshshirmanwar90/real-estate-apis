@@ -23,4 +23,16 @@ const EventSchema = new Schema({
   },
 });
 
-export const Event = models.Event || model("Event", EventSchema);
+// Safe model registration to prevent data loss during redeployment
+let Event;
+try {
+  if (models.Event) {
+    Event = models.Event;
+  } else {
+    Event = model("Event", EventSchema);
+  }
+} catch (error) {
+  Event = models.Event || model("Event", EventSchema);
+}
+
+export { Event };

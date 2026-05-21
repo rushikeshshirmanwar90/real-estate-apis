@@ -44,5 +44,16 @@ const OtherSectionSchema = new Schema({
   },
 });
 
-export const OtherSection =
-  models.OtherSection || model("OtherSection", OtherSectionSchema);
+// Safe model registration to prevent data loss during redeployment
+let OtherSection;
+try {
+  if (models.OtherSection) {
+    OtherSection = models.OtherSection;
+  } else {
+    OtherSection = model("OtherSection", OtherSectionSchema);
+  }
+} catch (error) {
+  OtherSection = models.OtherSection || model("OtherSection", OtherSectionSchema);
+}
+
+export { OtherSection };

@@ -61,6 +61,16 @@ const RowHouseSchema = new Schema(
   }
 );
 
-const RowHouse = models.RowHouse || model("RowHouse", RowHouseSchema);
+// Safe model registration to prevent data loss during redeployment
+let RowHouse;
+try {
+  if (models.RowHouse) {
+    RowHouse = models.RowHouse;
+  } else {
+    RowHouse = model("RowHouse", RowHouseSchema);
+  }
+} catch (error) {
+  RowHouse = models.RowHouse || model("RowHouse", RowHouseSchema);
+}
 
 export { RowHouse };

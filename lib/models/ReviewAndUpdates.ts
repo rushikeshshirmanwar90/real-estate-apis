@@ -67,5 +67,16 @@ const ReviewAndUpdateSchema = new Schema({
   },
 });
 
-export const ReviewAndUpdates =
-  models.ReviewAndUpdates || model("ReviewAndUpdates", ReviewAndUpdateSchema);
+// Safe model registration to prevent data loss during redeployment
+let ReviewAndUpdates;
+try {
+  if (models.ReviewAndUpdates) {
+    ReviewAndUpdates = models.ReviewAndUpdates;
+  } else {
+    ReviewAndUpdates = model("ReviewAndUpdates", ReviewAndUpdateSchema);
+  }
+} catch (error) {
+  ReviewAndUpdates = models.ReviewAndUpdates || model("ReviewAndUpdates", ReviewAndUpdateSchema);
+}
+
+export { ReviewAndUpdates };

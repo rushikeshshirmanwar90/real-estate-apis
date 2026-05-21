@@ -56,4 +56,16 @@ const MiniSectionSchema = new Schema({
   timestamps: true,
 });
 
-export const MiniSection = models.MiniSection || model("MiniSection", MiniSectionSchema);
+// Safe model registration to prevent data loss during redeployment
+let MiniSection;
+try {
+  if (models.MiniSection) {
+    MiniSection = models.MiniSection;
+  } else {
+    MiniSection = model("MiniSection", MiniSectionSchema);
+  }
+} catch (error) {
+  MiniSection = models.MiniSection || model("MiniSection", MiniSectionSchema);
+}
+
+export { MiniSection };

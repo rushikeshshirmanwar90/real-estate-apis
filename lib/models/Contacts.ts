@@ -39,4 +39,16 @@ const ContactSchema = new Schema(
   }
 );
 
-export const Contacts = models.Contacts || model("Contacts", ContactSchema);
+// Safe model registration to prevent data loss during redeployment
+let Contacts;
+try {
+  if (models.Contacts) {
+    Contacts = models.Contacts;
+  } else {
+    Contacts = model("Contacts", ContactSchema);
+  }
+} catch (error) {
+  Contacts = models.Contacts || model("Contacts", ContactSchema);
+}
+
+export { Contacts };

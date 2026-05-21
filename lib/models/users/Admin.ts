@@ -31,4 +31,16 @@ const AdminSchema = new Schema({
   },
 });
 
-export const Admin = models.Admin || model("Admin", AdminSchema);
+// Safe model registration to prevent data loss during redeployment
+let Admin;
+try {
+  if (models.Admin) {
+    Admin = models.Admin;
+  } else {
+    Admin = model("Admin", AdminSchema);
+  }
+} catch (error) {
+  Admin = models.Admin || model("Admin", AdminSchema);
+}
+
+export { Admin };

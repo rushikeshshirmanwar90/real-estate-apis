@@ -673,7 +673,7 @@ export const PUT = async (req: NextRequest) => {
     // ✅ Find and update the staff member (filtered by both ID and clientId)
     const updatedStaff = await Staff.findOneAndUpdate(
       { _id: id, 'clients.clientId': clientId },
-      { ...updateData, updatedAt: new Date() },
+      { $set: { ...updateData, updatedAt: new Date() } },
       { new: true, runValidators: true }
     );
 

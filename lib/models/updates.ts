@@ -80,4 +80,16 @@ const updateSchema = new Schema(
   }
 );
 
-export const Updates = models.Updates || model("Updates", updateSchema);
+// Safe model registration to prevent data loss during redeployment
+let Updates;
+try {
+  if (models.Updates) {
+    Updates = models.Updates;
+  } else {
+    Updates = model("Updates", updateSchema);
+  }
+} catch (error) {
+  Updates = models.Updates || model("Updates", updateSchema);
+}
+
+export { Updates };

@@ -37,6 +37,16 @@ const brokerSchema = new Schema(
   { timestamps: true }
 );
 
-const Broker = models.Broker || model("Broker", brokerSchema);
+// Safe model registration to prevent data loss during redeployment
+let Broker;
+try {
+  if (models.Broker) {
+    Broker = models.Broker;
+  } else {
+    Broker = model("Broker", brokerSchema);
+  }
+} catch (error) {
+  Broker = models.Broker || model("Broker", brokerSchema);
+}
 
 export { Broker };

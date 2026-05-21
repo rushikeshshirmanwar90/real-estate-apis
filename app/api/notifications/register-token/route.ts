@@ -13,11 +13,16 @@ export async function POST(req: NextRequest) {
   try {
     await connect();
     
-    const { userId, clientId, role, token } = await req.json();
+    const { userId, clientId, role, token, platform } = await req.json();
 
     // Validate required fields
     if (!userId || !clientId || !role || !token) {
       return errorResponse("userId, clientId, role, and token are all required", 400);
+    }
+
+    // Validate platform if provided
+    if (platform && !["ios", "android", "web"].includes(platform)) {
+      return errorResponse("platform must be 'ios', 'android', or 'web'", 400);
     }
 
     // Validate role
@@ -35,7 +40,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    console.log(`📱 Registering push token for userId=${userId} role=${role} clientId=${clientId}`);
+    console.log(`📱 Registering push token for userId=${userId} role=${role} clientId=${clientId} platform=${platform || 'not specified'}`);
 
     // Upsert — latest token always wins
     const result = await PushToken.findOneAndUpdate(
@@ -44,7 +49,8 @@ export async function POST(req: NextRequest) {
         userId, 
         clientId, 
         role, 
-        token, 
+        token,
+        ...(platform && { platform }), // ✅ FIX: Include platform if provided
         updatedAt: new Date() 
       },
       { 

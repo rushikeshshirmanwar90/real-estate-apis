@@ -48,6 +48,16 @@ const LeadSchema = new Schema({
   },
 });
 
-const Lead = models.Lead || model("Lead", LeadSchema);
+// Safe model registration to prevent data loss during redeployment
+let Lead;
+try {
+  if (models.Lead) {
+    Lead = models.Lead;
+  } else {
+    Lead = model("Lead", LeadSchema);
+  }
+} catch (error) {
+  Lead = models.Lead || model("Lead", LeadSchema);
+}
 
 export { Lead };

@@ -510,7 +510,18 @@ LaborSchema.methods.markCancelled = function() {
   return this.save();
 };
 
-// Create standalone Labor model
-const Labor = models.Labor || model("Labor", LaborSchema);
+// Safe model registration to prevent data loss during redeployment
+let Labor;
+try {
+  // In production, always reuse existing model to prevent schema conflicts
+  if (models.Labor) {
+    Labor = models.Labor;
+  } else {
+    Labor = model("Labor", LaborSchema);
+  }
+} catch (error) {
+  // Fallback to existing model if registration fails
+  Labor = models.Labor || model("Labor", LaborSchema);
+}
 
 export { LaborSchema, EmbeddedLaborSchema, Labor };

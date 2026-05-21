@@ -102,4 +102,16 @@ if (changesPath) {
   changesPath.options.default = [];
 }
 
-export const RoomInfo = models.RoomInfo || model("RoomInfo", RoomInfoSchema);
+// Safe model registration to prevent data loss during redeployment
+let RoomInfo;
+try {
+  if (models.RoomInfo) {
+    RoomInfo = models.RoomInfo;
+  } else {
+    RoomInfo = model("RoomInfo", RoomInfoSchema);
+  }
+} catch (error) {
+  RoomInfo = models.RoomInfo || model("RoomInfo", RoomInfoSchema);
+}
+
+export { RoomInfo };

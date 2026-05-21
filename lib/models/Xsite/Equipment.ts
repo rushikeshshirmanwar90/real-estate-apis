@@ -365,6 +365,16 @@ try {
   }
 }
 
-const Equipment = models.Equipment || model("Equipment", EquipmentSchema);
+// Safe model registration to prevent data loss during redeployment
+let Equipment;
+try {
+  if (models.Equipment) {
+    Equipment = models.Equipment;
+  } else {
+    Equipment = model("Equipment", EquipmentSchema);
+  }
+} catch (error) {
+  Equipment = models.Equipment || model("Equipment", EquipmentSchema);
+}
 
 export { EquipmentSchema, Equipment };

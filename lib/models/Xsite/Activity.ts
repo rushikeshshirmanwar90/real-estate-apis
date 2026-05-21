@@ -211,4 +211,16 @@ ActivitySchema.index({ projectId: 1, createdAt: -1 });
 ActivitySchema.index({ activityType: 1, createdAt: -1 });
 ActivitySchema.index({ "user.userId": 1, createdAt: -1 });
 
-export const Activity = models.Activity || model("Activity", ActivitySchema);
+// Safe model registration to prevent data loss during redeployment
+let Activity;
+try {
+  if (models.Activity) {
+    Activity = models.Activity;
+  } else {
+    Activity = model("Activity", ActivitySchema);
+  }
+} catch (error) {
+  Activity = models.Activity || model("Activity", ActivitySchema);
+}
+
+export { Activity };

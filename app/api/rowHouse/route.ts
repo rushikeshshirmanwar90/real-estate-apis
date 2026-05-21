@@ -263,7 +263,7 @@ export const PUT = async (req: NextRequest) => {
     console.log('🔄 Updating rowhouse...');
     const updatedRowHouse = await RowHouse.findByIdAndUpdate(
       sectionId,
-      newData,
+      { $set: newData },
       { new: true, runValidators: true }
     );
 

@@ -101,4 +101,18 @@ const StaffSchema = new Schema({
   },
 });
 
-export const Staff = models.Staff || model("Staff", StaffSchema);
+// Safe model registration to prevent data loss during redeployment
+let Staff;
+try {
+  // In production, always reuse existing model to prevent schema conflicts
+  if (models.Staff) {
+    Staff = models.Staff;
+  } else {
+    Staff = model("Staff", StaffSchema);
+  }
+} catch (error) {
+  // Fallback to existing model if registration fails
+  Staff = models.Staff || model("Staff", StaffSchema);
+}
+
+export { Staff };

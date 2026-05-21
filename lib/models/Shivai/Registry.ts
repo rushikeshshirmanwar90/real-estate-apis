@@ -161,5 +161,16 @@ RegistrySchema.index({ aadharNumber: 1 });
 RegistrySchema.index({ panNumber: 1 });
 RegistrySchema.index({ status: 1 });
 
-// Use proper Next.js pattern for model registration
-export const Registry = models.Registry || model("Registry", RegistrySchema);
+// Safe model registration to prevent data loss during redeployment
+let Registry;
+try {
+  if (models.Registry) {
+    Registry = models.Registry;
+  } else {
+    Registry = model("Registry", RegistrySchema);
+  }
+} catch (error) {
+  Registry = models.Registry || model("Registry", RegistrySchema);
+}
+
+export { Registry };

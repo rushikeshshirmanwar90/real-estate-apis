@@ -18,5 +18,16 @@ const LoginUserSchema = new Schema({
   },
 });
 
-export const LoginUser =
-  models.LoginUser || model("LoginUser", LoginUserSchema);
+// Safe model registration to prevent data loss during redeployment
+let LoginUser;
+try {
+  if (models.LoginUser) {
+    LoginUser = models.LoginUser;
+  } else {
+    LoginUser = model("LoginUser", LoginUserSchema);
+  }
+} catch (error) {
+  LoginUser = models.LoginUser || model("LoginUser", LoginUserSchema);
+}
+
+export { LoginUser };

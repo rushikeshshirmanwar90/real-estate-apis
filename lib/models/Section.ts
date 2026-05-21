@@ -23,6 +23,16 @@ const SectionSchema = new Schema(
   }
 );
 
-const Section = models.Section || model("Section", SectionSchema);
+// Safe model registration to prevent data loss during redeployment
+let Section;
+try {
+  if (models.Section) {
+    Section = models.Section;
+  } else {
+    Section = model("Section", SectionSchema);
+  }
+} catch (error) {
+  Section = models.Section || model("Section", SectionSchema);
+}
 
 export { Section };

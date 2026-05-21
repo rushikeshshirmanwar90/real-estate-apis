@@ -55,7 +55,16 @@ const sealsPersonSchema = new Schema(
   }
 );
 
-const sealsPerson =
-  models.sealsPerson || model("sealsPerson", sealsPersonSchema);
+// Safe model registration to prevent data loss during redeployment
+let sealsPerson;
+try {
+  if (models.sealsPerson) {
+    sealsPerson = models.sealsPerson;
+  } else {
+    sealsPerson = model("sealsPerson", sealsPersonSchema);
+  }
+} catch (error) {
+  sealsPerson = models.sealsPerson || model("sealsPerson", sealsPersonSchema);
+}
 
 export { sealsPerson };

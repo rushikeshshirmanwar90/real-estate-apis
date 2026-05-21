@@ -302,4 +302,16 @@ PaymentScheduleSchema.methods.getOverduePayments = function() {
   });
 };
 
-export const PaymentSchedule = models.PaymentSchedule || model("PaymentSchedule", PaymentScheduleSchema);
+// Safe model registration to prevent data loss during redeployment
+let PaymentSchedule;
+try {
+  if (models.PaymentSchedule) {
+    PaymentSchedule = models.PaymentSchedule;
+  } else {
+    PaymentSchedule = model("PaymentSchedule", PaymentScheduleSchema);
+  }
+} catch (error) {
+  PaymentSchedule = models.PaymentSchedule || model("PaymentSchedule", PaymentScheduleSchema);
+}
+
+export { PaymentSchedule };

@@ -47,5 +47,16 @@ ReferencedLeadsSchema.index(
   }
 );
 
-export const ReferenceLeads =
-  models.ReferencedLeads || model("ReferencedLeads", ReferencedLeadsSchema);
+// Safe model registration to prevent data loss during redeployment
+let ReferenceLeads;
+try {
+  if (models.ReferencedLeads) {
+    ReferenceLeads = models.ReferencedLeads;
+  } else {
+    ReferenceLeads = model("ReferencedLeads", ReferencedLeadsSchema);
+  }
+} catch (error) {
+  ReferenceLeads = models.ReferencedLeads || model("ReferencedLeads", ReferencedLeadsSchema);
+}
+
+export { ReferenceLeads };
