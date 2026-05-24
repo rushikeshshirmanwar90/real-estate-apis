@@ -57,7 +57,7 @@ export const GET = async (req: NextRequest) => {
     const sortOrder    = searchParams.get("sortOrder")          || "desc";
     const sectionId    = searchParams.get("sectionId");         // ✅ NEW: Section filtering
     const page         = parseInt(searchParams.get("page") || "1");
-    const limit        = Math.min(parseInt(searchParams.get("limit") || "10"), 100); // ✅ Pagination: default 10, max 100
+    const limit        = Math.min(parseInt(searchParams.get("limit") || "10"), 5000); // ✅ Pagination: default 10, max 5000
     const cacheBuster  = searchParams.get("_t");                // ✅ Cache busting parameter (ignored, just for client-side cache bypass)
 
     if (!projectId || !clientId) {
@@ -114,10 +114,18 @@ export const GET = async (req: NextRequest) => {
 
     // ✅ NEW: Add section filtering if provided
     if (sectionId && sectionId !== 'all-sections') {
+      let sectionIdMatchCondition: any;
+      
+      if (sectionId.includes(',')) {
+        sectionIdMatchCondition = { "MaterialAvailable.sectionId": { $in: sectionId.split(',') } };
+      } else {
+        sectionIdMatchCondition = { "MaterialAvailable.sectionId": sectionId };
+      }
+      
       pipeline.push({
         $match: {
           $or: [
-            { "MaterialAvailable.sectionId": sectionId },
+            sectionIdMatchCondition,
             { "MaterialAvailable.sectionId": { $exists: false } }, // Include global materials
             { "MaterialAvailable.sectionId": null }
           ]
@@ -186,10 +194,18 @@ export const GET = async (req: NextRequest) => {
 
     // Add same section filtering for count
     if (sectionId && sectionId !== 'all-sections') {
+      let sectionIdMatchCondition: any;
+      
+      if (sectionId.includes(',')) {
+        sectionIdMatchCondition = { "MaterialAvailable.sectionId": { $in: sectionId.split(',') } };
+      } else {
+        sectionIdMatchCondition = { "MaterialAvailable.sectionId": sectionId };
+      }
+      
       countPipeline.push({
         $match: {
           $or: [
-            { "MaterialAvailable.sectionId": sectionId },
+            sectionIdMatchCondition,
             { "MaterialAvailable.sectionId": { $exists: false } },
             { "MaterialAvailable.sectionId": null }
           ]
@@ -507,7 +523,7 @@ export const POST = async (req: NextRequest) => {
       }
       
       // Create MaterialActivity for each project
-      for (const [projectId, projectResults] of successfulByProject.entries()) {
+      for (const [projectId, projectResults] of Array.from(successfulByProject.entries())) {
         try {
           const project = await Projects.findById(projectId);
           if (!project) {

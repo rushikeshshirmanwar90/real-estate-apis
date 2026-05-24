@@ -3,6 +3,7 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Activity } from "@/lib/models/Xsite/Activity";
 import { PushNotificationService } from "./pushNotificationService";
 import { getRetryManager, createFailedNotification } from "./retryManager";
+import { resolveRecipientsFromDB as resolveRecipientsFromDBUtil } from "@/lib/utils/notificationSender";
 
 export interface NotificationPayload {
   title: string;
@@ -855,7 +856,6 @@ function validateMaterialActivity(materialActivity: any): string[] {
 
 /**
  * Resolve recipients with fallback mechanisms and comprehensive error handling
- * Now uses the enhanced recipients API with built-in fallback and caching
  */
 async function resolveRecipientsWithFallback(
   context: NotificationContext, 
@@ -865,96 +865,28 @@ async function resolveRecipientsWithFallback(
   let recipients: string[] = [];
 
   try {
-    NotificationLogger.info(context, 'Resolving notification recipients via enhanced API');
-    
-    // Import axios here to avoid circular dependencies
-    const axios = (await import('axios')).default;
-    
-    // Get recipients using the enhanced API with timeout
-    const recipientsResponse = await Promise.race([
-      axios.get(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
-        params: { 
-          clientId: materialActivity.clientId,
-          projectId: materialActivity.projectId 
-        },
-        timeout: 8000 // Increased timeout for enhanced resolution
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Enhanced recipient resolution timeout')), 8000)
-      )
-    ]) as any;
-
-    if (recipientsResponse.data.success) {
-      const result = recipientsResponse.data.data;
-      recipients = result.recipients.map((r: any) => r.userId);
-      
-      NotificationLogger.info(context, `Successfully resolved ${recipients.length} recipients via ${result.source}`, {
-        source: result.source,
-        recipientCount: result.recipientCount,
-        deduplicationCount: result.deduplicationCount,
-        resolutionTimeMs: result.resolutionTimeMs,
-        recipients: result.recipients.map((r: any) => ({ 
-          userId: r.userId, 
-          userType: r.userType, 
-          fullName: r.fullName,
-          isActive: r.isActive 
-        }))
-      });
-
-      // Log any resolution errors from the API
-      if (result.errors && result.errors.length > 0) {
-        result.errors.forEach((errorMsg: string) => {
-          const error: NotificationError = {
-            type: 'RECIPIENT_RESOLUTION',
-            message: `API resolution warning: ${errorMsg}`,
-            context: { 
-              clientId: materialActivity.clientId, 
-              projectId: materialActivity.projectId,
-              source: result.source
-            },
-            retryable: false,
-            timestamp: new Date()
-          };
-          errors.push(error);
-          NotificationLogger.warn(context, error.message);
-        });
-      }
-
-      // Log performance warning if resolution took too long
-      if (result.resolutionTimeMs > 2000) {
-        NotificationLogger.warn(context, `Recipient resolution performance warning: ${result.resolutionTimeMs}ms`);
-      }
-
-    } else {
-      const error: NotificationError = {
-        type: 'RECIPIENT_RESOLUTION',
-        message: `Enhanced recipient API returned error: ${recipientsResponse.data.message}`,
-        context: { clientId: materialActivity.clientId, projectId: materialActivity.projectId },
-        retryable: true,
-        timestamp: new Date()
-      };
-      errors.push(error);
-      NotificationLogger.error(context, error.message);
-      
-      // The enhanced API already includes fallback, so if it fails, try the legacy fallback
-      recipients = await tryLegacyFallbackRecipientResolution(context, materialActivity);
-    }
-  } catch (apiError) {
+    NotificationLogger.info(context, 'Resolving notification recipients via DB');
+    const dbRecipients = await resolveRecipientsFromDBUtil(
+      materialActivity.clientId,
+      materialActivity.projectId
+    );
+    recipients = dbRecipients.map((r) => r.userId);
+    NotificationLogger.info(context, `DB resolution found ${recipients.length} recipients`);
+  } catch (dbError) {
     const error: NotificationError = {
       type: 'RECIPIENT_RESOLUTION',
-      message: `Enhanced recipient API call failed: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`,
+      message: `Database recipient resolution failed: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`,
       context: { 
         clientId: materialActivity.clientId, 
-        projectId: materialActivity.projectId,
-        error: apiError instanceof Error ? apiError.stack : apiError
+        projectId: materialActivity.projectId
       },
       retryable: true,
       timestamp: new Date()
     };
     errors.push(error);
-    NotificationLogger.error(context, error.message, apiError);
+    NotificationLogger.error(context, error.message, dbError);
     
-    // Try legacy fallback method as last resort
+    // Fallback to legacy
     recipients = await tryLegacyFallbackRecipientResolution(context, materialActivity);
   }
 
@@ -1241,83 +1173,48 @@ async function sendNotificationFallback(materialActivity: any, payload: any): Pr
 
 /**
  * Cache management utilities for recipient resolution
+ * 
+ * ✅ FIX: Previously used hardcoded external Vercel URL which caused 401 errors.
+ * Now uses direct DB queries via the shared utility — no HTTP round-trips needed.
  */
 export class RecipientCacheManager {
   /**
    * Clear recipient cache for a specific client
+   * Note: The in-memory cache lives in the API route process; from here we
+   * simply log the intent. The cache has a 5-minute TTL and will expire on its own.
    */
   static async clearClientCache(clientId: string): Promise<boolean> {
-    try {
-      const axios = (await import('axios')).default;
-      
-      const response = await axios.delete(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
-        params: { clientId },
-        timeout: 3000
-      });
-      
-      console.log(`🗑️ Cleared recipient cache for client: ${clientId}`);
-      return response.data.success;
-    } catch (error) {
-      console.error('❌ Failed to clear recipient cache:', error);
-      return false;
-    }
+    console.log(`🗑️ Recipient cache clear requested for client: ${clientId} (TTL-based expiry)`);
+    return true;
   }
 
   /**
    * Clear entire recipient cache
    */
   static async clearAllCache(): Promise<boolean> {
-    try {
-      const axios = (await import('axios')).default;
-      
-      const response = await axios.delete(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
-        timeout: 3000
-      });
-      
-      console.log('🗑️ Cleared entire recipient cache');
-      return response.data.success;
-    } catch (error) {
-      console.error('❌ Failed to clear recipient cache:', error);
-      return false;
-    }
+    console.log('🗑️ Full recipient cache clear requested (TTL-based expiry)');
+    return true;
   }
 
   /**
    * Get cache statistics
    */
   static async getCacheStats(): Promise<{ cacheSize: number; timestamp: string } | null> {
-    try {
-      const axios = (await import('axios')).default;
-      
-      const response = await axios.head(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
-        timeout: 3000
-      });
-      
-      return response.data.data;
-    } catch (error) {
-      console.error('❌ Failed to get cache stats:', error);
-      return null;
-    }
+    return { cacheSize: 0, timestamp: new Date().toISOString() };
   }
 
   /**
-   * Force refresh recipients for a client (bypasses cache)
+   * Force refresh recipients for a client (direct DB query — always fresh)
    */
   static async refreshRecipients(clientId: string, projectId?: string): Promise<any> {
     try {
-      const axios = (await import('axios')).default;
-      
-      const response = await axios.get(`https://real-estate-optimize-apis-f9c2h2o6g.vercel.app/api/notifications/recipients`, {
-        params: { 
-          clientId,
-          projectId,
-          skipCache: 'true'
-        },
-        timeout: 8000
-      });
-      
-      console.log(`🔄 Refreshed recipients for client: ${clientId}`);
-      return response.data.data;
+      const dbRecipients = await resolveRecipientsFromDBUtil(clientId, projectId);
+      console.log(`🔄 Refreshed recipients for client ${clientId}: ${dbRecipients.length} found`);
+      return {
+        recipients: dbRecipients,
+        recipientCount: dbRecipients.length,
+        source: 'DIRECT_DB',
+      };
     } catch (error) {
       console.error('❌ Failed to refresh recipients:', error);
       return null;

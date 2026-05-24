@@ -1,4 +1,4 @@
-import { model, models, Schema } from "mongoose";
+import { model, models, Schema, Model } from "mongoose";
 
 export const MaterialSchema = new Schema(
   {
@@ -47,6 +47,7 @@ export const MaterialSchema = new Schema(
       type: String,
       required: false,
       trim: true,
+      index: true,
     },
 
     sectionId: {
@@ -128,6 +129,7 @@ const MaterialActivitySchema = new Schema({
     type: String,
     required: false,
     trim: true,
+    index: true,
   },
 
   message: {
@@ -163,7 +165,7 @@ const MaterialActivitySchema = new Schema({
 });
 
 // Safe model registration to prevent data loss during redeployment
-let MaterialActivity;
+let MaterialActivity: Model<any>;
 try {
   if (models.MaterialActivity) {
     MaterialActivity = models.MaterialActivity;

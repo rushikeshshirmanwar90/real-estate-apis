@@ -231,8 +231,10 @@ projectSchema.pre("validate", function (this: unknown, next) {
   next();
 });
 
+import { Model } from "mongoose";
+
 // Safe model registration to prevent data loss during redeployment
-let Projects;
+let Projects: Model<any>;
 try {
   // In production, always reuse existing model to prevent schema conflicts
   if (models.Projects) {

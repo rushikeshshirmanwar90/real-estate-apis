@@ -3,6 +3,8 @@ import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import { errorResponse, successResponse } from "@/lib/utils/api-response";
 
 // Login request interface
 interface CustomerLoginRequest {
@@ -16,8 +18,13 @@ interface CustomerResponse {
   name: string;
   mobileNumber: string;
   email: string;
+  clientId: string;
+  token: string;
   qrCodeData: string;
   isEmailVerified: boolean;
+  isRegistered: boolean;
+  createdAt: string;
+}
   isRegistered: boolean;
   createdAt: string;
 }
@@ -115,12 +122,29 @@ export const POST = async (req: NextRequest) => {
       });
     }
 
+    // Generate JWT token
+    const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
+    const jwtToken = jwt.sign(
+      {
+        id: customer._id.toString(),
+        email: customer.email,
+        userType: "customer",
+        clientId: customer.clientId.toString(),
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+      },
+      jwtSecret,
+      { algorithm: 'HS256' }
+    );
+
     // Format response to match mobile app expectations
     const customerResponse: CustomerResponse = {
       customerId: customer._id.toString(),
       name: `${customer.firstName} ${customer.lastName}`,
       mobileNumber: customer.phoneNumber,
       email: customer.email,
+      clientId: customer.clientId.toString(), // ADD clientId
+      token: jwtToken, // ADD JWT token
       qrCodeData: customer.qrCodeData || generateQRCodeData(customer._id.toString(), customer.phoneNumber),
       isEmailVerified: customer.verified || false,
       isRegistered: true,

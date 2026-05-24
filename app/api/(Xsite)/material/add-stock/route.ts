@@ -16,13 +16,14 @@ export const POST = async (request: NextRequest) => {
     try {
         await connect();
         const body = await request.json();
-        const { materialId, quantity, perUnitCost, clientId } = body;
+        const { materialId, quantity, perUnitCost, contractor_name, clientId } = body;
         console.log('\n========================================');
         console.log('📦 ADD STOCK REQUEST');
         console.log('========================================');
         console.log('Material ID:', materialId);
         console.log('Quantity:', quantity);
         console.log('Per Unit Cost:', perUnitCost);
+        console.log('Contractor / Vendor:', contractor_name);
         console.log('Client ID:', clientId);
         console.log('========================================\n');
         // Validation
@@ -101,28 +102,41 @@ export const POST = async (request: NextRequest) => {
         let addedCost = 0;
         let updatedMaterial: any;
         let action: 'merged' | 'created' = 'merged';
+        let newEntryReason: 'cost' | 'vendor' | 'cost_and_vendor' | undefined = undefined;
         // Check if per unit cost is different
         const hasNewCost = perUnitCost !== undefined && perUnitCost !== null && perUnitCost >= 0;
         const isDifferentCost = hasNewCost && Math.abs(perUnitCost - oldPerUnitCost) > 0.01; // Allow small floating point differences
-        if (isDifferentCost) {
-            // ✅ CREATE NEW MATERIAL ENTRY with different cost
-            console.log('\n🆕 CREATING NEW MATERIAL ENTRY (Different Cost)');
-            console.log('Old Per Unit Cost:', oldPerUnitCost);
-            console.log('New Per Unit Cost:', perUnitCost);
-            console.log('Cost Difference:', Math.abs(perUnitCost - oldPerUnitCost));
-            const newTotalCost = quantity * perUnitCost;
+        // Check if vendor/contractor is different
+        const incomingVendor = (contractor_name || '').trim().toLowerCase();
+        const existingVendor = (material.contractor_name || '').trim().toLowerCase();
+        const isDifferentVendor = incomingVendor !== '' && incomingVendor !== existingVendor;
+        if (isDifferentCost || isDifferentVendor) {
+            // ✅ CREATE NEW MATERIAL ENTRY with different cost and/or vendor
+            if (isDifferentCost && isDifferentVendor) newEntryReason = 'cost_and_vendor';
+            else if (isDifferentVendor) newEntryReason = 'vendor';
+            else newEntryReason = 'cost';
+            console.log('\n🆕 CREATING NEW MATERIAL ENTRY');
+            console.log('Reason:', newEntryReason);
+            console.log('Old Per Unit Cost:', oldPerUnitCost, '-> New Per Unit Cost:', perUnitCost);
+            console.log('Old Vendor:', material.contractor_name, '-> New Vendor:', contractor_name);
+            const effectiveCost = hasNewCost ? perUnitCost : oldPerUnitCost;
+            const newTotalCost = quantity * effectiveCost;
             addedCost = newTotalCost;
-            const newMaterial = {
+            const newMaterial: any = {
                 _id: new Types.ObjectId(),
                 name: material.name,
                 unit: material.unit,
                 specs: material.specs || {},
                 qnt: quantity,
-                perUnitCost: perUnitCost,
+                perUnitCost: effectiveCost,
                 totalCost: newTotalCost,
                 sectionId: material.sectionId,
                 createdAt: new Date(),
             };
+            // Set contractor_name if provided
+            if (contractor_name && contractor_name.trim()) {
+                newMaterial.contractor_name = contractor_name.trim();
+            }
             console.log('\n📦 NEW MATERIAL TO ADD:');
             console.log(JSON.stringify(newMaterial, null, 2));
             // Use findByIdAndUpdate with $push to add new material
@@ -151,28 +165,22 @@ export const POST = async (request: NextRequest) => {
             console.log('Per Unit Cost:', updatedMaterial.perUnitCost);
             console.log('Total Cost:', updatedMaterial.totalCost);
         } else {
-            // ✅ MERGE WITH EXISTING MATERIAL (Same cost or no cost provided)
-            console.log('\n🔄 MERGING WITH EXISTING MATERIAL (Same Cost)');
+            // ✅ MERGE WITH EXISTING MATERIAL (Same cost and same vendor)
+            console.log('\n🔄 MERGING WITH EXISTING MATERIAL (Same Cost & Vendor)');
             const newQuantity = oldQuantity + quantity;
             const currentPerUnitCost = hasNewCost ? perUnitCost : oldPerUnitCost;
             addedCost = quantity * currentPerUnitCost;
             const newTotalCost = oldTotalCost + addedCost;
-            // Update the material in the array using findOneAndUpdate
-            const updatedProject = await Projects.findOneAndUpdate(
-                {
-                    _id: project._id,
-                    'MaterialAvailable._id': new Types.ObjectId(materialId)
-                },
-                {
-                    $set: {
-                        'MaterialAvailable.$.qnt': newQuantity,
-                        'MaterialAvailable.$.totalCost': newTotalCost,
-                        ...(hasNewCost && { 'MaterialAvailable.$.perUnitCost': perUnitCost })
-                    },
-                    $inc: { spent: addedCost }
-                },
-                { new: true }
-            );
+            // Build $set update - also update contractor_name if provided and same
+            const setUpdate: Record<string, any> = {
+                'MaterialAvailable.$.qnt': newQuantity,
+                'MaterialAvailable.$.totalCost': newTotalCost,
+                ...(hasNewCost && { 'MaterialAvailable.$.perUnitCost': perUnitCost }),
+            };
+            // If contractor_name supplied and matches existing, keep it updated (in case of casing fix)
+            if (contractor_name && contractor_name.trim()) {
+                setUpdate['MaterialAvailable.$.contractor_name'] = contractor_name.trim();
+            }
             if (!updatedProject) {
                 throw new Error('Failed to update material');
             }
@@ -218,12 +226,14 @@ export const POST = async (request: NextRequest) => {
                 }
             }
             // Create material activity payload
-            const materialActivityPayload = {
+            const materialActivityPayload: any = {
                 clientId: String(clientId),
                 projectId: String(project._id),
                 projectName: project.name || 'Unknown Project',
                 sectionName: material.sectionName || undefined,
                 miniSectionName: material.miniSectionName || undefined,
+                // Top-level contractor_name for the activity feed
+                contractor_name: (contractor_name && contractor_name.trim()) ? contractor_name.trim() : (material.contractor_name || undefined),
                 materials: [{
                     name: updatedMaterial.name,
                     unit: updatedMaterial.unit,
@@ -232,12 +242,13 @@ export const POST = async (request: NextRequest) => {
                     perUnitCost: updatedMaterial.perUnitCost || 0,
                     totalCost: addedCost, // The cost of the added quantity
                     cost: addedCost, // For backward compatibility
+                    contractor_name: updatedMaterial.contractor_name || undefined,
                     sectionId: updatedMaterial.sectionId || undefined,
                     miniSectionId: updatedMaterial.miniSectionId || undefined,
                     addedAt: new Date(),
                 }],
                 message: action === 'created' 
-                    ? `Added ${quantity} ${updatedMaterial.unit} of ${updatedMaterial.name} as new entry at ₹${perUnitCost}/${updatedMaterial.unit}`
+                    ? `Added ${quantity} ${updatedMaterial.unit} of ${updatedMaterial.name} as new entry${newEntryReason === 'vendor' ? ` from vendor ${contractor_name}` : newEntryReason === 'cost_and_vendor' ? ` from vendor ${contractor_name} at ₹${perUnitCost}/${updatedMaterial.unit}` : ` at ₹${perUnitCost}/${updatedMaterial.unit}`}`
                     : `Added ${quantity} ${updatedMaterial.unit} to existing ${updatedMaterial.name} stock`,
                 activity: 'imported' as const,
                 date: new Date().toISOString(),
@@ -316,6 +327,7 @@ export const POST = async (request: NextRequest) => {
                 projectId: project._id,
                 projectName: project.name,
                 isNewEntry: action === 'created',
+                newEntryReason: newEntryReason,
             }
         });
     } catch (error: any) {

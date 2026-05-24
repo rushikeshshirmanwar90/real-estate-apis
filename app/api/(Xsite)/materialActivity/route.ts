@@ -69,9 +69,19 @@ export const GET = async (req: NextRequest | Request) => {
 
     // Handle date filtering
     if (targetDate) {
-      // For specific date, get activities for that entire day
-      const startOfDay = targetDate + 'T00:00:00.000Z';
-      const endOfDay = targetDate + 'T23:59:59.999Z';
+      // ✅ FIX: Widen query range by 1 day on each side to solve client-server timezone mismatch issues.
+      // The client uses device local time to filter the final list, so this is 100% accurate.
+      const target = new Date(targetDate);
+      const prevDay = new Date(target);
+      prevDay.setDate(prevDay.getDate() - 1);
+      const nextDay = new Date(target);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const prevDayStr = prevDay.toISOString().split('T')[0];
+      const nextDayStr = nextDay.toISOString().split('T')[0];
+
+      const startOfDay = prevDayStr + 'T00:00:00.000Z';
+      const endOfDay = nextDayStr + 'T23:59:59.999Z';
       query.date = { $gte: startOfDay, $lte: endOfDay };
     }
 

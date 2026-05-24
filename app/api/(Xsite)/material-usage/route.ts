@@ -35,7 +35,7 @@ export const GET = async (req: NextRequest) => {
     const sortBy = searchParams.get("sortBy") || "createdAt";
     const sortOrder = searchParams.get("sortOrder") || "desc";
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 100);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 5000);
     const cacheBuster = searchParams.get("_t");
 
     if (!projectId || !clientId) {
@@ -99,7 +99,11 @@ export const GET = async (req: NextRequest) => {
     const materialUsedFilters: any = {};
     
     if (sectionId) {
-      materialUsedFilters["MaterialUsed.sectionId"] = sectionId;
+      if (sectionId.includes(',')) {
+        materialUsedFilters["MaterialUsed.sectionId"] = { $in: sectionId.split(',') };
+      } else {
+        materialUsedFilters["MaterialUsed.sectionId"] = sectionId;
+      }
     }
     
     if (miniSectionId && miniSectionId !== 'all-sections') {
@@ -163,7 +167,7 @@ export const GET = async (req: NextRequest) => {
     });
 
     // Get total count
-    const countPipeline = [
+    const countPipeline: any[] = [
       { $match: matchConditions },
       {
         $unwind: {

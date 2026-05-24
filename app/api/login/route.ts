@@ -96,6 +96,43 @@ export const POST = async (req: NextRequest) => {
     // Clear failed attempts on successful login
     failedAttempts.delete(email);
 
+    // For admin users, try to get clientId from Client model
+    let clientId = user._id.toString(); // Default to user ID
+    
+    if (user.userType === 'admin' || user.userType === 'users') {
+      try {
+        console.log(`🔍 Looking for Client record with email: ${user.email}`);
+        
+        // Try to find associated client from super-admin Client model
+        const { Client } = await import("@/lib/models/super-admin/Client");
+        console.log('✅ Client model imported successfully');
+        
+        const client = await Client.findOne({ email: user.email }).lean();
+        
+        if (client) {
+          clientId = client._id.toString();
+          console.log(`✅ Found Client record for admin: ${clientId}`);
+          console.log(`   Client name: ${client.name}`);
+          console.log(`   Client email: ${client.email}`);
+        } else {
+          console.log(`⚠️  No Client record found for admin with email: ${user.email}`);
+          console.log(`⚠️  Using user ID as fallback: ${clientId}`);
+          console.log(`⚠️  This will cause 404 errors when fetching projects!`);
+          logger.warn("No Client record found - using user ID as clientId", { 
+            email: user.email,
+            userId: clientId 
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error fetching Client model:`, error);
+        logger.error("Could not fetch client for admin user", { 
+          email: user.email,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        console.log(`⚠️  Using user ID as fallback: ${clientId}`);
+      }
+    }
+
     // Generate JWT token for production
     const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
     const jwtToken = jwt.sign(
@@ -103,6 +140,7 @@ export const POST = async (req: NextRequest) => {
         id: user._id,
         email: user.email,
         userType: user.userType,
+        clientId: clientId,
         iat: Math.floor(Date.now() / 1000),
         exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
       },
@@ -117,6 +155,7 @@ export const POST = async (req: NextRequest) => {
           id: user._id,
           email: user.email,
           userType: user.userType,
+          clientId: clientId,
         },
         token: jwtToken, // Real JWT token for production
       },

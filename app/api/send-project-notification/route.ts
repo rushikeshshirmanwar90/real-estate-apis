@@ -1,25 +1,29 @@
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
+import { sendNotificationsToRecipients } from "@/lib/utils/notificationSender";
 import { NextRequest } from "next/server";
 
 /**
  * POST /api/send-project-notification
- * 
+ *
  * Send project-related notifications (section created, project updated, etc.)
- * This endpoint wraps the main /api/notifications/send endpoint with project-specific logic
+ *
+ * ✅ FIX: Previously this route made a self-referential HTTP fetch to
+ *    /api/notifications/send, causing ECONNREFUSED in Next.js server contexts.
+ *    Now the shared sendNotificationsToRecipients() utility is called directly.
  */
 export async function POST(req: NextRequest) {
   try {
-    const { 
-      title, 
-      message, 
-      projectId, 
+    const {
+      title,
+      message,
+      projectId,
       projectName,
-      category = "project", 
-      action, 
-      triggeredBy, 
-      recipients, 
+      category = "project",
+      action,
+      triggeredBy,
+      recipients,
       clientId,
-      metadata = {}
+      metadata = {},
     } = await req.json();
 
     // Validate required fields
@@ -32,48 +36,30 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`📋 Project notification: ${title} - ${category}/${action}`);
+    console.log(`📤 Sending to ${recipients?.length ?? 0} recipients`);
 
-    // Forward to the main notification send endpoint
-    const domain = process.env.NEXT_PUBLIC_DOMAIN || "http://localhost:3000";
-    const sendRes = await fetch(`${domain}/api/notifications/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title,
-        body: message,
-        category,
-        action,
-        data: { 
-          clientId, 
-          projectId, 
-          projectName, 
-          triggeredBy,
-          ...metadata
-        },
-        recipients,
-        timestamp: new Date().toISOString(),
-      }),
+    // ✅ Call the shared utility directly — no HTTP round-trip
+    const result = await sendNotificationsToRecipients({
+      title,
+      body: message,
+      category,
+      action,
+      data: {
+        clientId,
+        projectId,
+        projectName,
+        triggeredBy,
+        ...metadata,
+      },
+      recipients,
+      timestamp: new Date().toISOString(),
     });
 
-    if (!sendRes.ok) {
-      const errorText = await sendRes.text();
-      console.error(`❌ Failed to send project notification: ${sendRes.status}`, errorText);
-      return errorResponse(
-        "Failed to send project notification",
-        sendRes.status,
-        errorText
-      );
-    }
-
-    const result = await sendRes.json();
-    
-    console.log(`✅ Project notification sent: ${result.data?.notificationsSent || 0} delivered`);
-    
-    return successResponse(
-      result.data,
-      "Project notification processed successfully"
+    console.log(
+      `✅ Project notification sent: ${result.notificationsSent} delivered`
     );
 
+    return successResponse(result, "Project notification processed successfully");
   } catch (error: unknown) {
     console.error("❌ /api/send-project-notification error:", error);
     if (error instanceof Error) {

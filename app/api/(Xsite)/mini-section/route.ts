@@ -47,7 +47,10 @@ export const GET = async (req: NextRequest) => {
     // If sectionId is provided, fetch all mini-sections for that parent section
     if (sectionId) {
       const miniSections = await MiniSection.find({
-        "mainSectionDetails.sectionId": sectionId
+        $or: [
+          { "mainSectionDetails.sectionId": sectionId },
+          { sectionId: sectionId }
+        ]
       })
       .sort({ createdAt: -1 }) // Newest first
       .lean();
