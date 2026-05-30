@@ -95,11 +95,13 @@ export const DELETE = async (req: NextRequest) => {
       );
     }
 
-    // Perform the removal operations (without transactions for compatibility)
+    // Use the utility function to remove staff from client
     try {
-      console.log('🔄 Starting staff removal operations...');
+      console.log('🔄 Starting staff removal process...');
+      console.log('👤 Staff to remove:', staff.firstName, staff.lastName);
+      console.log('🏢 Client:', client.name);
 
-      // 1. Remove clientId from staff's clients array
+      // Perform removal operations directly without utility function to avoid transaction issues
       console.log('1️⃣ Removing client from staff clients array...');
       await Staff.findByIdAndUpdate(
         staffId,
@@ -110,7 +112,6 @@ export const DELETE = async (req: NextRequest) => {
         }
       );
 
-      // 2. Remove staffId from client's staffs array
       console.log('2️⃣ Removing staff from client staffs array...');
       await Client.findByIdAndUpdate(
         clientId,
@@ -121,7 +122,6 @@ export const DELETE = async (req: NextRequest) => {
         }
       );
 
-      // 3. Remove any project assignments for this client (safety measure)
       console.log('3️⃣ Removing project assignments for this client...');
       await Staff.findByIdAndUpdate(
         staffId,
@@ -132,7 +132,6 @@ export const DELETE = async (req: NextRequest) => {
         }
       );
 
-      // 4. Remove staff from any projects belonging to this client
       console.log('4️⃣ Removing staff from client projects...');
       await Projects.updateMany(
         { 
@@ -148,6 +147,16 @@ export const DELETE = async (req: NextRequest) => {
 
       console.log('✅ All removal operations completed successfully');
 
+      const result = {
+        success: true,
+        staffId: staffId,
+        clientId: clientId,
+        staffName: `${staff.firstName} ${staff.lastName}`,
+        clientName: client.name,
+        removedAt: new Date().toISOString(),
+        message: "Staff member has been removed from your organization but their account remains active"
+      };
+
       // Log the staff removal activity
       try {
         const activityPayload = {
@@ -162,13 +171,13 @@ export const DELETE = async (req: NextRequest) => {
           activityType: 'staff_removed',
           category: 'staff',
           action: 'remove',
-          description: `Removed ${staff.firstName} ${staff.lastName} from organization`,
+          description: `Removed ${result.staffName} from organization`,
           message: 'Staff member removed from client organization',
           date: new Date().toISOString(),
           metadata: {
-            staffName: `${staff.firstName} ${staff.lastName}`,
-            staffId: staff._id.toString(),
-            clientName: client.name,
+            staffName: result.staffName,
+            staffId: result.staffId,
+            clientName: result.clientName,
           },
         };
 
@@ -177,7 +186,7 @@ export const DELETE = async (req: NextRequest) => {
         const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:8080';
         
         await axios.post(`${domain}/api/activity`, activityPayload);
-        console.log(`✅ Staff removal activity logged for ${staff.firstName} ${staff.lastName}`);
+        console.log(`✅ Staff removal activity logged for ${result.staffName}`);
       } catch (activityError) {
         console.error('❌ Error logging staff removal activity:', activityError);
         // Don't fail the operation if activity logging fails
@@ -195,18 +204,11 @@ export const DELETE = async (req: NextRequest) => {
         await safeRedisDelCache(...clientKeys);
       }
 
-      const result = {
-        success: true,
-        staffId: staffId,
-        clientId: clientId,
-        staffName: `${staff.firstName} ${staff.lastName}`,
-        clientName: client.name,
-        removedAt: new Date().toISOString(),
-        message: "Staff member has been removed from your organization but their account remains active"
-      };
-
       return successResponse(
-        result,
+        {
+          ...result,
+          message: "Staff member has been removed from your organization but their account remains active"
+        },
         "Staff member removed from client organization successfully"
       );
 

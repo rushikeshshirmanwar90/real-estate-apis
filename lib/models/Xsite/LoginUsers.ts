@@ -1,15 +1,22 @@
-import { model, models, Schema } from "mongoose";
+import { Document, Model, model, models, Schema } from "mongoose";
 
-const LoginUserSchema = new Schema({
+// Interface representing a LoginUser document in MongoDB
+export interface ILoginUser extends Document {
+  email: string;
+  password?: string;
+  userType: "admin" | "users" | "staff" | "customer";
+}
+
+const LoginUserSchema = new Schema<ILoginUser>({
   email: {
     type: String,
     required: true,
     unique: true,
   },
-
   password: {
     type: String,
     required: false,
+    select: false, // Never return password by default; use .select("+password") explicitly
   },
   userType: {
     type: String,
@@ -19,15 +26,11 @@ const LoginUserSchema = new Schema({
 });
 
 // Safe model registration to prevent data loss during redeployment
-let LoginUser;
+let LoginUser: Model<ILoginUser>;
 try {
-  if (models.LoginUser) {
-    LoginUser = models.LoginUser;
-  } else {
-    LoginUser = model("LoginUser", LoginUserSchema);
-  }
-} catch (error) {
-  LoginUser = models.LoginUser || model("LoginUser", LoginUserSchema);
+  LoginUser = (models.LoginUser as Model<ILoginUser>) || model<ILoginUser>("LoginUser", LoginUserSchema);
+} catch {
+  LoginUser = model<ILoginUser>("LoginUser", LoginUserSchema);
 }
 
 export { LoginUser };

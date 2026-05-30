@@ -51,6 +51,15 @@ interface Equipment {
     sectionId?: string
 }
 
+interface OtherCost {
+    _id: string
+    name: string
+    category: string
+    totalCost: number
+    status: string
+    sectionId?: string
+}
+
 interface Project {
     _id: string
     name: string
@@ -61,6 +70,7 @@ interface Project {
     MaterialUsed?: Material[]
     Labors?: Labor[]
     Equipment?: Equipment[]
+    OtherCosts?: OtherCost[]
     createdAt: string
 }
 
@@ -131,32 +141,39 @@ export default function AnalyticsDashboard() {
 
         const totalProjects = filteredProjects.length
         const totalSpent = filteredProjects.reduce((sum, p) => sum + (p.spent || 0), 0)
-        
+
         let totalMaterialCost = 0
         let totalLaborCost = 0
         let totalEquipmentCost = 0
-        
+        let totalOtherCost = 0
+
         filteredProjects.forEach(project => {
             // Materials
             if (project.MaterialAvailable) {
-                totalMaterialCost += project.MaterialAvailable.reduce((sum, m) => 
+                totalMaterialCost += project.MaterialAvailable.reduce((sum, m) =>
                     sum + (m.totalCost || m.cost || 0), 0)
             }
             if (project.MaterialUsed) {
-                totalMaterialCost += project.MaterialUsed.reduce((sum, m) => 
+                totalMaterialCost += project.MaterialUsed.reduce((sum, m) =>
                     sum + (m.totalCost || m.cost || 0), 0)
             }
-            
+
             // Labor
             if (project.Labors) {
-                totalLaborCost += project.Labors.reduce((sum, l) => 
+                totalLaborCost += project.Labors.reduce((sum, l) =>
                     sum + (l.totalCost || 0), 0)
             }
-            
+
             // Equipment
             if (project.Equipment) {
-                totalEquipmentCost += project.Equipment.reduce((sum, e) => 
+                totalEquipmentCost += project.Equipment.reduce((sum, e) =>
                     sum + (e.cost || 0), 0)
+            }
+
+            // Other Costs
+            if (project.OtherCosts) {
+                totalOtherCost += project.OtherCosts.reduce((sum, o) =>
+                    sum + (o.totalCost || 0), 0)
             }
         })
 
@@ -166,6 +183,7 @@ export default function AnalyticsDashboard() {
             totalMaterialCost,
             totalLaborCost,
             totalEquipmentCost,
+            totalOtherCost,
             filteredProjects
         }
     }
@@ -176,7 +194,8 @@ export default function AnalyticsDashboard() {
     const costBreakdownData = [
         { name: 'Materials', value: analytics.totalMaterialCost, color: '#3b82f6' },
         { name: 'Labor', value: analytics.totalLaborCost, color: '#ef4444' },
-        { name: 'Equipment', value: analytics.totalEquipmentCost, color: '#10b981' }
+        { name: 'Equipment', value: analytics.totalEquipmentCost, color: '#10b981' },
+        { name: 'Other Costs', value: analytics.totalOtherCost, color: '#8b5cf6' }
     ].filter(item => item.value > 0)
 
     const projectStatusData = [
@@ -262,7 +281,7 @@ export default function AnalyticsDashboard() {
             </div>
 
             {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">
@@ -315,8 +334,24 @@ export default function AnalyticsDashboard() {
                     <CardContent>
                         <div className="text-2xl font-bold">{formatCurrency(analytics.totalLaborCost)}</div>
                         <p className="text-xs text-muted-foreground">
-                            {analytics.totalSpent > 0 
+                            {analytics.totalSpent > 0
                                 ? `${((analytics.totalLaborCost / analytics.totalSpent) * 100).toFixed(1)}% of total`
+                                : 'No expenses yet'
+                            }
+                        </p>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Other Costs</CardTitle>
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{formatCurrency(analytics.totalOtherCost)}</div>
+                        <p className="text-xs text-muted-foreground">
+                            {analytics.totalSpent > 0
+                                ? `${((analytics.totalOtherCost / analytics.totalSpent) * 100).toFixed(1)}% of total`
                                 : 'No expenses yet'
                             }
                         </p>

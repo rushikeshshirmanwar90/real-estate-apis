@@ -1,6 +1,7 @@
 import { models, model, Schema } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
+import { EmbeddedOtherCostSchema } from "./Xsite/OtherCost";
 
 const SectionSchema = new Schema(
   {
@@ -231,6 +232,11 @@ const buildingSchema = new Schema(
 
     MaterialUsed: {
       type: [MaterialSchema],
+      required: false,
+    },
+
+    OtherCosts: {
+      type: [EmbeddedOtherCostSchema],
       required: false,
     },
 

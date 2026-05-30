@@ -1,12 +1,42 @@
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+import * as bcrypt from "bcrypt";
+import * as jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { isValidEmail } from "@/lib/utils/validation";
-import { rateLimit } from "@/lib/utils/rate-limiter";
+import { isValidEmail, sanitizeInput } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
+import { Model, Document } from "mongoose";
+
+// Type definitions for the models
+interface ClientDocument extends Document {
+  _id: any;
+  name: string;
+  email: string;
+  phoneNumber: number;
+  city: string;
+  state: string;
+  address: string;
+  license?: number;
+  isLicenseActive?: boolean;
+  licenseExpiryDate?: Date;
+}
+
+interface StaffDocument extends Document {
+  _id: any;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  role: string;
+  clients?: Array<{
+    clientId: string;
+    clientName: string;
+    assignedAt: Date;
+    isContractor: boolean;
+  }>;
+  assignedProjects?: Array<any>;
+}
 
 // Track failed login attempts
 const failedAttempts = new Map<string, { count: number; lockUntil: number }>();
@@ -16,20 +46,10 @@ const LOCK_TIME_MS = 15 * 60 * 1000; // 15 minutes
 
 export const POST = async (req: NextRequest) => {
   try {
-    // Rate limiting: 10 requests per minute
-    const rateLimitResult = rateLimit(req, {
-      maxRequests: 10,
-      windowMs: 60000,
-    });
-    if (!rateLimitResult.allowed) {
-      return errorResponse(
-        "Too many login attempts. Please try again later.",
-        429
-      );
-    }
-
     await connect();
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const email = sanitizeInput(body.email || "").toLowerCase();
+    const password = body.password || "";
 
     // Validate input
     if (!email || !password) {
@@ -46,32 +66,33 @@ export const POST = async (req: NextRequest) => {
       const remainingTime = Math.ceil(
         (attemptData.lockUntil - Date.now()) / 1000 / 60
       );
+      logger.warn("Account locked attempt", { email, remainingTime });
       return errorResponse(
         `Account temporarily locked. Try again in ${remainingTime} minutes.`,
         423
       );
     }
 
-    // Find user (don't use .lean() here because we need password field)
-    const user = await LoginUser.findOne({ email }).select("+password");
-    if (!user) {
-      // Track failed attempt even if user doesn't exist (prevent user enumeration)
+    // Find user in LoginUser collection
+    const loginUser = await LoginUser.findOne({ email }).select("+password").lean();
+    if (!loginUser) {
       trackFailedAttempt(email);
+      logger.warn("Login attempt with non-existent email", { email });
       return errorResponse("Invalid credentials", 401);
     }
 
-    // Check if user.password exists and is a string
-    if (!user.password || typeof user.password !== "string") {
-      logger.error("User password is invalid", { email });
-      return errorResponse("Invalid credentials", 401);
+    // Check if password exists and is valid
+    if (!loginUser.password || typeof loginUser.password !== "string") {
+      logger.error("User has invalid password field", { email, userType: loginUser.userType });
+      return errorResponse("Account setup incomplete. Please contact support.", 401);
     }
 
     // Verify password
     let isValidPassword = false;
     try {
-      isValidPassword = await bcrypt.compare(password, user.password);
+      isValidPassword = await bcrypt.compare(password, loginUser.password);
     } catch (bcryptError) {
-      logger.error("Bcrypt comparison error", bcryptError);
+      logger.error("Bcrypt comparison error", { email, error: bcryptError });
       return errorResponse("Authentication error", 500);
     }
 
@@ -79,6 +100,8 @@ export const POST = async (req: NextRequest) => {
       trackFailedAttempt(email);
       const attempts = failedAttempts.get(email);
       const remaining = MAX_FAILED_ATTEMPTS - (attempts?.count || 0);
+
+      logger.warn("Invalid password attempt", { email, remaining });
 
       if (remaining > 0) {
         return errorResponse(
@@ -96,73 +119,158 @@ export const POST = async (req: NextRequest) => {
     // Clear failed attempts on successful login
     failedAttempts.delete(email);
 
-    // For admin users, try to get clientId from Client model
-    let clientId = user._id.toString(); // Default to user ID
-    
-    if (user.userType === 'admin' || user.userType === 'users') {
-      try {
-        console.log(`🔍 Looking for Client record with email: ${user.email}`);
-        
-        // Try to find associated client from super-admin Client model
-        const { Client } = await import("@/lib/models/super-admin/Client");
-        console.log('✅ Client model imported successfully');
-        
-        const client = await Client.findOne({ email: user.email }).lean();
-        
-        if (client) {
-          clientId = client._id.toString();
-          console.log(`✅ Found Client record for admin: ${clientId}`);
-          console.log(`   Client name: ${client.name}`);
-          console.log(`   Client email: ${client.email}`);
-        } else {
-          console.log(`⚠️  No Client record found for admin with email: ${user.email}`);
-          console.log(`⚠️  Using user ID as fallback: ${clientId}`);
-          console.log(`⚠️  This will cause 404 errors when fetching projects!`);
-          logger.warn("No Client record found - using user ID as clientId", { 
-            email: user.email,
-            userId: clientId 
-          });
-        }
-      } catch (error) {
-        console.error(`❌ Error fetching Client model:`, error);
-        logger.error("Could not fetch client for admin user", { 
-          email: user.email,
-          error: error instanceof Error ? error.message : String(error)
-        });
-        console.log(`⚠️  Using user ID as fallback: ${clientId}`);
+    // Get user details and clientId based on user type
+    let userDetails: any = null;
+    let clientId: string | null = null;
+    let additionalData: any = {};
+
+    try {
+      switch (loginUser.userType) {
+        case 'admin':
+        case 'users':
+          // For admin/users, find the client record
+          const clientModule = await import("@/lib/models/super-admin/Client");
+          const ClientModel = clientModule.Client as Model<ClientDocument>;
+          const client = await ClientModel.findOne({ email }).lean();
+          if (client) {
+            clientId = client._id.toString();
+            userDetails = {
+              id: client._id,
+              email: client.email,
+              name: client.name,
+              phoneNumber: client.phoneNumber,
+              city: client.city,
+              state: client.state,
+              address: client.address,
+              userType: loginUser.userType,
+            };
+            additionalData = {
+              companyName: client.name,
+              license: client.license,
+              isLicenseActive: client.isLicenseActive,
+              licenseExpiryDate: client.licenseExpiryDate,
+            };
+            logger.info("Admin/User login successful", { email, clientId, companyName: client.name });
+          } else {
+            logger.error("No client record found for admin/user", { email });
+            return errorResponse("Account configuration error. Please contact support.", 404);
+          }
+          break;
+
+        case 'staff':
+          // For staff, find the staff record
+          const staffModule = await import("@/lib/models/users/Staff");
+          const StaffModel = staffModule.Staff as Model<StaffDocument>;
+          const staff = await StaffModel.findOne({ email }).lean();
+          if (staff) {
+            userDetails = {
+              id: staff._id,
+              email: staff.email,
+              firstName: staff.firstName,
+              lastName: staff.lastName,
+              phoneNumber: staff.phoneNumber,
+              role: staff.role,
+              userType: loginUser.userType,
+            };
+            
+            // For staff, we need to handle multiple clients
+            if (staff.clients && staff.clients.length > 0) {
+              // Use the first client as primary, but include all clients
+              clientId = staff.clients[0].clientId.toString();
+              additionalData = {
+                clients: staff.clients,
+                assignedProjects: staff.assignedProjects || [],
+                primaryClientId: clientId,
+                totalClients: staff.clients.length,
+              };
+              logger.info("Staff login successful", { 
+                email, 
+                staffId: staff._id, 
+                primaryClientId: clientId,
+                totalClients: staff.clients.length 
+              });
+            } else {
+              logger.warn("Staff has no assigned clients", { email, staffId: staff._id });
+              return errorResponse("No organization assigned. Please contact your administrator.", 403);
+            }
+          } else {
+            logger.error("No staff record found for staff user", { email });
+            return errorResponse("Staff account not found. Please contact support.", 404);
+          }
+          break;
+
+        case 'customer':
+          // For customers, use the LoginUser record itself
+          userDetails = {
+            id: loginUser._id,
+            email: loginUser.email,
+            userType: loginUser.userType,
+          };
+          clientId = loginUser._id.toString(); // Use loginUser ID as clientId for customers
+          logger.info("Customer login successful", { email, customerId: loginUser._id });
+          break;
+
+        default:
+          logger.error("Unknown user type", { email, userType: loginUser.userType });
+          return errorResponse("Invalid account type", 400);
       }
+
+      if (!userDetails) {
+        logger.error("Failed to get user details", { email, userType: loginUser.userType });
+        return errorResponse("Account configuration error", 500);
+      }
+
+    } catch (detailsError) {
+      logger.error("Error fetching user details", { 
+        email, 
+        userType: loginUser.userType, 
+        error: detailsError instanceof Error ? detailsError.message : String(detailsError) 
+      });
+      return errorResponse("Error loading account details", 500);
     }
 
-    // Generate JWT token for production
-    const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
-    const jwtToken = jwt.sign(
-      {
-        id: user._id,
-        email: user.email,
-        userType: user.userType,
-        clientId: clientId,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
-      },
-      jwtSecret,
-      { algorithm: 'HS256' }
-    );
+    // Generate JWT token
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      logger.error("JWT_SECRET not configured");
+      return errorResponse("Server configuration error", 500);
+    }
 
-    // Success response with JWT token
-    return successResponse(
-      {
-        user: {
-          id: user._id,
-          email: user.email,
-          userType: user.userType,
-          clientId: clientId,
-        },
-        token: jwtToken, // Real JWT token for production
+    const tokenPayload = {
+      id: userDetails.id,
+      email: userDetails.email,
+      userType: loginUser.userType,
+      clientId: clientId,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
+    };
+
+    const jwtToken = jwt.sign(tokenPayload, jwtSecret, { algorithm: 'HS256' });
+
+    // Success response
+    const responseData = {
+      user: {
+        ...userDetails,
+        clientId: clientId,
       },
-      "Login successful"
-    );
+      token: jwtToken,
+      ...additionalData,
+    };
+
+    logger.info("Login successful", { 
+      email, 
+      userType: loginUser.userType, 
+      userId: userDetails.id,
+      clientId 
+    });
+
+    return successResponse(responseData, "Login successful");
+
   } catch (error: unknown) {
-    logger.error("Login error", error);
+    logger.error("Login error", { 
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined 
+    });
     return errorResponse("An error occurred during login", 500);
   }
 };
@@ -173,6 +281,7 @@ function trackFailedAttempt(email: string): void {
 
   if (attemptData.count >= MAX_FAILED_ATTEMPTS) {
     attemptData.lockUntil = Date.now() + LOCK_TIME_MS;
+    logger.warn("Account locked due to failed attempts", { email, attempts: attemptData.count });
   }
 
   failedAttempts.set(email, attemptData);

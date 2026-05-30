@@ -1,6 +1,7 @@
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Activity } from "@/lib/models/Xsite/Activity";
+import { PushToken } from "@/lib/models/PushToken";
 import { PushNotificationService } from "./pushNotificationService";
 import { getRetryManager, createFailedNotification } from "./retryManager";
 import { resolveRecipientsFromDB as resolveRecipientsFromDBUtil } from "@/lib/utils/notificationSender";
@@ -359,7 +360,8 @@ export async function notifyActivityCreated(activity: any): Promise<Notification
     // Send directly to project admins using the push notification service with detailed error tracking
     // If the performing user is an admin, exclude them from notifications
     try {
-      const isPerformingUserAdmin = activity.user?.userType === 'admin';
+      // 'admin' and 'users' are both admin-type accounts in LoginUser model
+      const isPerformingUserAdmin = ['admin', 'users'].includes(activity.user?.userType);
       const excludeUserId = isPerformingUserAdmin ? activity.user.userId : undefined;
       
       if (excludeUserId) {
@@ -731,7 +733,8 @@ export async function notifyMaterialActivityCreated(materialActivity: any): Prom
 
     // Send notifications to main project recipients with detailed error tracking
     // If the performing user is an admin, exclude them from notifications
-    const isPerformingUserAdmin = materialActivity.user?.userType === 'admin';
+    // 'admin' and 'users' are both admin-type accounts in LoginUser model
+    const isPerformingUserAdmin = ['admin', 'users'].includes(materialActivity.user?.userType);
     const excludeUserId = isPerformingUserAdmin ? materialActivity.user.userId : undefined;
     
     if (excludeUserId) {
@@ -898,45 +901,34 @@ async function resolveRecipientsWithFallback(
  * This is used as a last resort when the enhanced API completely fails
  */
 async function tryLegacyFallbackRecipientResolution(
-  context: NotificationContext, 
+  context: NotificationContext,
   materialActivity: any
 ): Promise<string[]> {
   try {
     NotificationLogger.warn(context, 'Using legacy fallback recipient resolution method');
-    
-    // Import here to avoid circular dependencies
+
     const { Projects } = await import("@/lib/models/Project");
-    const { Admin } = await import("@/lib/models/users/Admin");
 
     const project = await Projects.findById(materialActivity.projectId)
-      .select('name clientId')
+      .select('clientId')
       .lean() as any;
 
-    if (!project) {
-      NotificationLogger.warn(context, 'Project not found for legacy fallback');
+    if (!project?.clientId) {
+      NotificationLogger.warn(context, 'Project not found or has no clientId for legacy fallback');
       return [];
     }
 
-    const recipientIds: string[] = [];
+    const clientIdStr = project.clientId.toString();
 
-    // Get ONLY admins for this client (NO STAFF)
-    if (project.clientId) {
-      try {
-        const admins = await Admin.find({ clientId: project.clientId })
-          .select('_id')
-          .lean() as any[];
-        
-        const adminIds = admins.map((admin: any) => admin._id.toString());
-        recipientIds.push(...adminIds);
-        
-        NotificationLogger.info(context, `Legacy fallback found ${adminIds.length} admins for client (staff excluded)`);
-      } catch (adminError) {
-        NotificationLogger.error(context, 'Error fetching admins in legacy fallback', adminError);
-      }
-    }
-    
-    NotificationLogger.info(context, `Legacy fallback resolution found ${recipientIds.length} admin recipients`);
-    
+    // Query push tokens directly — avoids Admin._id vs Client._id mismatch
+    const tokens = await PushToken.find({
+      clientId: clientIdStr,
+      userType: 'admin',
+      isActive: true,
+    }).select('userId').lean() as any[];
+
+    const recipientIds = tokens.map((t: any) => t.userId).filter(Boolean);
+    NotificationLogger.info(context, `Legacy fallback found ${recipientIds.length} admin recipients for clientId ${clientIdStr}`);
     return recipientIds;
   } catch (fallbackError) {
     NotificationLogger.error(context, 'Legacy fallback recipient resolution failed', fallbackError);

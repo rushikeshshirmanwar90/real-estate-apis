@@ -4,7 +4,7 @@ import { transporter } from "@/lib/transporter";
 import { EmailTemplate } from "@/components/mail/EmailTemplate";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
-import { rateLimit } from "@/lib/utils/rate-limiter";
+
 import { logger } from "@/lib/utils/logger";
 import { withBearerAuth } from "@/lib/middleware/bearer-auth";
 
@@ -16,15 +16,7 @@ import { withBearerAuth } from "@/lib/middleware/bearer-auth";
  */
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting: 5 OTP requests per 5 minutes
-    const rateLimitResult = rateLimit(req, {
-      maxRequests: 5,
-      windowMs: 5 * 60 * 1000
-    });
 
-    if (!rateLimitResult.allowed) {
-      return errorResponse("Too many OTP requests. Please try again later.", 429);
-    }
 
     const body = await req.json();
     const { email, OTP } = body;

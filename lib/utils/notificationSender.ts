@@ -186,40 +186,26 @@ export async function resolveRecipientsFromDB(
   await connect();
 
   try {
-    const { Admin } = await import("@/lib/models/users/Admin");
-    const { Staff } = await import("@/lib/models/users/Staff");
+    // Query push tokens directly by clientId + userType.
+    // This avoids the Admin._id vs Client._id mismatch: admins register their
+    // push tokens with userId = Client._id (their login ID), not Admin._id.
+    const adminTokens = await PushToken.find({
+      clientId,
+      userType: "admin",
+      isActive: true,
+    }).select("userId").lean() as any[];
 
-    const [admins, staff] = await Promise.all([
-      Admin.find({ clientId }).select("_id isActive").lean(),
-      Staff.find({ "clients.clientId": clientId })
-        .select("_id isActive")
-        .lean(),
-    ]);
+    const recipientMap = new Map<string, { userId: string; userType: "admin" | "staff" }>();
 
-    const recipientMap = new Map<
-      string,
-      { userId: string; userType: "admin" | "staff" }
-    >();
-
-    (admins as any[]).forEach((admin) => {
-      if (admin.isActive !== false) {
-        recipientMap.set(admin._id.toString(), {
-          userId: admin._id.toString(),
-          userType: "admin",
-        });
-      }
-    });
-
-    (staff as any[]).forEach((member) => {
-      const id = member._id.toString();
-      if (!recipientMap.has(id) && member.isActive !== false) {
-        recipientMap.set(id, { userId: id, userType: "staff" });
+    adminTokens.forEach((t: any) => {
+      if (t.userId) {
+        recipientMap.set(t.userId, { userId: t.userId, userType: "admin" });
       }
     });
 
     const recipients = Array.from(recipientMap.values());
     console.log(
-      `✅ resolveRecipientsFromDB: found ${recipients.length} recipients for clientId ${clientId}`
+      `✅ resolveRecipientsFromDB: found ${recipients.length} admin recipients for clientId ${clientId}`
     );
     return recipients;
   } catch (err) {

@@ -2,6 +2,7 @@ import { model, models, Schema } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
 import { EmbeddedLaborSchema } from "./Xsite/Labor";
+import { EmbeddedOtherCostSchema } from "./Xsite/OtherCost";
 
 const RowHouseSchema = new Schema(
   {
@@ -53,6 +54,11 @@ const RowHouseSchema = new Schema(
 
     Labors: {
       type: [EmbeddedLaborSchema],
+      required: false,
+    },
+
+    OtherCosts: {
+      type: [EmbeddedOtherCostSchema],
       required: false,
     },
   },

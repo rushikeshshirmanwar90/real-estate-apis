@@ -54,28 +54,44 @@ export async function removeStaffFromClient(staffId: string, clientId: string) {
     );
   }
 
+  // Perform removal operations sequentially (no transactions needed)
+  console.log('🔄 Starting staff removal operations...');
+
   try {
     // 1. Remove clientId from staff's clients array
-    await Staff.findByIdAndUpdate(
+    console.log('1️⃣ Removing client from staff clients array...');
+    const staffUpdateResult = await Staff.findByIdAndUpdate(
       staffId,
       {
         $pull: {
           clients: { clientId: clientId }
         }
-      }
+      },
+      { new: true }
     );
 
+    if (!staffUpdateResult) {
+      throw new Error("Failed to update staff record");
+    }
+
     // 2. Remove staffId from client's staffs array
-    await Client.findByIdAndUpdate(
+    console.log('2️⃣ Removing staff from client staffs array...');
+    const clientUpdateResult = await Client.findByIdAndUpdate(
       clientId,
       {
         $pull: {
           staffs: staffId
         }
-      }
+      },
+      { new: true }
     );
 
+    if (!clientUpdateResult) {
+      throw new Error("Failed to update client record");
+    }
+
     // 3. Remove any project assignments for this client (safety measure)
+    console.log('3️⃣ Removing project assignments for this client...');
     await Staff.findByIdAndUpdate(
       staffId,
       {
@@ -86,7 +102,8 @@ export async function removeStaffFromClient(staffId: string, clientId: string) {
     );
 
     // 4. Remove staff from any projects belonging to this client
-    await Projects.updateMany(
+    console.log('4️⃣ Removing staff from client projects...');
+    const projectUpdateResult = await Projects.updateMany(
       { 
         clientId: clientId,
         "assignedStaff._id": staffId
@@ -98,6 +115,9 @@ export async function removeStaffFromClient(staffId: string, clientId: string) {
       }
     );
 
+    console.log(`✅ Updated ${projectUpdateResult.modifiedCount} projects`);
+    console.log('✅ All removal operations completed successfully');
+
     return {
       success: true,
       staffId: staffId,
@@ -108,9 +128,9 @@ export async function removeStaffFromClient(staffId: string, clientId: string) {
       message: "Staff member has been removed from client organization successfully"
     };
 
-  } catch (error) {
-    console.error('❌ Error in removeStaffFromClient operations:', error);
-    throw error;
+  } catch (operationError) {
+    console.error('❌ Error during removal operations:', operationError);
+    throw new Error(`Failed to remove staff member: ${operationError instanceof Error ? operationError.message : String(operationError)}`);
   }
 }
 

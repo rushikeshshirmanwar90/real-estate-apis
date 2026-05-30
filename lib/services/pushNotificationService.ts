@@ -257,75 +257,59 @@ export class PushNotificationService {
     }
   ): Promise<PushNotificationResult> {
     try {
-      // Import here to avoid circular dependencies
       const { Projects } = await import("@/lib/models/Project");
-      const { Admin } = await import("@/lib/models/users/Admin");
 
-      // Get project with clientId
       const project = await Projects.findById(projectId)
         .select('name clientId')
         .lean() as any;
 
       if (!project) {
         console.log('📭 Project not found:', projectId);
-        return {
-          success: true,
-          messagesSent: 0,
-          errors: ['Project not found'],
-        };
+        return { success: true, messagesSent: 0, errors: ['Project not found'] };
       }
 
-      // Get ONLY admins for this client (NO STAFF)
-      const recipientIds: string[] = [];
+      if (!project.clientId) {
+        console.log('📭 Project has no clientId:', projectId);
+        return { success: true, messagesSent: 0, errors: ['Project has no clientId'] };
+      }
+
+      const clientIdStr = project.clientId.toString();
       const excludeUserId = options?.excludeUserId;
 
-      if (project.clientId) {
-        try {
-          const admins = await Admin.find({ clientId: project.clientId })
-            .select('_id firstName lastName')
-            .lean() as any[];
-          
-          let adminIds = admins.map((admin: any) => admin._id.toString());
-          
-          // Filter out the performing user if excludeUserId is provided
-          if (excludeUserId) {
-            const beforeCount = adminIds.length;
-            adminIds = adminIds.filter(id => id !== excludeUserId);
-            const afterCount = adminIds.length;
-            
-            if (beforeCount > afterCount) {
-              console.log(`🚫 Excluded performing admin (${excludeUserId}) from notifications`);
-            }
-          }
-          
-          recipientIds.push(...adminIds);
-          
-          console.log(`📱 Found ${adminIds.length} admins for client ${project.clientId} (staff excluded${excludeUserId ? ', performing admin excluded' : ''})`);
-        } catch (adminError) {
-          console.error('❌ Error fetching admins:', adminError);
+      // Query push tokens directly by clientId + userType.
+      // Admins register tokens with userId = Client._id and clientId = Client._id.
+      // Going through Admin._id would never match because Client._id != Admin._id.
+      let adminTokens = await PushToken.find({
+        clientId: clientIdStr,
+        userType: 'admin',
+        isActive: true,
+      }).lean() as any[];
+
+      // Exclude the performing user (no self-notifications)
+      if (excludeUserId) {
+        const before = adminTokens.length;
+        adminTokens = adminTokens.filter((t: any) => t.userId !== excludeUserId);
+        if (before > adminTokens.length) {
+          console.log(`🚫 Excluded performing admin (${excludeUserId}) from notifications`);
         }
       }
 
-      if (recipientIds.length === 0) {
-        console.log('📭 No admins found for project:', projectId);
-        return {
-          success: true,
-          messagesSent: 0,
-          errors: ['No admins found for project'],
-        };
+      if (adminTokens.length === 0) {
+        console.log(`📭 No admin push tokens found for client ${clientIdStr}`);
+        return { success: true, messagesSent: 0, errors: ['No admin tokens found for client'] };
       }
 
-      console.log(`📱 Sending notifications to ${recipientIds.length} admins ONLY for project: ${project.name}`);
+      // Extract the real userIds (Client._id values) and let sendToUsers handle
+      // token validation, health tracking, and batch splitting.
+      const adminUserIds = [...new Set(adminTokens.map((t: any) => t.userId).filter(Boolean))];
+
+      console.log(`📱 Sending to ${adminUserIds.length} admin(s) for project: ${project.name}`);
 
       return await this.sendToUsers(
-        recipientIds,
+        adminUserIds,
         title,
         body,
-        {
-          ...data,
-          projectId,
-          projectName: project.name,
-        },
+        { ...data, projectId, projectName: project.name },
         options
       );
 

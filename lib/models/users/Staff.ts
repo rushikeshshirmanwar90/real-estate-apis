@@ -14,6 +14,10 @@ const ClientAssignmentSchema = new Schema(
       type: Date,
       default: Date.now,
     },
+    isContractor: {
+      type: Boolean,
+      default: false,
+    },
   },
   { _id: false }
 );

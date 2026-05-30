@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
     console.log("🔍 Finding user with email:", email);
 
-    const isUser = await LoginUser.findOne({ email });
+    const isUser = await LoginUser.findOne({ email }).select("+password");
 
     // ✅ FIX: Check if user exists first
     if (!isUser) {

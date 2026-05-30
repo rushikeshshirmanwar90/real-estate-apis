@@ -90,10 +90,12 @@ export const GET = async (req: NextRequest) => {
         
         // Log sample activity dates for debugging
         if (activities.length > 0) {
-            console.log('📅 Sample activity dates:');
-            activities.slice(0, 3).forEach((activity, index) => {
-                console.log(`${index + 1}. ${activity.date} (${activity.activity})`);
+            console.log('📅 Sample activity dates and contractor names:');
+            activities.slice(0, 5).forEach((activity, index) => {
+                console.log(`${index + 1}. ${activity.date} (${activity.activity}) - contractor_name: "${activity.contractor_name || 'NONE'}" - material contractor_names: [${(activity.materials || []).map((m: any) => m.contractor_name || 'NONE').join(', ')}]`);
             });
+            const withVendor = activities.filter((a: any) => a.contractor_name).length;
+            console.log(`📊 Activities with contractor_name: ${withVendor}/${activities.length}`);
         }
 
         // Get unique project IDs from activities
@@ -276,6 +278,8 @@ export const GET = async (req: NextRequest) => {
                         unit: material.unit || 'units',
                         specs: material.specs || {},
                         qnt: quantity,
+                        // ✅ FIXED: Include contractor_name from material level
+                        contractor_name: material.contractor_name || undefined,
                     };
                     
                     // Handle cost structure (new vs legacy)
@@ -318,6 +322,8 @@ export const GET = async (req: NextRequest) => {
                 }),
                 message: activity.message,
                 activity: activity.activity,
+                // ✅ FIXED: Include contractor_name at the activity level
+                contractor_name: activity.contractor_name || undefined,
                 transferDetails: activity.transferDetails,
                 date: activity.date || activity.createdAt || new Date().toISOString()
             };

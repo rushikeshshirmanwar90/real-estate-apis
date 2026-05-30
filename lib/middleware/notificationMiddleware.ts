@@ -1,60 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PushNotificationService } from '@/lib/services/pushNotificationService';
 
-// Rate limiting for notification APIs
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
-
-export interface NotificationRateLimitConfig {
-  windowMs: number; // Time window in milliseconds
-  maxRequests: number; // Max requests per window
-  skipSuccessfulRequests?: boolean;
-}
-
-/**
- * Rate limiting middleware for notification endpoints
- */
-export function createNotificationRateLimit(config: NotificationRateLimitConfig) {
-  return async (req: NextRequest) => {
-    const clientIp = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
-    const key = `${clientIp}:${req.nextUrl.pathname}`;
-    const now = Date.now();
-    
-    // Clean up expired entries
-    for (const [k, v] of rateLimitMap.entries()) {
-      if (now > v.resetTime) {
-        rateLimitMap.delete(k);
-      }
-    }
-    
-    // Get or create rate limit entry
-    let entry = rateLimitMap.get(key);
-    if (!entry || now > entry.resetTime) {
-      entry = {
-        count: 0,
-        resetTime: now + config.windowMs,
-      };
-      rateLimitMap.set(key, entry);
-    }
-    
-    // Check rate limit
-    if (entry.count >= config.maxRequests) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: 'Too many requests',
-          retryAfter: Math.ceil((entry.resetTime - now) / 1000),
-        },
-        { status: 429 }
-      );
-    }
-    
-    // Increment counter
-    entry.count++;
-    
-    return null; // Continue to next middleware/handler
-  };
-}
-
 /**
  * Notification logging middleware
  */

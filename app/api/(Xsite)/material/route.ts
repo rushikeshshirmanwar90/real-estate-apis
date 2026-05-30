@@ -780,6 +780,140 @@ export const PUT = async (req: NextRequest) => {
   }
 };
 
+// ─── PATCH: Edit a single MaterialAvailable entry (only if unused) ───────────
+export const PATCH = async (req: NextRequest) => {
+  // Bearer token authentication
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const projectId  = searchParams.get("projectId");
+    const materialId = searchParams.get("materialId");
+
+    if (!projectId || !materialId) {
+      return NextResponse.json(
+        { success: false, message: "Project ID and Material ID are required" },
+        { status: 400 }
+      );
+    }
+
+    if (!Types.ObjectId.isValid(projectId) || !Types.ObjectId.isValid(materialId)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid project ID or material ID format" },
+        { status: 400 }
+      );
+    }
+
+    await connect();
+
+    const body = await req.json();
+    const { name, unit, qnt: rawQnt, perUnitCost: rawPerUnitCost, specs, contractor_name } = body || {};
+
+    const project = await Projects.findById(projectId);
+    if (!project) {
+      return NextResponse.json(
+        { success: false, message: "Project not found" },
+        { status: 404 }
+      );
+    }
+
+    const availableArr = (project.MaterialAvailable || []) as MaterialSubdoc[];
+    const target = availableArr.find((m) => String(m._id) === materialId);
+
+    if (!target) {
+      return NextResponse.json(
+        { success: false, message: "Material not found" },
+        { status: 404 }
+      );
+    }
+
+    // ── Unused guard: block editing if this material has already been used ──
+    // Usage entries match imported entries by name + unit (no batch _id reference)
+    const usedArr = (project.MaterialUsed || []) as MaterialSubdoc[];
+    const hasBeenUsed = usedArr.some(
+      (u) => u.name === target.name && u.unit === target.unit
+    );
+
+    if (hasBeenUsed) {
+      return NextResponse.json(
+        { success: false, message: "Cannot edit stock that has already been used" },
+        { status: 409 }
+      );
+    }
+
+    // ── Validate provided numeric fields (mirror POST rules) ──
+    const qnt = rawQnt !== undefined
+      ? (typeof rawQnt === "string" ? Number(rawQnt) : rawQnt)
+      : undefined;
+    const perUnitCost = rawPerUnitCost !== undefined
+      ? (typeof rawPerUnitCost === "string" ? Number(rawPerUnitCost) : rawPerUnitCost)
+      : undefined;
+
+    if (qnt !== undefined && (typeof qnt !== "number" || Number.isNaN(qnt) || qnt <= 0)) {
+      return NextResponse.json(
+        { success: false, message: "Quantity must be a number greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    if (perUnitCost !== undefined && (typeof perUnitCost !== "number" || Number.isNaN(perUnitCost) || perUnitCost < 0)) {
+      return NextResponse.json(
+        { success: false, message: "Per unit cost cannot be negative" },
+        { status: 400 }
+      );
+    }
+
+    // ── Apply changes ──
+    const oldTotalCost = Number(target.totalCost || 0);
+
+    if (name !== undefined) target.name = name;
+    if (unit !== undefined) target.unit = unit;
+    if (specs !== undefined) target.specs = specs;
+    if (contractor_name !== undefined) target.contractor_name = contractor_name || undefined;
+    if (qnt !== undefined) target.qnt = Number(qnt);
+    if (perUnitCost !== undefined) target.perUnitCost = Number(perUnitCost);
+
+    const newTotalCost = Number(target.qnt || 0) * Number(target.perUnitCost || 0);
+    target.totalCost = newTotalCost;
+
+    // Keep project.spent consistent with the cost delta
+    project.spent = (project.spent || 0) + (newTotalCost - oldTotalCost);
+
+    await project.save();
+
+    // Invalidate cache for this project (same as DELETE)
+    await invalidateCachePattern(`material:${projectId}:*`);
+    await safeRedisDelCache(`project:${projectId}`);
+    await invalidateCachePattern(`projects:*`);
+
+    return NextResponse.json(
+      {
+        success:  true,
+        message:  "Material updated successfully",
+        material: target,
+      },
+      { status: 200 }
+    );
+  } catch (error: unknown) {
+    console.log(error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Unable to update material",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+};
+
 // ─── DELETE: Remove a material from MaterialAvailable ────────────────────────
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication

@@ -17,7 +17,7 @@ const UserSchema = new Schema(
     },
     userType: {
       type: String,
-      enum: ["admin", "staff"],
+      enum: ["admin", "users", "staff"],
       required: false, // Optional for backward compatibility
     },
   },
@@ -129,6 +129,11 @@ const ActivitySchema = new Schema(
         "equipment_updated",
         "equipment_removed",
 
+        // Other cost activities
+        "other_cost_added",
+        "other_cost_updated",
+        "other_cost_removed",
+
         // Other activities
         "other",
       ],
@@ -147,6 +152,7 @@ const ActivitySchema = new Schema(
         "staff",
         "labor",
         "equipment",
+        "other_cost",
         "completion",
         "other",
       ],

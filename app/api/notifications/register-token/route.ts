@@ -45,18 +45,19 @@ export async function POST(req: NextRequest) {
     // Upsert — latest token always wins
     const result = await PushToken.findOneAndUpdate(
       { userId },
-      { 
-        userId, 
-        clientId, 
-        role, 
+      {
+        userId,
+        clientId,
+        userType: role,  // PushToken schema uses `userType`, not `role`
         token,
-        ...(platform && { platform }), // ✅ FIX: Include platform if provided
-        updatedAt: new Date() 
+        isActive: true,  // Re-activate in case it was deactivated
+        ...(platform && { platform }),
+        updatedAt: new Date()
       },
-      { 
-        upsert: true, 
+      {
+        upsert: true,
         new: true,
-        runValidators: true 
+        runValidators: true
       }
     );
 

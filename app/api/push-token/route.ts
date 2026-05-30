@@ -10,8 +10,7 @@ import crypto from "crypto";
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-encryption-key-for-tokens';
 
-// Rate limiting storage (in production, use Redis or database)
-const rateLimitStore = new Map<string, { count: number; resetTime: number }>();
+
 
 // Security middleware functions
 function authenticateToken(req: NextRequest): { success: boolean; user?: any; error?: string } {
@@ -30,30 +29,7 @@ function authenticateToken(req: NextRequest): { success: boolean; user?: any; er
   }
 }
 
-function checkRateLimit(req: NextRequest): { success: boolean; error?: string } {
-  const ip = req.headers.get('x-forwarded-for') || 
-             req.headers.get('x-real-ip') || 
-             req.headers.get('cf-connecting-ip') || 
-             'unknown';
-  const now = Date.now();
-  const windowMs = 15 * 60 * 1000; // 15 minutes
-  const maxRequests = 10;
-  
-  const key = `push-token:${ip}`;
-  const current = rateLimitStore.get(key);
-  
-  if (!current || now > current.resetTime) {
-    rateLimitStore.set(key, { count: 1, resetTime: now + windowMs });
-    return { success: true };
-  }
-  
-  if (current.count >= maxRequests) {
-    return { success: false, error: 'Too many requests, please try again later' };
-  }
-  
-  current.count++;
-  return { success: true };
-}
+
 
 function validatePushTokenInput(data: any): { success: boolean; errors?: string[] } {
   const errors: string[] = [];
@@ -156,12 +132,7 @@ export const POST = async (req: NextRequest) => {
   }
 
   try {
-    // Security: Rate limiting
-    const rateLimitResult = checkRateLimit(req);
-    if (!rateLimitResult.success) {
-      securityLog(req, 'Rate limit exceeded for push token registration', 'WARN');
-      return errorResponse(rateLimitResult.error!, 429);
-    }
+
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {
@@ -314,12 +285,7 @@ export const GET = async (req: NextRequest) => {
   }
 
   try {
-    // Security: Rate limiting
-    const rateLimitResult = checkRateLimit(req);
-    if (!rateLimitResult.success) {
-      securityLog(req, 'Rate limit exceeded for push token retrieval', 'WARN');
-      return errorResponse(rateLimitResult.error!, 429);
-    }
+
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {
@@ -391,12 +357,7 @@ export const DELETE = async (req: NextRequest) => {
   }
 
   try {
-    // Security: Rate limiting
-    const rateLimitResult = checkRateLimit(req);
-    if (!rateLimitResult.success) {
-      securityLog(req, 'Rate limit exceeded for push token deactivation', 'WARN');
-      return errorResponse(rateLimitResult.error!, 429);
-    }
+
     // Security: Authentication
     const authResult = authenticateToken(req);
     if (!authResult.success) {

@@ -5,7 +5,7 @@ import { render } from "@react-email/components";
 import { transporter } from "@/lib/transporter";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
-import { rateLimit } from "@/lib/utils/rate-limiter";
+
 import { logger } from "@/lib/utils/logger";
 import { checkValidClient } from "@/lib/auth";
 
@@ -25,18 +25,7 @@ export const POST = async (req: NextRequest) => {
   }
 
   try {
-    // Rate limiting: 5 OTP requests per 5 minutes
-    const rateLimitResult = rateLimit(req, {
-      maxRequests: 5,
-      windowMs: 5 * 60 * 1000,
-    });
 
-    if (!rateLimitResult.allowed) {
-      return errorResponse(
-        "Too many OTP requests. Please try again later.",
-        429
-      );
-    }
 
     await connect();
 

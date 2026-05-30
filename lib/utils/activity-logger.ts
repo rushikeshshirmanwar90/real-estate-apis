@@ -24,7 +24,7 @@ interface ActivityLogData {
     | "labor_added" | "labor_updated" | "labor_removed"
     | "equipment_added" | "equipment_updated" | "equipment_removed"
     | "other";
-  category: "project" | "section" | "mini_section" | "material" | "staff" | "labor" | "equipment" | "completion" | "other";
+  category: "project" | "section" | "mini_section" | "material" | "staff" | "labor" | "equipment" | "other_cost" | "completion" | "other";
   action: "add" | "create" | "update" | "delete" | "assign" | "remove" | "import" | "use" | "complete" | "reopen";
   description: string;
   message?: string;

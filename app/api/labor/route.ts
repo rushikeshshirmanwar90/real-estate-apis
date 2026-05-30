@@ -5,6 +5,7 @@ import { Building } from "@/lib/models/Building";
 import { OtherSection } from "@/lib/models/OtherSection";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { Labor } from "@/lib/models/Xsite/Labor";
+import { Types } from "mongoose";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -120,8 +121,38 @@ export const POST = async (req: NextRequest) => {
       return accessError;
     }
 
+    // Check if the user is a contractor on this project
+    let contractorRecords: any[] = [];
+    if (addedBy && Types.ObjectId.isValid(addedBy)) {
+      const { Contractor } = await import("@/lib/models/Xsite/Contractor");
+      contractorRecords = await Contractor.find({ projectId, staffId: addedBy });
+      if (contractorRecords.length > 0) {
+        console.log(`👷 ${contractorRecords.length} contractor contract(s) found for staff ${addedBy}:`, contractorRecords.map(c => c.contractType));
+      }
+    }
+
     // Validate labor entries structure
     for (const entry of laborEntries) {
+      if (contractorRecords.length === 1) {
+        // If exactly one contract exists, force/ensure it matches that contract type for backward compatibility
+        entry.category = contractorRecords[0].contractType;
+      } else if (contractorRecords.length > 1) {
+        // If multiple contracts exist, preserve selection if it matches one of the active contract types
+        const matchesAny = contractorRecords.some(
+          c => c.contractType.toLowerCase() === entry.category?.toLowerCase()
+        );
+        if (matchesAny) {
+          const matchingContract = contractorRecords.find(
+            c => c.contractType.toLowerCase() === entry.category.toLowerCase()
+          );
+          if (matchingContract) {
+            entry.category = matchingContract.contractType; // Normalize casing to DB value
+          }
+        } else {
+          console.warn(`⚠️ Entry category "${entry.category}" does not match any of the contractor's contract types:`, contractorRecords.map(c => c.contractType));
+        }
+      }
+
       if (!entry.type || !entry.category || !entry.count || !entry.perLaborCost) {
         return NextResponse.json(
           { success: false, message: "Invalid labor entry structure. Required: type, category, count, perLaborCost" },
@@ -187,7 +218,6 @@ export const POST = async (req: NextRequest) => {
     const createdLaborEntries = await Labor.insertMany(processedLaborEntries);
     console.log('✅ Created standalone labor entries:', createdLaborEntries.length);
 
-    // Prepare embedded labor entries (only keep fields needed for embedded schema)
     const embeddedLaborEntries = processedLaborEntries.map(entry => {
       // Create a clean object with only the fields defined in EmbeddedLaborSchema
       return {
@@ -203,6 +233,7 @@ export const POST = async (req: NextRequest) => {
         color: entry.color || '#3B82F6',
         addedAt: entry.addedAt,
         notes: entry.notes,
+        description: entry.description,
         workDate: entry.workDate,
         status: entry.status || 'active',
         addedBy: entry.addedBy || null, // String type in embedded schema
@@ -347,7 +378,7 @@ export const POST = async (req: NextRequest) => {
           activityType: 'labor_added',
           category: 'labor',
           action: 'add',
-          description: `Added ${laborEntries.length} labor ${laborEntries.length === 1 ? 'entry' : 'entries'} to ${entityName}`,
+          description: `Added ${laborEntries.length} labor ${laborEntries.length === 1 ? 'entry' : 'entries'} to ${entityName}. Work done: ${processedLaborEntries.map(e => `${e.type} (${e.description || 'No work description'})`).join(', ')}`,
           message: `Total cost: ₹${totalLaborCost.toLocaleString('en-IN')}`,
           metadata: {
             laborEntries: processedLaborEntries.map(entry => ({
@@ -368,6 +399,11 @@ export const POST = async (req: NextRequest) => {
         console.error('❌ Failed to log labor activity:', activityError);
         // Don't fail the request if activity logging fails
       }
+    }
+
+    // Recalculate contractor usedAmount if added by a contractor
+    if (contractorRecords.length > 0 && addedBy) {
+      await recalculateContractorUsedAmount(projectId.toString(), addedBy.toString());
     }
 
     return NextResponse.json({
@@ -445,9 +481,10 @@ export const GET = async (req: NextRequest) => {
     const category = searchParams.get('category');
     const status = searchParams.get('status') || 'active';
     const useStandalone = searchParams.get('useStandalone') === 'true';
+    const addedBy = searchParams.get('addedBy');
 
     // Check cache first
-    const cacheKey = `labor:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status}:${useStandalone}`;
+    const cacheKey = `labor:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status}:${useStandalone}:${addedBy || 'all'}`;
     const cachedData = await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
@@ -460,10 +497,18 @@ export const GET = async (req: NextRequest) => {
     if (projectId) {
       query.projectId = projectId;
     }
+
+    if (addedBy) {
+      query.addedBy = addedBy;
+    }
     
     if (entityType && entityId) {
       query.entityType = entityType;
       query.entityId = entityId;
+    }
+
+    if (sectionId) {
+      query.sectionId = sectionId;
     }
 
     if (miniSectionId) {
@@ -504,6 +549,10 @@ export const GET = async (req: NextRequest) => {
 
       // Filter embedded labor entries
       laborEntries = entity.Labors || [];
+
+      if (sectionId) {
+        laborEntries = laborEntries.filter((labor: any) => labor.sectionId === sectionId);
+      }
 
       if (miniSectionId) {
         laborEntries = laborEntries.filter((labor: any) => labor.miniSectionId === miniSectionId);
@@ -636,8 +685,11 @@ export const PUT = async (req: NextRequest) => {
     }
 
     // Calculate new total cost if count or perLaborCost is being updated
+    let currentEntity: any = null;
+    let currentLabor: any = null;
+
     if (updates.count !== undefined || updates.perLaborCost !== undefined) {
-      const currentEntity = await getEntityById(entityType, entityId);
+      currentEntity = await getEntityById(entityType, entityId);
       if (!currentEntity) {
         return NextResponse.json(
           { success: false, message: `${entityType} not found` },
@@ -645,7 +697,7 @@ export const PUT = async (req: NextRequest) => {
         );
       }
 
-      const currentLabor = currentEntity.Labors?.find((labor: any) => labor._id.toString() === laborId);
+      currentLabor = currentEntity.Labors?.find((labor: any) => labor._id.toString() === laborId);
       if (!currentLabor) {
         return NextResponse.json(
           { success: false, message: "Labor entry not found" },
@@ -672,6 +724,12 @@ export const PUT = async (req: NextRequest) => {
             await Projects.findByIdAndUpdate(projectId, { $inc: { spent: costDifference } });
           }
         }
+      }
+    } else {
+      // Still fetch entity/labor for the standalone-sync block below
+      currentEntity = await getEntityById(entityType, entityId);
+      if (currentEntity) {
+        currentLabor = currentEntity.Labors?.find((labor: any) => labor._id.toString() === laborId) || null;
       }
     }
 
@@ -723,6 +781,32 @@ export const PUT = async (req: NextRequest) => {
         { success: false, message: "Failed to update labor entry" },
         { status: 500 }
       );
+    }
+
+    // Update standalone Labor entry to keep it in sync with embedded entry
+    try {
+      const { Labor } = await import("@/lib/models/Xsite/Labor");
+      await Labor.findOneAndUpdate(
+        {
+          entityType,
+          entityId,
+          type: currentLabor.type,
+          category: currentLabor.category,
+          count: currentLabor.count,
+          perLaborCost: currentLabor.perLaborCost,
+          totalCost: currentLabor.totalCost
+        },
+        { $set: updates }
+      );
+      
+      // If we have a projectId and addedBy, recalculate contractor usedAmount
+      const projectIdToUse = entityType === 'project' ? entityId : currentEntity.projectId;
+      const addedBy = currentLabor.addedBy;
+      if (projectIdToUse && addedBy) {
+        await recalculateContractorUsedAmount(projectIdToUse.toString(), addedBy.toString());
+      }
+    } catch (standaloneError) {
+      console.error("⚠️ Failed to update standalone labor entry in PUT:", standaloneError);
     }
 
     // Invalidate cache for this entity and project
@@ -797,6 +881,11 @@ export const DELETE = async (req: NextRequest) => {
           projectId,
           { $inc: { spent: -laborCost } }
         );
+      }
+
+      // Recalculate contractor usedAmount if deleted standalone labor has addedBy
+      if (projectId && laborEntry.addedBy) {
+        await recalculateContractorUsedAmount(projectId.toString(), laborEntry.addedBy.toString());
       }
 
       // Invalidate cache for this entity and project
@@ -917,6 +1006,12 @@ export const DELETE = async (req: NextRequest) => {
         );
     }
 
+    // Recalculate contractor usedAmount if deleted embedded labor has addedBy
+    const projectIdToUse = entityType === 'project' ? entityId : currentEntity.projectId;
+    if (projectIdToUse && laborToDelete.addedBy) {
+      await recalculateContractorUsedAmount(projectIdToUse.toString(), laborToDelete.addedBy.toString());
+    }
+
     // Invalidate cache for this entity and project
     await invalidateCachePattern(`labor:${entityType}:${entityId}:*`);
     // Also invalidate project-level cache if not a project entity
@@ -994,5 +1089,56 @@ async function getEntityById(entityType: string, entityId: string) {
       return await RowHouse.findById(entityId);
     default:
       return null;
+  }
+}
+
+// Helper function to recalculate and update a contractor's usedAmount
+async function recalculateContractorUsedAmount(projectId: string, staffId: string) {
+  try {
+    const { Labor } = await import("@/lib/models/Xsite/Labor");
+    const { Contractor } = await import("@/lib/models/Xsite/Contractor");
+
+    const PREDEFINED_CATEGORIES = [
+      'Civil / Structural Works',
+      'Electrical Works',
+      'Plumbing & Sanitary Works',
+      'Finishing Works',
+      'Mechanical & HVAC Works',
+      'Fire Fighting & Safety Works',
+      'External & Infrastructure Works',
+      'Waterproofing & Treatment Works',
+      'Site Management & Support Staff',
+      'Equipment Operators',
+      'Security & Housekeeping',
+      'RCC contractor',
+      'Other Works',
+    ];
+
+    // Find all contracts for this staff member on this project
+    const contracts = await Contractor.find({ projectId, staffId });
+
+    for (const contract of contracts) {
+      const isPredefined = PREDEFINED_CATEGORIES.some(
+        c => c.toLowerCase() === contract.contractType.toLowerCase()
+      );
+
+      // For custom contract types, map to "Other Works" category in Labor records
+      const laborCategory = isPredefined ? contract.contractType : 'Other Works';
+
+      const activeEntries = await Labor.find({
+        projectId,
+        addedBy: staffId,
+        category: laborCategory,
+        status: "active"
+      });
+
+      const totalCost = activeEntries.reduce((sum, entry) => sum + (entry.totalCost || 0), 0);
+
+      contract.usedAmount = totalCost;
+      await contract.save();
+      console.log(`🔄 Recalculated usedAmount for staff ${staffId} on project ${projectId} | contractType: ${contract.contractType} | laborCategory: ${laborCategory} | total: ${totalCost}`);
+    }
+  } catch (error) {
+    console.error("❌ Failed to recalculate contractor usedAmount:", error);
   }
 }

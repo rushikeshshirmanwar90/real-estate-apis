@@ -1,5 +1,4 @@
 import connect from "@/lib/db";
-import { Activity } from "@/lib/models/Xsite/Activity";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 import { requireValidClient } from "@/lib/utils/client-validation";
@@ -11,6 +10,45 @@ import {
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
+import { Model, Document } from "mongoose";
+
+// Type definitions for the Activity model
+interface UserData {
+  userId: string;
+  fullName: string;
+  email?: string;
+  userType?: "admin" | "staff";
+}
+
+interface ChangedData {
+  field?: string;
+  oldValue?: any;
+  newValue?: any;
+}
+
+interface ActivityDocument extends Document {
+  _id: any;
+  user: UserData;
+  clientId: string;
+  projectId?: string;
+  projectName?: string;
+  sectionId?: string;
+  sectionName?: string;
+  miniSectionId?: string;
+  miniSectionName?: string;
+  activityType: string;
+  category: string;
+  action: string;
+  description: string;
+  message?: string;
+  changedData?: ChangedData[];
+  metadata?: any;
+  ipAddress?: string;
+  deviceInfo?: string;
+  date: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 // GET: Fetch activities with filters
 export const GET = async (req: NextRequest | Request) => {
@@ -59,8 +97,6 @@ export const GET = async (req: NextRequest | Request) => {
       if (dateFrom) query.date.$gte = dateFrom;
       if (dateTo) query.date.$lte = dateTo;
       if (targetDate) {
-        // ✅ FIX: Widen query range by 1 day on each side to solve client-server timezone mismatch issues.
-        // The client uses device local time to filter the final list, so this is 100% accurate.
         const target = new Date(targetDate);
         const prevDay = new Date(target);
         prevDay.setDate(prevDay.getDate() - 1);
@@ -84,8 +120,12 @@ export const GET = async (req: NextRequest | Request) => {
       return successResponse(cacheValue, "Activities fetched successfully (cached)", 200);
     }
 
+    // Import Activity model dynamically
+    const activityModule = await import("@/lib/models/Xsite/Activity");
+    const ActivityModel = activityModule.Activity as Model<ActivityDocument>;
+
     // Get all activities without pagination
-    const activities = await Activity.find(query)
+    const activities = await ActivityModel.find(query)
       .sort({ date: -1, createdAt: -1 });
 
     const result = {
@@ -177,7 +217,11 @@ export const POST = async (req: NextRequest | Request) => {
 
     console.log('🚀 Creating new Activity with doc:', JSON.stringify(doc, null, 2));
 
-    const newActivity = new Activity(doc);
+    // Import Activity model dynamically
+    const activityModule = await import("@/lib/models/Xsite/Activity");
+    const ActivityModel = activityModule.Activity as Model<ActivityDocument>;
+
+    const newActivity = new ActivityModel(doc);
     await newActivity.save();
 
     console.log('✅ Activity created successfully:', newActivity._id);

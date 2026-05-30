@@ -10,7 +10,7 @@ const EmbeddedLaborSchema = new Schema(
       enum: [
         // Multitask Labor (versatile workers)
         'Multitask Labor',
-        
+
         // Civil / Structural Works
         'Mason (Raj Mistri)',
         'Helper / Unskilled Labour',
@@ -20,21 +20,21 @@ const EmbeddedLaborSchema = new Schema(
         'Tile Fixer',
         'Stone Mason',
         'Waterproofing Labour',
-        
+
         // Electrical Works
         'Electrical Engineer / Supervisor',
         'Electrician',
         'Electrician Helper',
         'Panel Technician',
         'Earthing Technician',
-        
+
         // Plumbing & Sanitary Works
         'Plumbing Engineer / Supervisor',
         'Plumber',
         'Plumber Helper',
         'Sanitary Fitter',
         'Drainage Labour',
-        
+
         // Finishing Works
         'Painter',
         'Polish Worker',
@@ -42,31 +42,31 @@ const EmbeddedLaborSchema = new Schema(
         'Carpenter (Finishing)',
         'Glass Fitter',
         'Aluminium Fabricator',
-        
+
         // Mechanical & HVAC Works
         'HVAC Engineer',
         'AC Technician',
         'Duct Fabricator',
         'Ventilation Technician',
-        
+
         // Fire Fighting & Safety Works
         'Fire Fighting Engineer',
         'Fire Pipe Fitter',
         'Sprinkler Technician',
         'Fire Alarm Technician',
-        
+
         // External & Infrastructure Works
         'Paver Block Labour',
         'Road Work Labour',
         'Compound Wall Mason',
         'Landscaping Labour / Gardener',
         'Rainwater Harvesting Technician',
-        
+
         // Waterproofing & Treatment Works
         'Waterproofing Applicator',
         'Chemical Treatment Technician',
         'Basement Treatment Labour',
-        
+
         // Site Management & Support Staff
         'Site Engineer',
         'Junior Engineer',
@@ -75,20 +75,34 @@ const EmbeddedLaborSchema = new Schema(
         'Store Keeper',
         'Quantity Surveyor (QS)',
         'Time Keeper',
-        
+
         // Equipment Operators
         'Excavator / JCB Operator',
         'Crane Operator',
         'Concrete Mixer Operator',
         'Lift Operator (Material/Passenger)',
-        
+
         // Security & Housekeeping
         'Security Guard',
         'Watchman',
-        'Housekeeping Labour'
+        'Housekeeping Labour',
+
+        // RCC contractor
+        'RCC Mason',
+        'RCC Helper',
+        'RCC Shuttering Worker',
+        'Bar Bender (RCC)',
+        'Concrete Mixer (RCC)',
+
+        // Other Works (custom / flexible contract types)
+        'Custom Labor Type',
+        'Specialized Worker',
+        'Temporary Worker',
+        'Consultant',
+        'Other'
       ]
     },
-    
+
     category: {
       type: String,
       required: true,
@@ -103,7 +117,9 @@ const EmbeddedLaborSchema = new Schema(
         'Waterproofing & Treatment Works',
         'Site Management & Support Staff',
         'Equipment Operators',
-        'Security & Housekeeping'
+        'Security & Housekeeping',
+        'RCC contractor',
+        'Other Works'
       ]
     },
     
@@ -164,6 +180,11 @@ const EmbeddedLaborSchema = new Schema(
       required: false,
     },
     
+    description: {
+      type: String,
+      required: true,
+    },
+    
     workDate: {
       type: Date,
       required: false,
@@ -203,7 +224,7 @@ const LaborSchema = new Schema(
       enum: [
         // Multitask Labor (versatile workers)
         'Multitask Labor',
-        
+
         // Civil / Structural Works
         'Mason (Raj Mistri)',
         'Helper / Unskilled Labour',
@@ -213,21 +234,21 @@ const LaborSchema = new Schema(
         'Tile Fixer',
         'Stone Mason',
         'Waterproofing Labour',
-        
+
         // Electrical Works
         'Electrical Engineer / Supervisor',
         'Electrician',
         'Electrician Helper',
         'Panel Technician',
         'Earthing Technician',
-        
+
         // Plumbing & Sanitary Works
         'Plumbing Engineer / Supervisor',
         'Plumber',
         'Plumber Helper',
         'Sanitary Fitter',
         'Drainage Labour',
-        
+
         // Finishing Works
         'Painter',
         'Polish Worker',
@@ -235,31 +256,31 @@ const LaborSchema = new Schema(
         'Carpenter (Finishing)',
         'Glass Fitter',
         'Aluminium Fabricator',
-        
+
         // Mechanical & HVAC Works
         'HVAC Engineer',
         'AC Technician',
         'Duct Fabricator',
         'Ventilation Technician',
-        
+
         // Fire Fighting & Safety Works
         'Fire Fighting Engineer',
         'Fire Pipe Fitter',
         'Sprinkler Technician',
         'Fire Alarm Technician',
-        
+
         // External & Infrastructure Works
         'Paver Block Labour',
         'Road Work Labour',
         'Compound Wall Mason',
         'Landscaping Labour / Gardener',
         'Rainwater Harvesting Technician',
-        
+
         // Waterproofing & Treatment Works
         'Waterproofing Applicator',
         'Chemical Treatment Technician',
         'Basement Treatment Labour',
-        
+
         // Site Management & Support Staff
         'Site Engineer',
         'Junior Engineer',
@@ -268,20 +289,34 @@ const LaborSchema = new Schema(
         'Store Keeper',
         'Quantity Surveyor (QS)',
         'Time Keeper',
-        
+
         // Equipment Operators
         'Excavator / JCB Operator',
         'Crane Operator',
         'Concrete Mixer Operator',
         'Lift Operator (Material/Passenger)',
-        
+
         // Security & Housekeeping
         'Security Guard',
         'Watchman',
-        'Housekeeping Labour'
+        'Housekeeping Labour',
+
+        // RCC contractor
+        'RCC Mason',
+        'RCC Helper',
+        'RCC Shuttering Worker',
+        'Bar Bender (RCC)',
+        'Concrete Mixer (RCC)',
+
+        // Other Works (custom / flexible contract types)
+        'Custom Labor Type',
+        'Specialized Worker',
+        'Temporary Worker',
+        'Consultant',
+        'Other'
       ]
     },
-    
+
     category: {
       type: String,
       required: true,
@@ -296,7 +331,9 @@ const LaborSchema = new Schema(
         'Waterproofing & Treatment Works',
         'Site Management & Support Staff',
         'Equipment Operators',
-        'Security & Housekeeping'
+        'Security & Housekeeping',
+        'RCC contractor',
+        'Other Works'
       ]
     },
     
@@ -382,6 +419,11 @@ const LaborSchema = new Schema(
     notes: {
       type: String,
       required: false,
+    },
+    
+    description: {
+      type: String,
+      required: true,
     },
     
     workDate: {

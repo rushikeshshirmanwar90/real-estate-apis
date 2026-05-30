@@ -25,9 +25,6 @@ interface CustomerResponse {
   isRegistered: boolean;
   createdAt: string;
 }
-  isRegistered: boolean;
-  createdAt: string;
-}
 
 // Helper function for error responses
 const errorResponse = (message: string, status: number, error?: unknown) => {
