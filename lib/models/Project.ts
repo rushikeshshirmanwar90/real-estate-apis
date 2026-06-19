@@ -83,6 +83,13 @@ const StaffSchema = new Schema(
       type: String,
       required: true,
     },
+    // Agreed monthly payment for this staff member on this project
+    monthlyPayment: {
+      type: Number,
+      required: false,
+      default: 0,
+      min: 0,
+    },
   },
   { _id: false }
 );

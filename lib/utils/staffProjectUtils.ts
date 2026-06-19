@@ -86,7 +86,8 @@ export async function addProjectToStaff(
   projectId: string,
   projectName: string,
   clientId: string,
-  clientName: string
+  clientName: string,
+  monthlyPayment: number = 0
 ) {
   try {
     const staff = await Staff.findById(staffId);
@@ -107,6 +108,7 @@ export async function addProjectToStaff(
         clientName: clientName,
         assignedAt: new Date(),
         status: "active",
+        monthlyPayment: monthlyPayment || 0,
       };
 
       await Staff.findByIdAndUpdate(
@@ -123,6 +125,31 @@ export async function addProjectToStaff(
     return { success: true, message: "Project added to staff successfully" };
   } catch (error) {
     console.error("Error adding project to staff:", error);
+    throw error;
+  }
+}
+
+/**
+ * Updates the agreed monthly payment for an existing staff-project assignment
+ * (Staff model only). Use this when a staff member stays assigned to a project
+ * but their monthly rate changes.
+ */
+export async function updateStaffProjectPayment(
+  staffId: string,
+  projectId: string,
+  monthlyPayment: number
+) {
+  try {
+    await Staff.findOneAndUpdate(
+      { _id: staffId, "assignedProjects.projectId": projectId },
+      { $set: { "assignedProjects.$.monthlyPayment": monthlyPayment || 0 } },
+      { new: true }
+    );
+
+    console.log(`✅ Updated monthly payment for staff ${staffId} on project ${projectId} to ${monthlyPayment}`);
+    return { success: true, message: "Staff project payment updated successfully" };
+  } catch (error) {
+    console.error("Error updating staff project payment:", error);
     throw error;
   }
 }

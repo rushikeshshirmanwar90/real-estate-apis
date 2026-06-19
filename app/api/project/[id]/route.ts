@@ -334,39 +334,47 @@ export const PUT = async (
       try {
         // Import Staff model and utility functions
         const { Staff } = await import("@/lib/models/users/Staff");
-        const { addProjectToStaff, removeProjectFromStaff } = await import("@/lib/utils/staffProjectUtils");
+        const { addProjectToStaff, removeProjectFromStaff, updateStaffProjectPayment } = await import("@/lib/utils/staffProjectUtils");
 
         // Find staff members that were added
-        const addedStaff = newAssignedStaff.filter((newStaff: any) => 
-          !currentAssignedStaff.some((currentStaff: any) => 
+        const addedStaff = newAssignedStaff.filter((newStaff: any) =>
+          !currentAssignedStaff.some((currentStaff: any) =>
             currentStaff._id?.toString() === newStaff._id?.toString()
           )
         );
 
         // Find staff members that were removed
-        const removedStaff = currentAssignedStaff.filter((currentStaff: any) => 
-          !newAssignedStaff.some((newStaff: any) => 
+        const removedStaff = currentAssignedStaff.filter((currentStaff: any) =>
+          !newAssignedStaff.some((newStaff: any) =>
             newStaff._id?.toString() === currentStaff._id?.toString()
           )
         );
 
+        // Find staff members that stayed assigned but had their monthly payment changed
+        const changedPaymentStaff = newAssignedStaff.filter((newStaff: any) => {
+          const currentStaff = currentAssignedStaff.find((s: any) => s._id?.toString() === newStaff._id?.toString());
+          return currentStaff && (currentStaff.monthlyPayment || 0) !== (newStaff.monthlyPayment || 0);
+        });
+
         console.log(`🔄 Staff assignment changes for project ${id}:`);
         console.log(`   - Added: ${addedStaff.length} staff members`);
         console.log(`   - Removed: ${removedStaff.length} staff members`);
+        console.log(`   - Payment changed: ${changedPaymentStaff.length} staff members`);
 
         // Add new staff assignments to Staff model (Project already updated)
         for (const staff of addedStaff) {
           try {
             console.log(`➕ Adding project to staff ${staff.fullName} (${staff._id})`);
-            
+
             await addProjectToStaff(
               staff._id,
               id,
               updatedProject.name || updatedProject.projectName || 'Unknown Project',
               updatedProject.clientId?.toString() || body.clientId || 'unknown',
-              'Unknown Client' // We don't have client name in project data
+              'Unknown Client', // We don't have client name in project data
+              staff.monthlyPayment || 0
             );
-            
+
             console.log(`✅ Successfully added project to staff ${staff.fullName}'s assignedProjects`);
           } catch (error) {
             console.error(`❌ Error adding project to staff ${staff.fullName}:`, error);
@@ -378,12 +386,26 @@ export const PUT = async (
         for (const staff of removedStaff) {
           try {
             console.log(`➖ Removing project from staff ${staff.fullName} (${staff._id})`);
-            
+
             await removeProjectFromStaff(staff._id, id);
-            
+
             console.log(`✅ Successfully removed project from staff ${staff.fullName}'s assignedProjects`);
           } catch (error) {
             console.error(`❌ Error removing project from staff ${staff.fullName}:`, error);
+            // Continue with other staff members even if one fails
+          }
+        }
+
+        // Update monthly payment for staff who stayed assigned but had their rate changed
+        for (const staff of changedPaymentStaff) {
+          try {
+            console.log(`💰 Updating monthly payment for staff ${staff.fullName} (${staff._id}) to ${staff.monthlyPayment}`);
+
+            await updateStaffProjectPayment(staff._id, id, staff.monthlyPayment || 0);
+
+            console.log(`✅ Successfully updated monthly payment for staff ${staff.fullName}`);
+          } catch (error) {
+            console.error(`❌ Error updating monthly payment for staff ${staff.fullName}:`, error);
             // Continue with other staff members even if one fails
           }
         }

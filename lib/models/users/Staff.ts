@@ -53,6 +53,13 @@ const ProjectAssignmentSchema = new Schema(
       enum: ["active", "completed", "paused"],
       default: "active",
     },
+    // Agreed monthly payment for this staff member on this specific project
+    monthlyPayment: {
+      type: Number,
+      required: false,
+      default: 0,
+      min: 0,
+    },
   },
   { _id: false }
 );

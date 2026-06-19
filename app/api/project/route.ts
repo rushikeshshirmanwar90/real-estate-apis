@@ -214,7 +214,8 @@ export const POST = async (req: NextRequest) => {
               newProject._id.toString(),
               newProject.name || newProject.projectName || 'Unknown Project',
               body.clientId,
-              'Unknown Client' // We don't have client name in project creation data
+              'Unknown Client', // We don't have client name in project creation data
+              staff.monthlyPayment || 0
             );
             
             console.log(`✅ Successfully added project to staff ${staff.fullName}'s assignedProjects`);
