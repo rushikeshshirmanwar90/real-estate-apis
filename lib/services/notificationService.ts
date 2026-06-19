@@ -133,6 +133,12 @@ export function createActivityNotification(activity: any): NotificationPayload {
       if (projectName) body += ` in ${projectName}`;
       break;
 
+    case 'phase':
+      title = activityType === 'phase_changed' ? '🚧 Phase Changed' : '📈 Phase Progress';
+      body = `${description} by ${user.fullName}`;
+      if (projectName) body += ` in ${projectName}`;
+      break;
+
     default:
       title = '📋 Activity Update';
       body = `${description} by ${user.fullName}`;

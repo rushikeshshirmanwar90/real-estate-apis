@@ -134,6 +134,11 @@ const ActivitySchema = new Schema(
         "other_cost_updated",
         "other_cost_removed",
 
+        // Construction-phase activities
+        "phase_changed",
+        "phase_progress_updated",
+        "sub_phase_progress_updated",
+
         // Other activities
         "other",
       ],
@@ -153,6 +158,7 @@ const ActivitySchema = new Schema(
         "labor",
         "equipment",
         "other_cost",
+        "phase",
         "completion",
         "other",
       ],
