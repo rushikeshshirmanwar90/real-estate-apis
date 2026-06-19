@@ -44,6 +44,13 @@ const SectionSchema = new Schema(
       type: Boolean,
       default: false,
     },
+
+    // References a Phase subdocument _id within this mini-section's parent
+    // section's ConstructionTracker document — see lib/models/Xsite/construction-tracker.ts
+    activePhaseId: {
+      type: String,
+      required: false,
+    },
   },
   { timestamps: true },
 );

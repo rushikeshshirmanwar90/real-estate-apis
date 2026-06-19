@@ -120,6 +120,16 @@ const MaterialActivitySchema = new Schema({
     required: false,
   },
 
+  sectionId: {
+    type: String,
+    required: false,
+  },
+
+  miniSectionId: {
+    type: String,
+    required: false,
+  },
+
   materials: {
     type: [MaterialSchema],
     required: true,

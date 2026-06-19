@@ -26,6 +26,7 @@ export const GET = async (req: NextRequest) => {
         const endDate = searchParams.get('endDate');
         const activity = searchParams.get('activity'); // 'imported', 'used', or 'all'
         const projectId = searchParams.get('projectId'); // optional project filter
+        const miniSectionId = searchParams.get('miniSectionId'); // optional mini-section filter
 
         console.log('\n========================================');
         console.log('📊 MATERIAL ACTIVITY REPORT API');
@@ -36,6 +37,7 @@ export const GET = async (req: NextRequest) => {
         console.log('  - End Date:', endDate);
         console.log('  - Activity Filter:', activity);
         console.log('  - Project ID Filter:', projectId);
+        console.log('  - Mini-Section ID Filter:', miniSectionId);
 
         // Validation
         if (!clientId) {
@@ -77,6 +79,33 @@ export const GET = async (req: NextRequest) => {
         // Add project filter
         if (projectId) {
             query.projectId = projectId;
+        }
+
+        // Add mini-section filter
+        let resolvedMiniSectionName = "";
+        if (miniSectionId) {
+            try {
+                const miniSecDoc = await MiniSection.findById(miniSectionId).select('name').lean();
+                if (miniSecDoc && miniSecDoc.name) {
+                    resolvedMiniSectionName = miniSecDoc.name;
+                }
+            } catch (err) {
+                console.error("Error looking up miniSection name:", err);
+            }
+
+            const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            const orConditions: any[] = [
+                { miniSectionId: miniSectionId },
+                { "materials.miniSectionId": miniSectionId }
+            ];
+
+            if (resolvedMiniSectionName) {
+                orConditions.push({ miniSectionName: resolvedMiniSectionName });
+                orConditions.push({ miniSectionName: { $regex: new RegExp("^" + escapeRegExp(resolvedMiniSectionName) + "$", "i") } });
+            }
+
+            query.$or = orConditions;
         }
 
         console.log('📋 Database Query:', JSON.stringify(query, null, 2));
@@ -356,7 +385,8 @@ export const GET = async (req: NextRequest) => {
                         },
                         filters: {
                             activity,
-                            projectId
+                            projectId,
+                            miniSectionId
                         }
                     }
                 }

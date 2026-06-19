@@ -453,6 +453,8 @@ export const POST = async (req: NextRequest | Request) => {
         qnt: material.qnt,
         perUnitCost: material.perUnitCost,
         totalCost: material.totalCost,
+        sectionId: material.sectionId || (sectionId ? String(sectionId) : undefined),
+        miniSectionId: material.miniSectionId || (miniSectionId ? String(miniSectionId) : undefined),
         addedAt: new Date()
       }));
 
@@ -477,6 +479,8 @@ export const POST = async (req: NextRequest | Request) => {
         },
         clientId: clientId,
         projectId: projectId,
+        sectionId: sectionId ? String(sectionId) : undefined,
+        miniSectionId: miniSectionId ? String(miniSectionId) : undefined,
         projectName: projectName || undefined, // Only include if we have it
         sectionName: sectionName || undefined, // Only include if we have it
         miniSectionName: miniSectionName || undefined, // Only include if we have it
