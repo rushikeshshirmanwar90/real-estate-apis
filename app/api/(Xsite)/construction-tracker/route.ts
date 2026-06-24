@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
 import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
-import { buildPhases, recalculatePhases } from "@/lib/utils/constructionTracker";
+import { buildPhase, buildPhases, recalculatePhases, SLAB_WORK_SUB_PHASES } from "@/lib/utils/constructionTracker";
 
 export const GET = async (req: NextRequest) => {
   try {
@@ -140,6 +140,69 @@ export const POST = async (req: NextRequest) => {
       {
         success: false,
         message: "Failed to create or update construction tracker",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+};
+
+// Appends a single new phase to an existing tracker.
+// body: { miniSectionId, phaseName }
+export const PUT = async (req: NextRequest) => {
+  try {
+    await checkValidClient(req);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    await connect();
+
+    const body = await req.json();
+    const miniSectionId = body?.miniSectionId !== undefined ? String(body.miniSectionId) : undefined;
+    const phaseName: string | undefined = body?.phaseName;
+
+    if (!miniSectionId || !phaseName?.trim()) {
+      return NextResponse.json(
+        { success: false, message: "miniSectionId and phaseName are required" },
+        { status: 400 }
+      );
+    }
+
+    const tracker = await ConstructionTracker.findOne({ miniSectionId });
+    if (!tracker) {
+      return NextResponse.json(
+        { success: false, message: "Construction tracker not found" },
+        { status: 404 }
+      );
+    }
+
+    const nextOrder = tracker.phases.length;
+    const newPhase = buildPhase(phaseName.trim(), nextOrder);
+    if (phaseName.trim().toLowerCase() === "slab work") {
+      (newPhase as any).subPhases = SLAB_WORK_SUB_PHASES.map((spName) => ({
+        name: spName, progress: 0, status: "NOT_STARTED",
+      }));
+    }
+
+    tracker.phases.push(newPhase as any);
+    tracker.overallProgress = recalculatePhases(tracker.phases as any[]);
+    await tracker.save();
+
+    return NextResponse.json(
+      { success: true, message: "Phase added successfully", data: tracker },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("❌ construction-tracker PUT error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to add phase",
         error: error instanceof Error ? error.message : String(error),
       },
       { status: 500 }

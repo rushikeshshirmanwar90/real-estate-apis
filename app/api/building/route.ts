@@ -1,5 +1,8 @@
 import { Building } from "@/lib/models/Building";
 import { Projects } from "@/lib/models/Project";
+import { MiniSection } from "@/lib/models/Xsite/mini-section";
+import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
+import { buildPhases } from "@/lib/utils/constructionTracker";
 import connect from "@/lib/db";
 import mongoose from "mongoose";
 import { NextRequest } from "next/server";
@@ -256,6 +259,41 @@ export const POST = async (req: NextRequest) => {
       }
 
       logger.info(`Building created successfully: ${savedBuilding._id} with ${savedBuilding.floors?.length || 0} floors`);
+
+      // Auto-create default sections: Foundation, Ground Floor, Terrace
+      const projectName = (updatedProject as any).name || 'Unknown Project';
+      const DEFAULT_SECTIONS = ['Foundation', 'First Slab', 'Terrace'];
+
+      for (const sectionName of DEFAULT_SECTIONS) {
+        try {
+          const miniSection = await MiniSection.create({
+            name: sectionName,
+            projectDetails: {
+              projectName,
+              projectId: savedBuilding.projectId.toString(),
+            },
+            mainSectionDetails: {
+              sectionName: savedBuilding.name,
+              sectionId: savedBuilding._id.toString(),
+            },
+            isCompleted: false,
+          });
+
+          await ConstructionTracker.create({
+            miniSectionId: miniSection._id.toString(),
+            projectId: savedBuilding.projectId.toString(),
+            projectName,
+            sectionName,
+            overallProgress: 0,
+            phases: buildPhases(sectionName),
+          });
+
+          logger.info(`Auto-created default section "${sectionName}" for building ${savedBuilding._id}`);
+        } catch (sectionError) {
+          // Don't fail building creation if a default section can't be created
+          logger.error(`Failed to auto-create default section "${sectionName}"`, sectionError);
+        }
+      }
 
       // Invalidate cache
       await safeRedisDelCache(`buildings:all`);

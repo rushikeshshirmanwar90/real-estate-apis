@@ -76,10 +76,12 @@ export const buildPhase = (name: string, order: number) => ({
   documents: [],
 });
 
-// Builds the flat phase list for one mini-section's own tracker, from its parent
-// main section's name (e.g. "Foundation", "Ground Floor", "Terrace").
-export const buildPhases = (sectionName: string) =>
-  phaseNamesForSection(sectionName).map((phaseName, idx) => buildPhase(phaseName, idx));
+// Builds the initial phase list for a new tracker — only the FIRST phase is created
+// upfront. Subsequent phases are appended one-at-a-time as each phase completes.
+export const buildPhases = (sectionName: string) => {
+  const names = phaseNamesForSection(sectionName);
+  return [buildPhase(names[0], 0)];
+};
 
 export const average = (values: number[]): number =>
   values.length === 0 ? 0 : Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
