@@ -1,4 +1,4 @@
-import { model, models, Schema } from "mongoose";
+import { model, models, Schema, Model } from "mongoose";
 import { MaterialSchema } from "./materials-activity";
 
 const SectionSchema = new Schema(
@@ -56,7 +56,7 @@ const SectionSchema = new Schema(
 );
 
 // Safe model registration to prevent data loss during redeployment
-let MiniSection;
+let MiniSection: Model<any>;
 try {
   if (models.MiniSection) {
     MiniSection = models.MiniSection;

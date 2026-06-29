@@ -1,4 +1,4 @@
-import { model, models, Schema } from "mongoose";
+import { model, models, Schema, Model } from "mongoose";
 
 // User Schema - Who performed the action
 const UserSchema = new Schema(
@@ -224,7 +224,7 @@ ActivitySchema.index({ activityType: 1, createdAt: -1 });
 ActivitySchema.index({ "user.userId": 1, createdAt: -1 });
 
 // Safe model registration to prevent data loss during redeployment
-let Activity;
+let Activity: Model<any>;
 try {
   if (models.Activity) {
     Activity = models.Activity;

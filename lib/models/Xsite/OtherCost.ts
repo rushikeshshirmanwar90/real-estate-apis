@@ -119,7 +119,7 @@ const OtherCostSchema = new Schema(
 
 // Pre-save: derive entityModel from entityType
 OtherCostSchema.pre("save", function (next) {
-  const map: Record<string, string> = {
+  const map: Record<string, "Projects" | "Building" | "OtherSection" | "RowHouse"> = {
     project: "Projects",
     building: "Building",
     otherSection: "OtherSection",

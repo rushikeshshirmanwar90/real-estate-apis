@@ -1,4 +1,4 @@
-import { model, models, Schema } from "mongoose";
+import { model, models, Schema, Model } from "mongoose";
 
 const PHASE_STATUS_VALUES = ["NOT_STARTED", "IN_PROGRESS", "ON_HOLD", "COMPLETED"];
 
@@ -82,7 +82,7 @@ const ConstructionTrackerSchema = new Schema(
 );
 
 // Safe model registration to prevent data loss during redeployment
-let ConstructionTracker;
+let ConstructionTracker: Model<any>;
 try {
   if (models.ConstructionTracker) {
     ConstructionTracker = models.ConstructionTracker;

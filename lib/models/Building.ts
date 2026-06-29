@@ -1,4 +1,4 @@
-import { models, model, Schema } from "mongoose";
+import { models, model, Schema, Model } from "mongoose";
 import { AmenitiesSchema } from "./utils/Amenities";
 import { MaterialSchema } from "./Xsite/materials-activity";
 import { EmbeddedOtherCostSchema } from "./Xsite/OtherCost";
@@ -268,7 +268,7 @@ buildingSchema.index({ 'floors.units.status': 1 });
 buildingSchema.index({ 'floors.units.type': 1 });
 
 // Safe model registration to prevent data loss during redeployment
-let Building;
+let Building: Model<any>;
 try {
   // In production, always reuse existing model to prevent schema conflicts
   if (models.Building) {

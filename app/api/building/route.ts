@@ -52,7 +52,6 @@ export const GET = async (req: NextRequest) => {
         
         try {
           // Find the project that contains this building section
-          const Projects = (await import("@/lib/models/Project")).Projects;
           const project = await Projects.findOne({
             $or: [
               { "section.sectionId": id, "section.type": "building" },
@@ -157,62 +156,44 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Invalid project ID format", 400);
     }
 
-    if (!body.name) {
-      return errorResponse("Building name is required", 400);
+    const project = await Projects.findById(body.projectId);
+    if (!project) {
+      return errorResponse("Project not found", 404);
     }
 
-    // Create building with proper defaults
-    try {
-      const buildingData = {
-        ...body,
-        description: body.description || '',
-        totalFloors: body.totalFloors || 0,
-        totalBookedUnits: body.totalBookedUnits || 0,
-        hasBasement: body.hasBasement || false,
-        hasGroundFloor: body.hasGroundFloor !== undefined ? body.hasGroundFloor : true,
-        floors: body.floors || [],
-        images: body.images || [],
+    const createSingleBuilding = async (buildingData: any) => {
+      if (!buildingData.name) {
+        throw new Error("Building name is required");
+      }
+
+      const slabsCount = typeof buildingData.slabsCount === 'number' ? buildingData.slabsCount : 1;
+      const hasTerrace = buildingData.hasTerrace !== undefined ? buildingData.hasTerrace : true;
+
+      const formattedBuildingData = {
+        name: buildingData.name,
+        projectId: body.projectId,
+        clientId: body.clientId,
+        description: buildingData.description || '',
+        totalFloors: buildingData.totalFloors || slabsCount,
+        totalBookedUnits: buildingData.totalBookedUnits || 0,
+        hasBasement: buildingData.hasBasement || false,
+        hasGroundFloor: buildingData.hasGroundFloor !== undefined ? buildingData.hasGroundFloor : true,
+        floors: buildingData.floors || [],
+        images: buildingData.images || [],
         isActive: true
       };
 
-      const newBuilding = new Building(buildingData);
+      const newBuilding = new Building(formattedBuildingData);
       const savedBuilding = await newBuilding.save();
 
-      // ✅ Check if section already exists in project before adding
-      const project = await Projects.findById(savedBuilding.projectId);
-      
-      if (!project) {
-        // Rollback: delete the created building
-        await Building.findByIdAndDelete(savedBuilding._id);
-        return errorResponse("Project not found", 404);
-      }
-
-      // Check if this section already exists in the project
+      // Check if section already exists in project before adding
       const sectionExists = project.section?.some((s: any) => 
         s.sectionId?.toString() === savedBuilding._id.toString()
       );
 
-      let updatedProject;
-      if (sectionExists) {
-        // Section already exists, just update its name if needed
-        console.log('Section already exists in project, updating name...');
-        updatedProject = await Projects.findOneAndUpdate(
-          { 
-            _id: savedBuilding.projectId,
-            'section.sectionId': savedBuilding._id
-          },
-          {
-            $set: {
-              'section.$.name': savedBuilding.name
-            }
-          },
-          { new: true }
-        );
-      } else {
-        // Section doesn't exist, add it
-        console.log('Section does not exist, adding to project...');
-        updatedProject = await Projects.findByIdAndUpdate(
-          savedBuilding.projectId,
+      if (!sectionExists) {
+        await Projects.findByIdAndUpdate(
+          body.projectId,
           {
             $push: {
               section: {
@@ -221,31 +202,24 @@ export const POST = async (req: NextRequest) => {
                 type: "Buildings",
               },
             },
-          },
-          { new: true }
+          }
         );
       }
 
-      if (!updatedProject) {
-        // Rollback: delete the created building
-        await Building.findByIdAndDelete(savedBuilding._id);
-        return errorResponse("Failed to update project", 500);
-      }
-
-      // ✅ Log activity for building creation (consistent with section creation)
+      // Log activity for building creation
       const userInfo = extractUserInfo(req, body);
-      if (userInfo && updatedProject) {
+      if (userInfo) {
         await logActivity({
           user: userInfo,
-          clientId: updatedProject.clientId?.toString() || 'unknown',
-          projectId: savedBuilding.projectId.toString(),
-          projectName: updatedProject.projectName || updatedProject.name || 'Unknown Project',
+          clientId: body.clientId?.toString() || 'unknown',
+          projectId: body.projectId.toString(),
+          projectName: project.projectName || project.name || 'Unknown Project',
           sectionId: savedBuilding._id.toString(),
           sectionName: savedBuilding.name || 'Unnamed Building',
           activityType: "section_created",
           category: "section",
           action: "create",
-          description: `Created section "${savedBuilding.name || 'Unnamed Building'}" in project "${updatedProject.projectName || updatedProject.name || 'Unknown Project'}"`,
+          description: `Created section "${savedBuilding.name || 'Unnamed Building'}" in project "${project.projectName || project.name || 'Unknown Project'}"`,
           message: `Section created successfully in project`,
           metadata: {
             sectionData: {
@@ -258,19 +232,25 @@ export const POST = async (req: NextRequest) => {
         });
       }
 
-      logger.info(`Building created successfully: ${savedBuilding._id} with ${savedBuilding.floors?.length || 0} floors`);
+      // Auto-create default sections: Foundation, Slab 1…N, Terrace
+      const projectName = project.name || 'Unknown Project';
+      const defaultSections = ['Foundation'];
 
-      // Auto-create default sections: Foundation, Ground Floor, Terrace
-      const projectName = (updatedProject as any).name || 'Unknown Project';
-      const DEFAULT_SECTIONS = ['Foundation', 'First Slab', 'Terrace'];
+      // Add one section per slab (Slab 1, Slab 2, …)
+      for (let i = 1; i <= slabsCount; i++) {
+        defaultSections.push(`Slab ${i}`);
+      }
+      if (hasTerrace) {
+        defaultSections.push('Terrace');
+      }
 
-      for (const sectionName of DEFAULT_SECTIONS) {
+      for (const sectionName of defaultSections) {
         try {
           const miniSection = await MiniSection.create({
             name: sectionName,
             projectDetails: {
               projectName,
-              projectId: savedBuilding.projectId.toString(),
+              projectId: body.projectId.toString(),
             },
             mainSectionDetails: {
               sectionName: savedBuilding.name,
@@ -281,7 +261,7 @@ export const POST = async (req: NextRequest) => {
 
           await ConstructionTracker.create({
             miniSectionId: miniSection._id.toString(),
-            projectId: savedBuilding.projectId.toString(),
+            projectId: body.projectId.toString(),
             projectName,
             sectionName,
             overallProgress: 0,
@@ -290,26 +270,44 @@ export const POST = async (req: NextRequest) => {
 
           logger.info(`Auto-created default section "${sectionName}" for building ${savedBuilding._id}`);
         } catch (sectionError) {
-          // Don't fail building creation if a default section can't be created
           logger.error(`Failed to auto-create default section "${sectionName}"`, sectionError);
         }
       }
 
+      return savedBuilding;
+    };
+
+    if (body.buildings && Array.isArray(body.buildings)) {
+      const createdBuildings = [];
+      for (const bData of body.buildings) {
+        const saved = await createSingleBuilding(bData);
+        createdBuildings.push(saved);
+      }
+
       // Invalidate cache
       await safeRedisDelCache(`buildings:all`);
-      await safeRedisDelCache(`buildings:project:${savedBuilding.projectId}`);
+      await safeRedisDelCache(`buildings:project:${body.projectId}`);
       const projectKeys = await safeRedisKeysCache(`project:*`);
       if (projectKeys.length > 0) {
         await safeRedisDelCache(...projectKeys);
       }
 
-      return successResponse(
-        savedBuilding,
-        "Building created successfully",
-        201
-      );
-    } catch (error) {
-      throw error;
+      return successResponse(createdBuildings, "Buildings created successfully", 201);
+    } else {
+      if (!body.name) {
+        return errorResponse("Building name is required", 400);
+      }
+      const savedBuilding = await createSingleBuilding(body);
+
+      // Invalidate cache
+      await safeRedisDelCache(`buildings:all`);
+      await safeRedisDelCache(`buildings:project:${body.projectId}`);
+      const projectKeys = await safeRedisKeysCache(`project:*`);
+      if (projectKeys.length > 0) {
+        await safeRedisDelCache(...projectKeys);
+      }
+
+      return successResponse(savedBuilding, "Building created successfully", 201);
     }
   } catch (error: unknown) {
     logger.error("Error creating building", error);
@@ -323,7 +321,8 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Validation failed", 400, error);
     }
 
-    return errorResponse("Failed to create building", 500);
+    const message = error instanceof Error ? error.message : "Failed to create building";
+    return errorResponse(message, 500);
   }
 };
 
