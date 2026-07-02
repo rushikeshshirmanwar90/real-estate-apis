@@ -24,7 +24,9 @@ type AddMaterialStockItem = {
   qnt: number | string;
   perUnitCost: number | string;
   mergeIfExists?: boolean;
-  contractor_name?: string; // ✅ NEW: Contractor name field
+  contractor_name?: string;
+  paymentStatus?: 'full' | 'partial' | 'unpaid';
+  amountPaid?: number;
 };
 
 type MaterialSubdoc = {
@@ -35,7 +37,9 @@ type MaterialSubdoc = {
   qnt: number;
   perUnitCost: number;
   totalCost: number;
-  contractor_name?: string; // ✅ NEW: Contractor name field
+  contractor_name?: string;
+  paymentStatus?: 'full' | 'partial' | 'unpaid';
+  amountPaid?: number;
 };
 
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
@@ -322,8 +326,13 @@ export const POST = async (req: NextRequest) => {
         qnt: rawQnt,
         perUnitCost: rawPerUnitCost,
         mergeIfExists = true,
-        contractor_name, // ✅ NEW: Extract contractor_name
+        contractor_name,
+        // No defaults — left undefined when the caller doesn't send payment info,
+        // so the material isn't falsely marked as "unpaid".
+        paymentStatus,
+        amountPaid,
       } = item as AddMaterialStockItem;
+      const hasPaymentInfo = paymentStatus !== undefined || amountPaid !== undefined;
 
       // 🔍 DEBUG: Log contractor_name extraction
       console.log('🏗️ Material Item Debug:', {
@@ -418,6 +427,25 @@ export const POST = async (req: NextRequest) => {
         existing.perUnitCost = oldPerUnit;
         existing.totalCost  = newTotalCost;
 
+        // Accumulate the vendor payment across the merged batches and re-derive the
+        // overall status against the new combined total cost, so a fully-paid batch
+        // merged with an unpaid one correctly becomes "partial". Only do this when
+        // payment info exists on either side — otherwise the merged entry stays
+        // undefined (no payment recorded).
+        const existingHasPayment =
+          existing.amountPaid !== undefined || existing.paymentStatus !== undefined;
+        if (hasPaymentInfo || existingHasPayment) {
+          const oldAmountPaid = Number(existing.amountPaid || 0);
+          const newAmountPaid = oldAmountPaid + (Number(amountPaid) || 0);
+          existing.amountPaid = newAmountPaid;
+          existing.paymentStatus =
+            newTotalCost > 0 && newAmountPaid >= newTotalCost - 0.01
+              ? 'full'
+              : newAmountPaid > 0
+                ? 'partial'
+                : 'unpaid';
+        }
+
         project.spent       = (project.spent || 0) + totalCost;
 
         const saved = await project.save();
@@ -447,14 +475,21 @@ export const POST = async (req: NextRequest) => {
 
       // ── Create new entry ─────────────────────────────────────────────────
       const newMaterial: MaterialSubdoc = {
-        _id:         new Types.ObjectId(),
-        name:        materialName,
+        _id:           new Types.ObjectId(),
+        name:          materialName,
         unit,
-        specs:       specs || {},
-        qnt:         Number(qnt),
-        perUnitCost: Number(perUnitCost),
-        totalCost:   Number(totalCost),
-        contractor_name: contractor_name || undefined, // ✅ NEW: Include contractor_name
+        specs:         specs || {},
+        qnt:           Number(qnt),
+        perUnitCost:   Number(perUnitCost),
+        totalCost:     Number(totalCost),
+        contractor_name: contractor_name || undefined,
+        // Only record payment when the caller sent it; otherwise leave undefined.
+        ...(hasPaymentInfo
+          ? {
+              paymentStatus: paymentStatus || 'unpaid',
+              amountPaid: Number(amountPaid) || 0,
+            }
+          : {}),
       };
 
       const updatedProject = await Projects.findByIdAndUpdate(

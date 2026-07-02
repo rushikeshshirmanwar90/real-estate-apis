@@ -60,6 +60,21 @@ export const MaterialSchema = new Schema(
       required: false,
     },
 
+    // Vendor payment — intentionally has NO default so materials added without
+    // recording payment stay undefined (the UI shows no payment badge for them,
+    // rather than a misleading "Unpaid").
+    paymentStatus: {
+      type: String,
+      enum: ['full', 'partial', 'unpaid'],
+      required: false,
+    },
+
+    amountPaid: {
+      type: Number,
+      required: false,
+      min: 0,
+    },
+
     addedAt: {
       type: Date,
       default: Date.now,
@@ -103,6 +118,7 @@ const MaterialActivitySchema = new Schema({
   projectId: {
     type: String,
     required: true,
+    index: true,
   },
 
   projectName: {

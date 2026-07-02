@@ -110,6 +110,15 @@ const StaffSchema = new Schema({
     type: Date,
     required: false,
   },
+  permissions: {
+    type: [
+      {
+        type: String,
+        enum: ['addMaterial', 'addMaterialUsage', 'addOtherCost', 'addEquipmentCost', 'contractor', 'generateReport'],
+      }
+    ],
+    default: [],
+  },
 });
 
 // Safe model registration to prevent data loss during redeployment

@@ -196,6 +196,15 @@ const projectSchema = new Schema(
       required: false,
     },
 
+    // Low-stock alert dismissals ("Ignore" in the Xsite app), stored server-side
+    // so the choice is shared across every device viewing this project instead
+    // of being trapped in one device's local storage.
+    ignoredLowStockMaterials: {
+      type: [String],
+      required: false,
+      default: [],
+    },
+
     Labors: {
       type: [EmbeddedLaborSchema],
       required: false,
