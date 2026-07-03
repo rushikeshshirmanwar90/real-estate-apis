@@ -27,6 +27,8 @@ type MaterialSubdoc = {
   totalCost: number;
   sectionId?: string;
   miniSectionId?: string;
+  phaseId?: string;
+  phaseName?: string;
 };
 
 type MaterialUsage = {
@@ -53,7 +55,7 @@ export const POST = async (req: NextRequest | Request) => {
   try {
     await connect();
     const body = await req.json();
-    const { projectId, materialUsages, miniSectionId, clientId, user } = body;
+    const { projectId, materialUsages, miniSectionId, clientId, user, phaseId, phaseName } = body;
     let { sectionId } = body;
 
     console.log('\n========================================');
@@ -253,6 +255,10 @@ export const POST = async (req: NextRequest | Request) => {
           miniSectionId ||
           (available as unknown as { miniSectionId?: string }).miniSectionId ||
           undefined,
+        // Optional — tags this usage with the mini-section's active construction
+        // phase (e.g. "Slab Work") so the app can show what work the material went to.
+        phaseId: phaseId ? String(phaseId) : undefined,
+        phaseName: phaseName ? String(phaseName) : undefined,
       };
 
       // Final validation of the used material clone

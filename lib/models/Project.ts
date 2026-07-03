@@ -64,6 +64,17 @@ const MaterialUsedSchema = new Schema(
       type: String,
       required: false,
     },
+    // Which construction phase (e.g. "Slab Work", "Column Work") this usage was
+    // recorded against — sourced from the mini-section's active phase at the time
+    // of usage. Optional so existing usage records without it remain valid.
+    phaseId: {
+      type: String,
+      required: false,
+    },
+    phaseName: {
+      type: String,
+      required: false,
+    },
     // explicit addedAt for material usage entries
     addedAt: {
       type: Date,
