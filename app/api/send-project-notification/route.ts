@@ -1,5 +1,8 @@
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
-import { sendNotificationsToRecipients } from "@/lib/utils/notificationSender";
+import {
+  sendNotificationsToRecipients,
+  resolveRecipientsFromDB,
+} from "@/lib/utils/notificationSender";
 import { NextRequest } from "next/server";
 
 /**
@@ -27,8 +30,8 @@ export async function POST(req: NextRequest) {
     } = await req.json();
 
     // Validate required fields
-    if (!title || !recipients || !clientId) {
-      return errorResponse("title, recipients, and clientId are required", 400);
+    if (!title || !clientId) {
+      return errorResponse("title and clientId are required", 400);
     }
 
     if (!message) {
@@ -36,7 +39,30 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`📋 Project notification: ${title} - ${category}/${action}`);
-    console.log(`📤 Sending to ${recipients?.length ?? 0} recipients`);
+
+    // ✅ Resolve recipients server-side: all admins of this client, from their
+    // registered push tokens. The client-supplied list is only a fallback so
+    // the route can't be used to push to arbitrary users.
+    let finalRecipients: Array<{ userId: string }> =
+      await resolveRecipientsFromDB(clientId);
+
+    if (finalRecipients.length === 0 && Array.isArray(recipients)) {
+      console.log(
+        "⚠️ No admin push tokens found in DB — falling back to client-supplied recipients (admins only)"
+      );
+      finalRecipients = recipients.filter(
+        (r: any) => r?.userId && r.userType === "admin"
+      );
+    }
+
+    // Never notify the user who performed the activity
+    if (triggeredBy) {
+      finalRecipients = finalRecipients.filter(
+        (r) => r.userId !== triggeredBy
+      );
+    }
+
+    console.log(`📤 Sending to ${finalRecipients.length} admin recipients`);
 
     // ✅ Call the shared utility directly — no HTTP round-trip
     const result = await sendNotificationsToRecipients({
@@ -51,7 +77,7 @@ export async function POST(req: NextRequest) {
         triggeredBy,
         ...metadata,
       },
-      recipients,
+      recipients: finalRecipients,
       timestamp: new Date().toISOString(),
     });
 
