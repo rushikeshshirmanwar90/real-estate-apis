@@ -94,6 +94,11 @@ export const POST = async (request: NextRequest) => {
     const appliedAmount = remainingToApply;
 
     // ── Distribute the payment across batches (fill each due in order) ────
+    const batchUpdates: {
+      id: string;
+      amountPaid: number;
+      paymentStatus: string;
+    }[] = [];
     for (const m of targets) {
       if (remainingToApply <= 0.01) break;
       const cost = Number(m.totalCost) || 0;
@@ -110,11 +115,32 @@ export const POST = async (request: NextRequest) => {
           : newPaid > 0
             ? "partial"
             : "unpaid";
+      batchUpdates.push({
+        id: String(m._id),
+        amountPaid: newPaid,
+        paymentStatus: m.paymentStatus,
+      });
       remainingToApply -= applyHere;
     }
 
-    project.markModified("MaterialAvailable");
-    await project.save();
+    // Update only the affected batches atomically instead of project.save() —
+    // a full save re-validates every embedded document in the project, so any
+    // legacy subdocument that predates a now-required field (e.g. old Labors
+    // without a description) would fail validation and block the payment.
+    if (batchUpdates.length > 0) {
+      const setOps: Record<string, any> = {};
+      const arrayFilters: Record<string, any>[] = [];
+      batchUpdates.forEach((u, i) => {
+        setOps[`MaterialAvailable.$[b${i}].amountPaid`] = u.amountPaid;
+        setOps[`MaterialAvailable.$[b${i}].paymentStatus`] = u.paymentStatus;
+        arrayFilters.push({ [`b${i}._id`]: new Types.ObjectId(u.id) });
+      });
+      await Projects.updateOne(
+        { _id: project._id },
+        { $set: setOps },
+        { arrayFilters }
+      );
+    }
 
     // ── Recompute the aggregate for the affected batches ──────────────────
     const updated = (project.MaterialAvailable || []).filter((m: any) =>

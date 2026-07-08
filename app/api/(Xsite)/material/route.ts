@@ -27,6 +27,7 @@ type AddMaterialStockItem = {
   contractor_name?: string;
   paymentStatus?: 'full' | 'partial' | 'unpaid';
   amountPaid?: number;
+  billingDate?: string;
 };
 
 type MaterialSubdoc = {
@@ -40,6 +41,7 @@ type MaterialSubdoc = {
   contractor_name?: string;
   paymentStatus?: 'full' | 'partial' | 'unpaid';
   amountPaid?: number;
+  billingDate?: Date;
 };
 
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
@@ -331,8 +333,20 @@ export const POST = async (req: NextRequest) => {
         // so the material isn't falsely marked as "unpaid".
         paymentStatus,
         amountPaid,
+        billingDate: rawBillingDate,
       } = item as AddMaterialStockItem;
       const hasPaymentInfo = paymentStatus !== undefined || amountPaid !== undefined;
+
+      // Optional vendor bill date — only stored when the caller sent a valid date.
+      let billingDate: Date | undefined;
+      if (rawBillingDate) {
+        const parsed = new Date(rawBillingDate);
+        if (Number.isNaN(parsed.getTime())) {
+          results.push({ input: item, success: false, error: "billingDate must be a valid date" });
+          continue;
+        }
+        billingDate = parsed;
+      }
 
       // 🔍 DEBUG: Log contractor_name extraction
       console.log('🏗️ Material Item Debug:', {
@@ -446,6 +460,12 @@ export const POST = async (req: NextRequest) => {
                 : 'unpaid';
         }
 
+        // A new batch's bill date supersedes the old one on merge (latest bill wins);
+        // when the new batch has no bill date the existing one is kept.
+        if (billingDate) {
+          existing.billingDate = billingDate;
+        }
+
         project.spent       = (project.spent || 0) + totalCost;
 
         const saved = await project.save();
@@ -490,6 +510,7 @@ export const POST = async (req: NextRequest) => {
               amountPaid: Number(amountPaid) || 0,
             }
           : {}),
+        ...(billingDate ? { billingDate } : {}),
       };
 
       const updatedProject = await Projects.findByIdAndUpdate(
@@ -579,6 +600,7 @@ export const POST = async (req: NextRequest) => {
             totalCost: result.material?.totalCost || 0,
             cost: result.material?.totalCost || 0, // For backward compatibility
             contractor_name: result.material?.contractor_name || result.input.contractor_name || undefined, // ✅ NEW: Include contractor_name
+            billingDate: result.material?.billingDate || undefined,
             addedAt: new Date(),
           }));
           

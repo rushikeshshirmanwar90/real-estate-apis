@@ -254,6 +254,9 @@ export class PushNotificationService {
       priority?: 'default' | 'normal' | 'high';
       ttl?: number;
       excludeUserId?: string; // Add this parameter
+      // Used when the project can't be resolved (e.g. it was just deleted) —
+      // the activity's own clientId still lets us reach the right admins.
+      fallbackClientId?: string;
     }
   ): Promise<PushNotificationResult> {
     try {
@@ -263,17 +266,59 @@ export class PushNotificationService {
         .select('name clientId')
         .lean() as any;
 
-      if (!project) {
-        console.log('📭 Project not found:', projectId);
-        return { success: true, messagesSent: 0, errors: ['Project not found'] };
+      let clientIdStr: string | null = null;
+      let projectName: string | undefined;
+
+      if (project?.clientId) {
+        clientIdStr = project.clientId.toString();
+        projectName = project.name;
+      } else if (options?.fallbackClientId) {
+        console.log(`📭 Project ${projectId} not resolvable, falling back to clientId ${options.fallbackClientId}`);
+        clientIdStr = options.fallbackClientId.toString();
       }
 
-      if (!project.clientId) {
-        console.log('📭 Project has no clientId:', projectId);
-        return { success: true, messagesSent: 0, errors: ['Project has no clientId'] };
+      if (!clientIdStr) {
+        console.log('📭 Project not found / has no clientId, and no fallback:', projectId);
+        return { success: true, messagesSent: 0, errors: ['Project not found and no fallback clientId'] };
       }
 
-      const clientIdStr = project.clientId.toString();
+      return await this.sendToClientAdmins(
+        clientIdStr,
+        title,
+        body,
+        { ...data, projectId, ...(projectName ? { projectName } : {}) },
+        options
+      );
+
+    } catch (error) {
+      console.error('❌ Error sending notifications to project admins:', error);
+      return {
+        success: false,
+        messagesSent: 0,
+        errors: [error instanceof Error ? error.message : 'Unknown error'],
+      };
+    }
+  }
+
+  /**
+   * Send notifications to ALL admins of a client (excluding the performer).
+   * Use this directly for activities that aren't tied to a resolvable project.
+   */
+  static async sendToClientAdmins(
+    clientId: string,
+    title: string,
+    body: string,
+    data?: any,
+    options?: {
+      sound?: string;
+      badge?: number;
+      priority?: 'default' | 'normal' | 'high';
+      ttl?: number;
+      excludeUserId?: string;
+    }
+  ): Promise<PushNotificationResult> {
+    try {
+      const clientIdStr = clientId.toString();
       const excludeUserId = options?.excludeUserId;
 
       // Query push tokens directly by clientId + userType.
@@ -303,18 +348,12 @@ export class PushNotificationService {
       // token validation, health tracking, and batch splitting.
       const adminUserIds = [...new Set(adminTokens.map((t: any) => t.userId).filter(Boolean))];
 
-      console.log(`📱 Sending to ${adminUserIds.length} admin(s) for project: ${project.name}`);
+      console.log(`📱 Sending to ${adminUserIds.length} admin(s) for client: ${clientIdStr}`);
 
-      return await this.sendToUsers(
-        adminUserIds,
-        title,
-        body,
-        { ...data, projectId, projectName: project.name },
-        options
-      );
+      return await this.sendToUsers(adminUserIds, title, body, data, options);
 
     } catch (error) {
-      console.error('❌ Error sending notifications to project admins:', error);
+      console.error('❌ Error sending notifications to client admins:', error);
       return {
         success: false,
         messagesSent: 0,

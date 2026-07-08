@@ -179,24 +179,28 @@ const EmbeddedLaborSchema = new Schema(
       type: String,
       required: false,
     },
-    
+
+    // Not required: embedded labor entries created before this field existed
+    // have no description, and any full parent-document save() would fail
+    // validation on them (e.g. recording a material payment).
     description: {
       type: String,
-      required: true,
+      required: false,
+      default: '',
     },
-    
+
     workDate: {
       type: Date,
       required: false,
     },
-    
+
     // Status tracking
     status: {
       type: String,
       enum: ['active', 'completed', 'cancelled'],
       default: 'active',
     },
-    
+
     // Audit fields (using String instead of ObjectId for embedded docs)
     addedBy: {
       type: String,

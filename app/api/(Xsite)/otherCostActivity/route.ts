@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { OtherCostActivity } from "@/lib/models/Xsite/otherCost-activity";
+import { notifyOtherCostActivityCreated } from "@/lib/services/notificationService";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { NextRequest } from "next/server";
 import {
@@ -205,6 +206,11 @@ export const POST = async (req: NextRequest | Request) => {
     await newOtherCostActivity.save();
 
     console.log('✅ Other cost activity created successfully:', newOtherCostActivity._id);
+
+    // Push to all of this client's admins (async, don't block the response)
+    notifyOtherCostActivityCreated(newOtherCostActivity).catch((error) => {
+      console.error('Failed to send other cost activity notification:', error);
+    });
 
     // Invalidate cache for other cost activities
     await invalidateCachePattern(`otherCostActivity:*`);

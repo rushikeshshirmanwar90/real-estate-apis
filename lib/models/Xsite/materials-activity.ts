@@ -75,6 +75,13 @@ export const MaterialSchema = new Schema(
       min: 0,
     },
 
+    // Vendor bill date entered by the user on the payment step. Optional —
+    // materials added before this field existed (or without a bill) stay undefined.
+    billingDate: {
+      type: Date,
+      required: false,
+    },
+
     addedAt: {
       type: Date,
       default: Date.now,

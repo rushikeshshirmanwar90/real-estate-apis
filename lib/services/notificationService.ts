@@ -309,10 +309,13 @@ export async function notifyActivityCreated(activity: any): Promise<Notification
     NotificationLogger.info(context, 'Starting regular activity notification processing');
 
     // Enhanced validation with detailed error context (Requirement 2.1)
-    if (!activity.projectId) {
+    // An activity is deliverable when it has a projectId OR a clientId — the
+    // clientId alone is enough to fan out to all of that client's admins.
+    const hasClientId = activity.clientId && activity.clientId !== 'unknown';
+    if (!activity.projectId && !hasClientId) {
       const error: NotificationError = {
         type: 'VALIDATION_ERROR',
-        message: 'No projectId found in activity, skipping notification',
+        message: 'No projectId or clientId found in activity, skipping notification',
         context: { 
           activity: {
             _id: activity._id,
@@ -374,18 +377,35 @@ export async function notifyActivityCreated(activity: any): Promise<Notification
         NotificationLogger.info(context, `Excluding performing admin (${excludeUserId}) from notifications`);
       }
       
-      const pushResult = await PushNotificationService.sendToProjectAdmins(
-        activity.projectId,
-        payload.title,
-        payload.body,
-        payload.data,
-        {
-          sound: payload.sound || 'default',
-          priority: 'high',
-          ttl: 3600,
-          excludeUserId: excludeUserId, // Exclude performing admin
-        }
-      );
+      // Prefer project-scoped resolution (adds project name to the payload);
+      // fall back to the activity's clientId when there is no projectId or the
+      // project no longer exists (e.g. a project_deleted activity).
+      const pushResult = activity.projectId
+        ? await PushNotificationService.sendToProjectAdmins(
+            activity.projectId,
+            payload.title,
+            payload.body,
+            payload.data,
+            {
+              sound: payload.sound || 'default',
+              priority: 'high',
+              ttl: 3600,
+              excludeUserId: excludeUserId, // Exclude performing admin
+              fallbackClientId: hasClientId ? String(activity.clientId) : undefined,
+            }
+          )
+        : await PushNotificationService.sendToClientAdmins(
+            String(activity.clientId),
+            payload.title,
+            payload.body,
+            payload.data,
+            {
+              sound: payload.sound || 'default',
+              priority: 'high',
+              ttl: 3600,
+              excludeUserId: excludeUserId,
+            }
+          );
 
       result.deliveredCount = pushResult.messagesSent;
       result.recipientCount = pushResult.messagesSent + pushResult.errors.length;
@@ -1217,5 +1237,66 @@ export class RecipientCacheManager {
       console.error('❌ Failed to refresh recipients:', error);
       return null;
     }
+  }
+}
+/**
+ * Send notification for an other-cost activity (the third feed shown on the
+ * app's notification page). Fans out to all admins of the activity's clientId,
+ * excluding the performing admin. Fire-and-forget: never throws.
+ *
+ * NOTE: /api/otherCost (POST) also creates an OtherCostActivity feed record,
+ * but the app separately logs that action through /api/activity which already
+ * pushes — so this notifier is only wired to direct /api/otherCostActivity
+ * POSTs to avoid double notifications.
+ */
+export async function notifyOtherCostActivityCreated(otherCostActivity: any): Promise<void> {
+  try {
+    const { user, otherCosts, projectName, activity: action, message } = otherCostActivity;
+
+    const count = otherCosts?.length || 0;
+    const first = otherCosts?.[0];
+    const totalCost = (otherCosts || []).reduce(
+      (sum: number, c: any) => sum + (Number(c.totalCost) || 0),
+      0
+    );
+    const actionText =
+      action === 'updated' ? 'Updated' : action === 'approved' ? 'Approved' : 'Added';
+
+    let body =
+      count === 1 && first
+        ? `${actionText} other cost "${first.name}" (₹${totalCost.toLocaleString('en-IN')}) by ${user?.fullName || 'Unknown User'}`
+        : `${actionText} ${count} other cost entries (₹${totalCost.toLocaleString('en-IN')}) by ${user?.fullName || 'Unknown User'}`;
+    if (projectName) body += ` in ${projectName}`;
+    if (message && message.trim()) body += `\n💬 ${message}`;
+
+    // 'admin' and 'users' are both admin-type accounts — exclude the performer
+    const isPerformingUserAdmin = ['admin', 'users'].includes(user?.userType);
+    const excludeUserId = isPerformingUserAdmin ? user.userId : undefined;
+
+    const result = await PushNotificationService.sendToProjectAdmins(
+      otherCostActivity.projectId,
+      '💰 Other Cost Update',
+      body,
+      {
+        activityId: otherCostActivity._id?.toString(),
+        projectId: otherCostActivity.projectId,
+        category: 'other_cost',
+        action: action || 'added',
+        route: 'notification',
+      },
+      {
+        sound: 'default',
+        priority: 'high',
+        ttl: 3600,
+        excludeUserId,
+        fallbackClientId: otherCostActivity.clientId,
+      }
+    );
+
+    console.log(
+      `💰 Other cost notification: ${result.messagesSent} sent${result.errors.length ? `, errors: ${result.errors.join('; ')}` : ''}`
+    );
+  } catch (error) {
+    console.error('❌ Other cost activity notification failed:', error);
   }
 }
