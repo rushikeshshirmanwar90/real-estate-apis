@@ -133,25 +133,26 @@ export const GET = async (req: NextRequest) => {
         return errorResponse("Client validation failed", 404);
       }
 
-      // Check cache
-      const cachedData = await safeRedisGetCache(`admin:client:${clientId}`);
-    if (cachedData) {
-      const cacheValue = JSON.parse(cachedData);
-        return successResponse(cacheValue, "Admin retrieved successfully (cached)");
+      // Check cache (key is `admins:` — plural — so stale single-admin
+      // entries under the old `admin:client:` key are never served)
+      const cachedData = await safeRedisGetCache(`admins:client:${clientId}`);
+      if (cachedData) {
+        const cacheValue = JSON.parse(cachedData);
+        return successResponse(cacheValue, "Admins retrieved successfully (cached)");
       }
 
-      console.log('🔍 Fetching admin for clientId:', clientId);
-      const adminData = await Admin.findOne({ clientId });
-      console.log('📊 Admin found:', adminData ? 'Yes' : 'No');
-      
-      if (!adminData) {
-        return errorResponse("Admin not found with this clientId", 404);
-      }
+      // ✅ One client can have multiple admins — return all of them.
+      console.log('🔍 Fetching admins for clientId:', clientId);
+      const adminData = await Admin.find({ clientId }).sort({ createdAt: 1 });
+      console.log('📊 Admins found:', adminData.length);
 
-      // Cache the admin with 24-hour expiration
-      await safeRedisSetCache(`admin:client:${clientId}`, JSON.stringify(adminData), 'EX', 86400);
+      // Cache the admins with 24-hour expiration
+      await safeRedisSetCache(`admins:client:${clientId}`, JSON.stringify(adminData), 'EX', 86400);
 
-      return successResponse(adminData, "Admin retrieved successfully");
+      return successResponse(
+        adminData,
+        `Retrieved ${adminData.length} admin(s) successfully`
+      );
     }
 
     // Get all admins
@@ -247,6 +248,7 @@ export const POST = async (req: NextRequest) => {
 
     // Invalidate cache
     await safeRedisDelCache(`admin:all`);
+    await safeRedisDelCache(`admins:client:${data.clientId}`);
 
     return successResponse(savedAdmin, "Admin created successfully", 201);
   } catch (error: unknown) {
@@ -337,6 +339,7 @@ export const PUT = async (req: NextRequest) => {
     await safeRedisDelCache(`admin:all`);
     if (updatedAdmin.clientId) {
       await safeRedisDelCache(`admin:client:${updatedAdmin.clientId}`);
+      await safeRedisDelCache(`admins:client:${updatedAdmin.clientId}`);
     }
     if (updateData.email) {
       await safeRedisDelCache(`admin:email:${updateData.email}`);
@@ -404,6 +407,7 @@ export const DELETE = async (req: NextRequest) => {
     await safeRedisDelCache(`admin:email:${adminToDelete.email}`);
     if (adminToDelete.clientId) {
       await safeRedisDelCache(`admin:client:${adminToDelete.clientId}`);
+      await safeRedisDelCache(`admins:client:${adminToDelete.clientId}`);
     }
 
     return successResponse(deletedAdmin, "Admin deleted successfully");

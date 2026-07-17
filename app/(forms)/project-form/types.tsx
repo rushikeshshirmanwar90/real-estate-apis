@@ -14,4 +14,12 @@ export interface FormData {
     clientId: string;
     longitude: number,
     latitude: number,
+    // Site engineer captured as flat fields in the form; mapped into the
+    // `siteEngineer` object below before submitting to the API.
+    siteEngineerName?: string;
+    siteEngineerPhone?: string;
+    siteEngineer?: {
+        name: string;
+        phoneNumber: string;
+    };
 }

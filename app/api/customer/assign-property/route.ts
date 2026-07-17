@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Building } from "@/lib/models/Building";
+import { Projects } from "@/lib/models/Project";
 import { Customer } from "@/lib/models/users/Customer";
 import { Booking } from "@/lib/models/Shivai/Booking";
 import { Registry } from "@/lib/models/Shivai/Registry";
@@ -106,10 +107,42 @@ export const GET = async (req: NextRequest) => {
       "floors.units.customerInfo.customerId": customerId,
     }).lean() as any[];
 
+    // A Building only stores its own (section) name — resolve the real project
+    // names in one batch query. Primary key: building.projectId; fallback:
+    // reverse lookup via the project's section.sectionId (holds building ids).
+    const projectById = new Map<string, any>();
+    const projectByBuildingId = new Map<string, any>();
+    if (buildings.length > 0) {
+      const buildingProjectIds = [
+        ...new Set(buildings.map((b) => b.projectId?.toString()).filter(Boolean)),
+      ];
+      const buildingIds = buildings.map((b) => b._id.toString());
+
+      const projects = (await Projects.find({
+        $or: [
+          ...(buildingProjectIds.length ? [{ _id: { $in: buildingProjectIds } }] : []),
+          { "section.sectionId": { $in: buildingIds } },
+        ],
+      })
+        .select("name section.sectionId")
+        .lean()) as any[];
+
+      for (const p of projects) {
+        projectById.set(p._id.toString(), p);
+        for (const s of p.section || []) {
+          if (s.sectionId) projectByBuildingId.set(s.sectionId.toString(), p);
+        }
+      }
+    }
+
     const assignments: PropertyAssignmentResponse[] = [];
 
     // Extract assigned units from buildings
     for (const building of buildings) {
+      const project =
+        (building.projectId && projectById.get(building.projectId.toString())) ||
+        projectByBuildingId.get(building._id.toString());
+
       for (const floor of building.floors || []) {
         for (const unit of floor.units || []) {
           if (unit.customerInfo?.customerId === customerId) {
@@ -118,8 +151,8 @@ export const GET = async (req: NextRequest) => {
               customerId: customerId,
               clientId: building.clientId?.toString() || "",
               clientName: "Shivai Construction",
-              projectId: building.projectId?.toString() || "",
-              projectName: building.name || "",
+              projectId: (project?._id || building.projectId)?.toString() || "",
+              projectName: project?.name || building.name || "",
               sectionId: building._id.toString(),
               sectionName: building.name || "",
               unitId: unit._id.toString(),

@@ -105,11 +105,38 @@ const StaffSchema = new Schema(
   { _id: false }
 );
 
+// Site engineer responsible for the project — name + reachable phone number.
+// Both optional so existing projects (created before this field) stay valid.
+const SiteEngineerSchema = new Schema(
+  {
+    name: {
+      type: String,
+      required: false,
+      default: "",
+      trim: true,
+    },
+    phoneNumber: {
+      type: String,
+      required: false,
+      default: "",
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
 const projectSchema = new Schema(
   {
     name: {
       type: String,
       required: true,
+    },
+
+    // Site engineer assigned to this project (name + phone number).
+    siteEngineer: {
+      type: SiteEngineerSchema,
+      required: false,
+      default: () => ({ name: "", phoneNumber: "" }),
     },
 
     images: {

@@ -35,6 +35,8 @@ const Page = () => {
         clientId: "",
         longitude: 0,
         latitude: 0,
+        siteEngineerName: "",
+        siteEngineerPhone: "",
     });
 
     const fetchClientId = async () => {
@@ -145,6 +147,18 @@ const Page = () => {
                     value: "completed"
                 },
             ]
+        },
+        {
+            key: "siteEngineerName",
+            label: "Site Engineer Name",
+            value: formData.siteEngineerName ?? "",
+            type: "text"
+        },
+        {
+            key: "siteEngineerPhone",
+            label: "Site Engineer Phone",
+            value: formData.siteEngineerPhone ?? "",
+            type: "text"
         }
     ]
 
@@ -186,7 +200,19 @@ const Page = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const result: FormData = projectId ? await updateProject(formData, projectId) : await addProject(formData)
+            // Fold the flat site-engineer inputs into the { name, phoneNumber }
+            // shape the Project model expects, while keeping the flat keys off
+            // the payload.
+            const { siteEngineerName, siteEngineerPhone, ...rest } = formData;
+            const payload = {
+                ...rest,
+                siteEngineer: {
+                    name: (siteEngineerName ?? "").trim(),
+                    phoneNumber: (siteEngineerPhone ?? "").trim(),
+                },
+            } as FormData;
+
+            const result: FormData = projectId ? await updateProject(payload, projectId) : await addProject(payload)
             if (result) {
                 successToast("Project Added successfully")
                 router.push("/projects")
