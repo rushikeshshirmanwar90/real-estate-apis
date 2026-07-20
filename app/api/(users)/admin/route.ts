@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkValidClient } from "@/lib/auth";
 import connect from "@/lib/db";
 import { Admin } from "@/lib/models/users/Admin";
+import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
@@ -255,7 +256,15 @@ export const PUT = async (req: NextRequest) => {
     if (!updatedAdmin) {
       return errorResponse("Admin not found", 404);
     }
-    
+
+    // Update email in LoginUser if email was changed (LoginUser is keyed by email, not adminId)
+    if (updateData.email && oldEmail) {
+      await LoginUser.findOneAndUpdate(
+        { email: oldEmail },
+        { email: updateData.email }
+      );
+    }
+
     // Invalidate cache
     await safeRedisDelCache(`admins:all`);
     await safeRedisDelCache(`admin:${id}`);

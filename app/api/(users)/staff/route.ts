@@ -467,6 +467,15 @@ export const PUT = async (req: NextRequest) => {
       }
     }
 
+    // Get old email before update if email is being changed
+    let oldEmail: string | undefined;
+    if (updateData.email) {
+      const oldStaff = await Staff.findById(id).select("email").lean();
+      if (oldStaff && !Array.isArray(oldStaff)) {
+        oldEmail = (oldStaff as { email?: string }).email;
+      }
+    }
+
     // ✅ Find and update the staff member (filtered by both ID and clients array)
     const updatedStaff = await Staff.findOneAndUpdate(
       { _id: id, "clients.clientId": clientId }, // Check if clientId is in clients array
@@ -478,10 +487,10 @@ export const PUT = async (req: NextRequest) => {
       return errorResponse("Staff member not found", 404);
     }
 
-    // Update email in LoginUser if email was changed
-    if (updateData.email) {
+    // Update email in LoginUser if email was changed (LoginUser is keyed by email, not staffId)
+    if (updateData.email && oldEmail) {
       await LoginUser.findOneAndUpdate(
-        { staffId: id },
+        { email: oldEmail },
         { email: updateData.email }
       );
     }

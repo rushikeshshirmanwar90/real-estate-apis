@@ -126,9 +126,68 @@ export const POST = async (req: NextRequest) => {
 
     try {
       switch (loginUser.userType) {
-        case 'admin':
+        case 'admin': {
+          // Admins live in the Admin collection (created via /api/users/admin),
+          // with a clientId pointing to their organization
+          const adminModule = await import("@/lib/models/users/Admin");
+          const AdminModel = adminModule.Admin as Model<any>;
+          const admin = await AdminModel.findOne({ email }).lean() as any;
+
+          if (admin) {
+            clientId = admin.clientId ? admin.clientId.toString() : null;
+            userDetails = {
+              id: admin._id,
+              email: admin.email,
+              firstName: admin.firstName,
+              lastName: admin.lastName,
+              phoneNumber: admin.phoneNumber,
+              userType: loginUser.userType,
+            };
+
+            if (!clientId) {
+              logger.error("Admin has no clientId", { email, adminId: admin._id });
+              return errorResponse("No organization assigned. Please contact support.", 403);
+            }
+
+            additionalData = {
+              primaryClientId: clientId,
+            };
+            logger.info("Admin login successful", { email, adminId: admin._id, clientId });
+            break;
+          }
+
+          // Fallback: some admins are the client owner and only exist as a Client record
+          const adminClientModule = await import("@/lib/models/super-admin/Client");
+          const AdminClientModel = adminClientModule.Client as Model<ClientDocument>;
+          const ownerClient = await AdminClientModel.findOne({ email }).lean();
+          if (ownerClient) {
+            clientId = ownerClient._id.toString();
+            userDetails = {
+              id: ownerClient._id,
+              email: ownerClient.email,
+              name: ownerClient.name,
+              phoneNumber: ownerClient.phoneNumber,
+              city: ownerClient.city,
+              state: ownerClient.state,
+              address: ownerClient.address,
+              userType: loginUser.userType,
+            };
+            additionalData = {
+              companyName: ownerClient.name,
+              license: ownerClient.license,
+              isLicenseActive: ownerClient.isLicenseActive,
+              licenseExpiryDate: ownerClient.licenseExpiryDate,
+            };
+            logger.info("Admin (client owner) login successful", { email, clientId });
+          } else {
+            logger.error("No admin or client record found for admin user", { email });
+            return errorResponse("Account configuration error. Please contact support.", 404);
+          }
+          break;
+        }
+
         case 'users':
-          // For admin/users, find the client record
+          // For users, find the client record
           const clientModule = await import("@/lib/models/super-admin/Client");
           const ClientModel = clientModule.Client as Model<ClientDocument>;
           const client = await ClientModel.findOne({ email }).lean();
