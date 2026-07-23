@@ -16,33 +16,74 @@ interface RawContact {
   emails?: unknown;
 }
 
+// Hard cap on stored contacts per customer. A single Mongo document is limited
+// to 16MB; capping well below that keeps upserts safe even for huge phone books.
+const MAX_CONTACTS = 10000;
+
+// Collapse a phone number to its significant digits so country-code / spacing
+// variants of the same number dedupe to one.
+const phoneKey = (n: string) => {
+  const digits = n.replace(/\D/g, "");
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
+
 /**
  * Normalize the raw contacts payload from the app into a clean, storable shape.
- * - phone numbers / emails are coerced to string arrays with blanks removed
+ * - phone numbers / emails are coerced to string arrays, trimmed and de-duped
  * - entries with neither a name nor a phone number are dropped
+ * - whole contacts sharing the same name + phone signature are merged, then the
+ *   list is capped at MAX_CONTACTS to protect the document size
  */
 const normalizeContacts = (input: unknown) => {
   if (!Array.isArray(input)) return [];
 
-  return input
-    .map((c: RawContact) => {
-      const name = typeof c?.name === "string" ? c.name.trim() : "";
+  const byKey = new Map<
+    string,
+    { name: string; phoneNumbers: string[]; emails: string[] }
+  >();
 
-      const phoneNumbers = Array.isArray(c?.phoneNumbers)
-        ? c.phoneNumbers
-            .map((p) => (typeof p === "string" ? p.trim() : String(p ?? "").trim()))
-            .filter((p) => p !== "")
-        : [];
+  for (const c of input as RawContact[]) {
+    const name = typeof c?.name === "string" ? c.name.trim() : "";
 
-      const emails = Array.isArray(c?.emails)
-        ? c.emails
-            .map((e) => (typeof e === "string" ? e.trim() : String(e ?? "").trim()))
-            .filter((e) => e !== "")
-        : [];
+    const phoneNumbers = Array.from(
+      new Map(
+        (Array.isArray(c?.phoneNumbers) ? c.phoneNumbers : [])
+          .map((p) => (typeof p === "string" ? p.trim() : String(p ?? "").trim()))
+          .filter((p) => p !== "")
+          .map((p) => [phoneKey(p), p] as const)
+      ).values()
+    );
 
-      return { name, phoneNumbers, emails };
-    })
-    .filter((c) => c.name !== "" || c.phoneNumbers.length > 0);
+    const emails = Array.from(
+      new Set(
+        (Array.isArray(c?.emails) ? c.emails : [])
+          .map((e) =>
+            (typeof e === "string" ? e : String(e ?? "")).trim().toLowerCase()
+          )
+          .filter((e) => e !== "")
+      )
+    );
+
+    if (name === "" && phoneNumbers.length === 0) continue;
+
+    const sig = `${name.toLowerCase()}|${phoneNumbers
+      .map(phoneKey)
+      .sort()
+      .join(",")}`;
+    const existing = byKey.get(sig);
+    if (existing) {
+      existing.phoneNumbers = Array.from(
+        new Set([...existing.phoneNumbers, ...phoneNumbers])
+      );
+      existing.emails = Array.from(new Set([...existing.emails, ...emails]));
+    } else {
+      byKey.set(sig, { name, phoneNumbers, emails });
+    }
+
+    if (byKey.size >= MAX_CONTACTS) break;
+  }
+
+  return Array.from(byKey.values());
 };
 
 /**

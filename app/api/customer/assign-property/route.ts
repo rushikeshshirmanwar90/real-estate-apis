@@ -208,11 +208,13 @@ export const POST = async (req: NextRequest) => {
       assignedBy,
     } = data;
 
-    // Validate required fields
-    if (!customerId || !sectionId || !unitId || !originalPrice) {
-      console.error('❌ Missing required fields:', { customerId, sectionId, unitId, originalPrice });
+    // Validate required fields. Price is intentionally NOT required: the QR
+    // booking flow assigns a flat without any price (it can be set later),
+    // so we fall back to the unit's own stored price, or 0.
+    if (!customerId || !sectionId || !unitId) {
+      console.error('❌ Missing required fields:', { customerId, sectionId, unitId });
       return errorResponse(
-        "Customer ID, section ID, unit ID, and original price are required",
+        "Customer ID, section ID, and unit ID are required",
         400
       );
     }
@@ -280,9 +282,18 @@ export const POST = async (req: NextRequest) => {
     }
     console.log('✅ Unit is available for booking');
 
-    // Calculate final price (original price minus discount amount)
-    const finalPrice = discountPrice && discountPrice > 0 ? originalPrice - discountPrice : originalPrice;
-    console.log('💰 Pricing:', { originalPrice, discountPrice, finalPrice });
+    // Resolve the price without requiring it in the request: prefer an explicit
+    // price, else the unit's own stored price, else 0. The QR booking flow sends
+    // no price at all, so this keeps the booking valid.
+    const resolvedOriginalPrice =
+      typeof originalPrice === "number" && originalPrice > 0
+        ? originalPrice
+        : Number(targetUnit.pricing?.originalPrice) || 0;
+    const resolvedDiscount =
+      typeof discountPrice === "number" && discountPrice > 0 ? discountPrice : 0;
+    const finalPrice =
+      resolvedDiscount > 0 ? resolvedOriginalPrice - resolvedDiscount : resolvedOriginalPrice;
+    console.log('💰 Pricing:', { resolvedOriginalPrice, resolvedDiscount, finalPrice });
 
     console.log('📝 Updating unit with customer information...');
     // Update unit with customer information
@@ -293,8 +304,8 @@ export const POST = async (req: NextRequest) => {
       name: `${customer.firstName} ${customer.lastName}`,
       phone: customer.phoneNumber,
       email: customer.email,
-      originalPrice: originalPrice,
-      discountPrice: discountPrice || null,
+      originalPrice: resolvedOriginalPrice,
+      discountPrice: resolvedDiscount || null,
       finalPrice: finalPrice,
       assignedBy: assignedBy || "Admin",
     };
@@ -332,8 +343,8 @@ export const POST = async (req: NextRequest) => {
       flatNumber: targetUnit.unitNumber,
       flatType: targetUnit.type,
       flatArea: targetUnit.area,
-      originalPrice: originalPrice,
-      discountPrice: discountPrice || null,
+      originalPrice: resolvedOriginalPrice,
+      discountPrice: resolvedDiscount || null,
       finalPrice: finalPrice,
       bookingAmount: 0, // Will be updated when payment schedule is created
       status: 'pending',
@@ -436,8 +447,8 @@ export const POST = async (req: NextRequest) => {
       sectionName: sectionName || building.name || "",
       unitId: unitId,
       unitNumber: unitNumber || targetUnit.unitNumber,
-      originalPrice: originalPrice,
-      discountPrice: discountPrice || undefined,
+      originalPrice: resolvedOriginalPrice,
+      discountPrice: resolvedDiscount || undefined,
       finalPrice: finalPrice,
       status: "assigned",
       assignedAt: targetUnit.bookingDate.toISOString(),
