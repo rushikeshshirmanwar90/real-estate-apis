@@ -46,6 +46,7 @@ interface StaffDocument extends Document {
     isContractor?: boolean;
   }>;
   assignedProjects: Array<any>;
+  permissions?: string[];
 }
 
 // Helper function to validate MongoDB ObjectId
@@ -192,6 +193,19 @@ export const POST = async (req: NextRequest) => {
         clientName: project.clientId.name || "Client",
         isContractor: true,
       });
+    }
+
+    // Automatically grant the 'contractor' permission so the staff gains
+    // contractor access on their next login / data refresh. Without this the
+    // isContractor flag alone doesn't unlock the contractor UI, which is gated
+    // by hasPermission('contractor') on the staff.permissions array.
+    if (!Array.isArray(staff.permissions)) {
+      staff.permissions = [];
+    }
+    if (!staff.permissions.includes("contractor")) {
+      staff.permissions.push("contractor");
+      staff.markModified("permissions");
+      console.log(`✅ Granted 'contractor' permission to staff ${staff._id}`);
     }
 
     // Ensure staff markModified is triggered for nested arrays if mongoose doesn't detect the change
@@ -425,14 +439,33 @@ export const DELETE = async (req: NextRequest) => {
         const StaffModel = staffModule.Staff as Model<StaffDocument>;
         const staff = await StaffModel.findById(staffId);
         if (staff) {
+          let staffChanged = false;
+
           const clientIndex = staff.clients.findIndex(
             (c: any) => c.clientId.toString() === clientIdStr
           );
           if (clientIndex !== -1) {
             staff.clients[clientIndex].isContractor = false;
             staff.markModified("clients");
-            await staff.save();
+            staffChanged = true;
             console.log(`✅ Set isContractor: false for staff ${staffId} under client ${clientIdStr}`);
+          }
+
+          // Revoke the global 'contractor' permission only when the staff has no
+          // remaining contracts across ANY client/project (permissions are global,
+          // not per-client, so a contract under another client must keep it).
+          if (Array.isArray(staff.permissions) && staff.permissions.includes("contractor")) {
+            const totalRemaining = await ContractorModel.countDocuments({ staffId });
+            if (totalRemaining === 0) {
+              staff.permissions = staff.permissions.filter((p) => p !== "contractor");
+              staff.markModified("permissions");
+              staffChanged = true;
+              console.log(`✅ Revoked 'contractor' permission from staff ${staffId}`);
+            }
+          }
+
+          if (staffChanged) {
+            await staff.save();
           }
         }
       }

@@ -31,6 +31,7 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const projectId = searchParams.get("projectId");
+    const rowHouseId = searchParams.get("rowHouseId");
 
     if (id) {
       if (!isValidObjectId(id)) {
@@ -102,15 +103,25 @@ export const GET = async (req: NextRequest) => {
       return successResponse(building, "Building retrieved successfully");
     }
 
-    // Build filter
-    const filter = projectId ? { projectId } : {};
-
     if (projectId && !isValidObjectId(projectId)) {
       return errorResponse("Invalid project ID format", 400);
     }
+    if (rowHouseId && !isValidObjectId(rowHouseId)) {
+      return errorResponse("Invalid row house ID format", 400);
+    }
+
+    // Build filter — rowHouseId lists buildings nested under a row house,
+    // projectId lists top-level project buildings.
+    const filter: Record<string, unknown> = {};
+    if (rowHouseId) filter.rowHouseId = rowHouseId;
+    else if (projectId) filter.projectId = projectId;
 
     // Check cache for buildings list
-    const cacheKey = projectId ? `buildings:project:${projectId}` : `buildings:all`;
+    const cacheKey = rowHouseId
+      ? `buildings:rowHouse:${rowHouseId}`
+      : projectId
+      ? `buildings:project:${projectId}`
+      : `buildings:all`;
     const cachedData = await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
@@ -169,9 +180,18 @@ export const POST = async (req: NextRequest) => {
       const slabsCount = typeof buildingData.slabsCount === 'number' ? buildingData.slabsCount : 1;
       const hasTerrace = buildingData.hasTerrace !== undefined ? buildingData.hasTerrace : true;
 
+      // A building may belong to a Row House container (nested) instead of being
+      // a top-level project section. rowHouseId can be set per-building or for
+      // the whole batch on the request body.
+      const rowHouseId = buildingData.rowHouseId || body.rowHouseId || null;
+      if (rowHouseId && !isValidObjectId(rowHouseId)) {
+        throw new Error("Invalid row house ID format");
+      }
+
       const formattedBuildingData = {
         name: buildingData.name,
         projectId: body.projectId,
+        rowHouseId: rowHouseId || undefined,
         clientId: body.clientId,
         description: buildingData.description || '',
         totalFloors: buildingData.totalFloors || slabsCount,
@@ -186,24 +206,28 @@ export const POST = async (req: NextRequest) => {
       const newBuilding = new Building(formattedBuildingData);
       const savedBuilding = await newBuilding.save();
 
-      // Check if section already exists in project before adding
-      const sectionExists = project.section?.some((s: any) => 
-        s.sectionId?.toString() === savedBuilding._id.toString()
-      );
-
-      if (!sectionExists) {
-        await Projects.findByIdAndUpdate(
-          body.projectId,
-          {
-            $push: {
-              section: {
-                sectionId: savedBuilding._id,
-                name: savedBuilding.name,
-                type: "Buildings",
-              },
-            },
-          }
+      // Only top-level buildings become project sections. Buildings nested under
+      // a Row House are discovered via GET /api/building?rowHouseId=… instead.
+      if (!rowHouseId) {
+        // Check if section already exists in project before adding
+        const sectionExists = project.section?.some((s: any) =>
+          s.sectionId?.toString() === savedBuilding._id.toString()
         );
+
+        if (!sectionExists) {
+          await Projects.findByIdAndUpdate(
+            body.projectId,
+            {
+              $push: {
+                section: {
+                  sectionId: savedBuilding._id,
+                  name: savedBuilding.name,
+                  type: "Buildings",
+                },
+              },
+            }
+          );
+        }
       }
 
       // Log activity for building creation
@@ -287,6 +311,9 @@ export const POST = async (req: NextRequest) => {
       // Invalidate cache
       await safeRedisDelCache(`buildings:all`);
       await safeRedisDelCache(`buildings:project:${body.projectId}`);
+      if (body.rowHouseId) {
+        await safeRedisDelCache(`buildings:rowHouse:${body.rowHouseId}`);
+      }
       const projectKeys = await safeRedisKeysCache(`project:*`);
       if (projectKeys.length > 0) {
         await safeRedisDelCache(...projectKeys);
@@ -302,6 +329,9 @@ export const POST = async (req: NextRequest) => {
       // Invalidate cache
       await safeRedisDelCache(`buildings:all`);
       await safeRedisDelCache(`buildings:project:${body.projectId}`);
+      if (body.rowHouseId) {
+        await safeRedisDelCache(`buildings:rowHouse:${body.rowHouseId}`);
+      }
       const projectKeys = await safeRedisKeysCache(`project:*`);
       if (projectKeys.length > 0) {
         await safeRedisDelCache(...projectKeys);
@@ -401,6 +431,9 @@ export const DELETE = async (req: NextRequest) => {
       await safeRedisDelCache(`building:${sectionId}`);
       await safeRedisDelCache(`buildings:all`);
       await safeRedisDelCache(`buildings:project:${projectId}`);
+      if ((deletedBuilding as any)?.rowHouseId) {
+        await safeRedisDelCache(`buildings:rowHouse:${(deletedBuilding as any).rowHouseId}`);
+      }
       const projectKeys = await safeRedisKeysCache(`project:*`);
       if (projectKeys.length > 0) {
         await safeRedisDelCache(...projectKeys);

@@ -123,39 +123,47 @@ const EmbeddedLaborSchema = new Schema(
       ]
     },
     
+    // Workforce tier: skilled = main worker (Mistri), unskilled = helper.
+    // 'na' for legacy/other entries that predate this split.
+    skillLevel: {
+      type: String,
+      enum: ['skilled', 'unskilled', 'na'],
+      default: 'na',
+    },
+
     count: {
       type: Number,
       required: true,
       min: 1,
     },
-    
+
     perLaborCost: {
       type: Number,
       required: true,
       min: 0,
     },
-    
+
     totalCost: {
       type: Number,
       required: true,
       min: 0,
     },
-    
+
     miniSectionId: {
       type: String,
       required: false,
     },
-    
+
     miniSectionName: {
       type: String,
       required: false,
     },
-    
+
     sectionId: {
       type: String,
       required: false,
     },
-    
+
     // UI related fields
     icon: {
       type: String,
@@ -341,24 +349,32 @@ const LaborSchema = new Schema(
       ]
     },
     
+    // Workforce tier: skilled = main worker (Mistri), unskilled = helper.
+    // 'na' for legacy/other entries that predate this split.
+    skillLevel: {
+      type: String,
+      enum: ['skilled', 'unskilled', 'na'],
+      default: 'na',
+    },
+
     count: {
       type: Number,
       required: true,
       min: 1,
     },
-    
+
     perLaborCost: {
       type: Number,
       required: true,
       min: 0,
     },
-    
+
     totalCost: {
       type: Number,
       required: true,
       min: 0,
     },
-    
+
     // Entity references for standalone Labor model
     entityType: {
       type: String,

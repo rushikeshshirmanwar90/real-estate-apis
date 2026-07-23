@@ -223,6 +223,7 @@ export const POST = async (req: NextRequest) => {
       return {
         type: entry.type,
         category: entry.category,
+        skillLevel: entry.skillLevel || 'na',
         count: entry.count,
         perLaborCost: entry.perLaborCost,
         totalCost: entry.totalCost,

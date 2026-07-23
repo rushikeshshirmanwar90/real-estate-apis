@@ -172,6 +172,15 @@ const buildingSchema = new Schema(
       require: true,
     },
 
+    // When set, this building belongs to a Row House container section rather
+    // than being a top-level project section. Buildings nested under a row house
+    // are NOT pushed into project.section — they are listed via the row house.
+    rowHouseId: {
+      type: Schema.Types.ObjectId,
+      ref: "RowHouse",
+      required: false,
+    },
+
     clientId: {
       type: Schema.Types.ObjectId,
       ref: "Client",
@@ -263,6 +272,7 @@ const buildingSchema = new Schema(
 
 // Add indexes for better performance
 buildingSchema.index({ projectId: 1 });
+buildingSchema.index({ rowHouseId: 1 });
 buildingSchema.index({ 'floors.floorNumber': 1 });
 buildingSchema.index({ 'floors.units.status': 1 });
 buildingSchema.index({ 'floors.units.type': 1 });
