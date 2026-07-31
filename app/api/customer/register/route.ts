@@ -14,7 +14,21 @@ interface CustomerRegisterRequest {
   password: string;
   isEmailVerified?: boolean;
   isRegistered?: boolean;
+  // The tenant this customer belongs to. Sent by admin-driven registration
+  // (which knows the logged-in admin's client); omitted by customer
+  // self-registration, which falls back to SHIVAI_DEFAULT_CLIENT_ID.
+  clientId?: string;
 }
+
+/**
+ * Tenant assigned to customers who register themselves from the Shivai app.
+ *
+ * This MUST be the _id of a real Client document — the admin panel scopes
+ * everything it shows (projects, synced contacts) by the logged-in admin's
+ * clientId, so a customer tagged to a non-existent client is invisible there.
+ * Configure it via the SHIVAI_DEFAULT_CLIENT_ID env var.
+ */
+const DEFAULT_CLIENT_ID = process.env.SHIVAI_DEFAULT_CLIENT_ID || "";
 
 // Customer response interface
 interface CustomerResponse {
@@ -162,6 +176,17 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Name, mobile number, email, and password are required", 400);
     }
 
+    // Prefer the client sent by the caller (admin registration knows it), then
+    // the configured default. Without a valid one the customer would be
+    // orphaned — invisible to every admin panel — so fail loudly instead.
+    const resolvedClientId = data.clientId?.trim() || DEFAULT_CLIENT_ID;
+    if (!isValidObjectId(resolvedClientId)) {
+      return errorResponse(
+        "No valid clientId for this customer. Send clientId in the request body or set SHIVAI_DEFAULT_CLIENT_ID.",
+        400
+      );
+    }
+
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -223,7 +248,7 @@ export const POST = async (req: NextRequest) => {
       phoneNumber: mobileNumber,
       password: hashedPassword, // Store hashed password
       verified: isEmailVerified || false,
-      clientId: "69600d70cd1b223a43790497", // Default client ID
+      clientId: resolvedClientId,
     });
 
     const savedCustomer = await newCustomer.save();

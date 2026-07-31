@@ -1,5 +1,31 @@
 import { model, models, Schema, Model } from "mongoose";
 
+// A vendor bill photo captured on the payment step of the Add Material form.
+// Only the hosted URL is stored (never the binary), so activity documents stay
+// small and the notification feed can render thumbnails straight from the CDN.
+export const BillImageSchema = new Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // Cloudinary public_id — kept so a bill can be replaced or deleted later.
+    publicId: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 export const MaterialSchema = new Schema(
   {
     name: {
@@ -80,6 +106,15 @@ export const MaterialSchema = new Schema(
     billingDate: {
       type: Date,
       required: false,
+    },
+
+    // Photos of the vendor bill uploaded on the payment step. `default: undefined`
+    // (not []) so materials added without a bill stay undefined and the UI shows
+    // no bill section for them, matching how paymentStatus behaves above.
+    billImages: {
+      type: [BillImageSchema],
+      required: false,
+      default: undefined,
     },
 
     addedAt: {
@@ -163,6 +198,15 @@ const MaterialActivitySchema = new Schema({
     required: false,
     trim: true,
     index: true,
+  },
+
+  // Bill photos for the whole batch, mirrored up from the materials. One bill
+  // normally covers every material in a single purchase, so keeping a copy here
+  // lets the notification feed render it without scanning each material.
+  billImages: {
+    type: [BillImageSchema],
+    required: false,
+    default: undefined,
   },
 
   message: {

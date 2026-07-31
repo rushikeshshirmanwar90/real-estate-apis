@@ -10,6 +10,13 @@ import {
   safeRedisDelCache 
 } from "@/lib/utils/redis-helpers";
 
+// Vendor bill photo uploaded via POST /api/material/bill-upload
+interface BillImage {
+  url: string;
+  publicId?: string;
+  uploadedAt?: string | Date;
+}
+
 interface MaterialItem {
   name: string;
   unit: string;
@@ -19,11 +26,36 @@ interface MaterialItem {
   totalCost?: number;
   perUnitCost?: number;
   addedAt?: Date;
+  billImages?: BillImage[];
   transferDetails?: {
     fromProject: { id: string; name: string };
     toProject: { id: string; name: string };
   };
 }
+
+// Keeps only bill entries with a usable http(s) URL, dropping duplicates.
+const sanitizeBillImages = (raw: unknown): BillImage[] => {
+  if (!Array.isArray(raw)) return [];
+
+  const seen = new Set<string>();
+  const cleaned: BillImage[] = [];
+
+  for (const entry of raw) {
+    const url = typeof entry?.url === "string" ? entry.url.trim() : "";
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+
+    const uploadedAt = entry?.uploadedAt ? new Date(entry.uploadedAt) : undefined;
+    cleaned.push({
+      url,
+      ...(entry?.publicId ? { publicId: String(entry.publicId) } : {}),
+      uploadedAt:
+        uploadedAt && !Number.isNaN(uploadedAt.getTime()) ? uploadedAt : new Date(),
+    });
+  }
+
+  return cleaned;
+};
 
 interface UserPayload {
   userId: string;
@@ -152,6 +184,7 @@ export const POST = async (req: NextRequest | Request) => {
       date,
       transferDetails,
       contractor_name, // ✅ NEW: Extract contractor_name
+      billImages, // 🧾 NEW: Vendor bill photos for the batch
     } = (await req.json()) as {
       clientId: string;
       projectId: string;
@@ -168,6 +201,7 @@ export const POST = async (req: NextRequest | Request) => {
         toProject: { id: string; name: string };
       };
       contractor_name?: string; // ✅ NEW: Add contractor_name type
+      billImages?: BillImage[]; // 🧾 NEW: Add billImages type
     };
 
     // Validation
@@ -238,26 +272,46 @@ export const POST = async (req: NextRequest | Request) => {
         toProject: { id: string; name: string };
       };
       contractor_name?: string; // ✅ NEW: Add contractor_name type
+      billImages?: BillImage[]; // 🧾 NEW: Add billImages type
     } = {
       clientId,
       projectId: reqProjectId,
       projectName,
       sectionName,
       miniSectionName,
-      materials: materials.map((material) => ({
-        ...material,
-        specs: material.specs || {},
-        cost: material.cost || material.totalCost || 0, // Ensure cost field is set for notifications
-        perUnitCost: material.perUnitCost || 0,
-        totalCost: material.totalCost || material.cost || 0,
-        addedAt: material.addedAt ? new Date(material.addedAt) : new Date(),
-      })),
+      materials: materials.map((material) => {
+        const materialBills = sanitizeBillImages(material.billImages);
+        return {
+          ...material,
+          specs: material.specs || {},
+          cost: material.cost || material.totalCost || 0, // Ensure cost field is set for notifications
+          perUnitCost: material.perUnitCost || 0,
+          totalCost: material.totalCost || material.cost || 0,
+          addedAt: material.addedAt ? new Date(material.addedAt) : new Date(),
+          // Left undefined when no bill was uploaded so the card hides its bill row
+          billImages: materialBills.length > 0 ? materialBills : undefined,
+        };
+      }),
       message: message || "",
       activity,
       date: dateStr,
       user,
       ...(activity === "transferred" && transferDetails ? { transferDetails } : {}),
       ...(contractor_name ? { contractor_name } : {}), // ✅ NEW: Include contractor_name if provided
+      // 🧾 Batch-level bills: use what the caller sent, else fall back to the union
+      // of the materials' own bills so the notification card always finds them.
+      ...(() => {
+        const activityBills = sanitizeBillImages(billImages);
+        if (activityBills.length > 0) return { billImages: activityBills };
+
+        const byUrl = new Map<string, BillImage>();
+        for (const material of materials) {
+          for (const bill of sanitizeBillImages(material.billImages)) {
+            if (!byUrl.has(bill.url)) byUrl.set(bill.url, bill);
+          }
+        }
+        return byUrl.size > 0 ? { billImages: Array.from(byUrl.values()) } : {};
+      })(),
     };
 
     const newImportedMaterial = new MaterialActivity(payload);
