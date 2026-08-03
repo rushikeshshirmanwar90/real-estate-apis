@@ -158,14 +158,31 @@ export const POST = async (req: NextRequest) => {
     if (existingAdmin) {
       return errorResponse("Admin already exists with this email", 409);
     }
-    
+
+    const existingLoginUser = await LoginUser.findOne({ email: data.email }).lean();
+    if (existingLoginUser) {
+      return errorResponse("User already exists with this email", 409);
+    }
+
     // Create admin
     const newAdmin = new Admin(data);
     await newAdmin.save();
-    
+
+    // Create the login entry too. Without it the admin exists but /api/findUser
+    // returns 404, so they can never receive an OTP or set a password — the same
+    // bug clients hit. Roll the Admin back if this fails.
+    try {
+      const newLoginUser = new LoginUser({ email: data.email, userType: "admin" });
+      await newLoginUser.save();
+    } catch (loginUserError) {
+      await Admin.findByIdAndDelete(newAdmin._id);
+      logger.error("Rolled back admin — LoginUser creation failed", loginUserError);
+      throw loginUserError;
+    }
+
     // Return admin without password
     const { password: _, ...adminWithoutPassword } = newAdmin.toObject();
-    
+
     // Invalidate cache
     await safeRedisDelCache(`admins:all`);
     
@@ -317,11 +334,15 @@ export const DELETE = async (req: NextRequest) => {
     }
     
     const deletedAdmin = await Admin.findOneAndDelete({ email }).lean();
-    
+
     if (!deletedAdmin) {
       return errorResponse("Admin not found", 404);
     }
-    
+
+    // Drop the login entry as well, otherwise the email stays locked out of
+    // being re-registered (LoginUser.email is unique) — matches DELETE /api/clients.
+    await LoginUser.findOneAndDelete({ email });
+
     // Invalidate cache
     await safeRedisDelCache(`admins:all`);
     if (deletedAdmin && !Array.isArray(deletedAdmin) && deletedAdmin._id) {

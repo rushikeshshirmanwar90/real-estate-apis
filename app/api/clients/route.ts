@@ -127,14 +127,30 @@ export const POST = async (req: NextRequest) => {
     if (existingLoginUser) {
       return errorResponse("User already exists with this email", 409);
     }
+    // Phone number is a Number in the schema. A value like "+91 98765 43210" or
+    // "098..." fails to cast and surfaces as an opaque "Validation failed", so
+    // strip formatting here and reject what is left if it isn't numeric.
+    if (data.phoneNumber !== undefined && data.phoneNumber !== null) {
+      const digits = String(data.phoneNumber).replace(/[^0-9]/g, "");
+      if (!digits) {
+        return errorResponse("Phone number must contain digits", 400);
+      }
+      data.phoneNumber = Number(digits);
+    }
     // Hash password if provided
     if (data.password) {
       data.password = await bcrypt.hash(data.password, SALT_ROUNDS);
     }
+    // Accept `license` as an alias for `licenseDays`. The mobile apps send
+    // `license`, which used to skip this block entirely — the client was saved
+    // with a day count but no licenseExpiryDate, so it read as never expiring.
+    if (data.licenseDays === undefined && data.license !== undefined) {
+      data.licenseDays = data.license;
+    }
     // Handle license days if provided
     if (data.licenseDays !== undefined) {
       const licenseDays = Number(data.licenseDays);
-      
+
       if (licenseDays > 0) {
         const currentDate = new Date();
         const expiryDate = new Date(currentDate.getTime() + (licenseDays * 24 * 60 * 60 * 1000));
@@ -156,34 +172,52 @@ export const POST = async (req: NextRequest) => {
     
     // Remove licenseDays from data as it's not part of the schema
     delete data.licenseDays;
-    // Create client and login user
+    // Create client and login user. The LoginUser row is what lets the account
+    // reach the OTP / set-password flow, so a client without one is useless —
+    // roll the Client back rather than leaving an account nobody can sign into.
+    const addClient = new Client(data);
+    await addClient.save();
+
     try {
-      const addClient = new Client(data);
-      await addClient.save();
       const loginPayload = { email: data.email, userType: "clients" };
       const newEntry = new LoginUser(loginPayload);
       await newEntry.save();
-      // Return client without password
-      const { password: _, ...clientWithoutPassword } = addClient.toObject();
-      // Invalidate cache
-      await safeRedisDelCache(`clients:all`);
-      return successResponse(
-        clientWithoutPassword,
-        "Client created successfully",
-        201
-      );
-    } catch (error) {
-      throw error;
+    } catch (loginUserError) {
+      await Client.findByIdAndDelete(addClient._id);
+      logger.error("Rolled back client — LoginUser creation failed", loginUserError);
+      throw loginUserError;
     }
+
+    // Return client without password
+    const { password: _, ...clientWithoutPassword } = addClient.toObject();
+    // Invalidate cache
+    await safeRedisDelCache(`clients:all`);
+    return successResponse(
+      clientWithoutPassword,
+      "Client created successfully",
+      201
+    );
   } catch (error: unknown) {
     logger.error("Error creating client", error);
+    // Duplicate key on the unique phoneNumber/email index — tell the operator
+    // which field collided instead of a blanket 500.
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      const field = Object.keys((error as any).keyPattern ?? {})[0] ?? "field";
+      return errorResponse(`A client with this ${field} already exists`, 409);
+    }
     if (
       error &&
       typeof error === "object" &&
       "name" in error &&
-      error.name === "ValidationError"
+      (error.name === "ValidationError" || error.name === "CastError")
     ) {
-      return errorResponse("Validation failed", 400, error);
+      const detail =
+        (error as any).name === "ValidationError"
+          ? Object.values((error as any).errors ?? {})
+              .map((e: any) => e.message)
+              .join("; ")
+          : (error as any).message;
+      return errorResponse(detail || "Validation failed", 400, error);
     }
     return errorResponse("Failed to create client", 500);
   }

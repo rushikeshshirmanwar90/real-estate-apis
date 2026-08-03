@@ -187,7 +187,9 @@ export const POST = async (req: NextRequest) => {
         }
 
         case 'users':
-          // For users, find the client record
+        case 'clients':
+          // Both spellings resolve to the same Client record. POST /api/clients
+          // and POST /api/password both write "clients"; older rows say "users".
           const clientModule = await import("@/lib/models/super-admin/Client");
           const ClientModel = clientModule.Client as Model<ClientDocument>;
           const client = await ClientModel.findOne({ email }).lean();
