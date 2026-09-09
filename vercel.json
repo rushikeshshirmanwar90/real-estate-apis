@@ -3,6 +3,10 @@
     {
       "path": "/api/push-token/maintenance/schedule",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/payment-commitment-check",
+      "schedule": "0 3 * * *"
     }
   ]
 }

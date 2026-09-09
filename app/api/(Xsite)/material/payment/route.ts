@@ -6,6 +6,10 @@ import {
   safeRedisDelCache,
   safeRedisKeysCache,
 } from "@/lib/utils/redis-helpers";
+import {
+  autoResolveCommitment,
+  refreshCommitmentAmountIfActive,
+} from "@/lib/services/paymentCommitmentService";
 
 // POST /api/material/payment
 // Records a vendor payment against one or more material batches (variants of a
@@ -140,6 +144,25 @@ export const POST = async (request: NextRequest) => {
         { $set: setOps },
         { arrayFilters }
       );
+
+      // Auto-resolve/refresh any open payment commitment for each batch, in
+      // line with its freshly recorded status. This request has no
+      // commitmentDate of its own, so a still-partial batch only gets its
+      // amount refreshed on an existing commitment — never creates a new one.
+      for (const update of batchUpdates) {
+        const batch = targets.find((t: any) => String(t._id) === update.id);
+        if (!batch) continue;
+        try {
+          if (update.paymentStatus === 'full') {
+            await autoResolveCommitment('material', update.id, 'paid_full');
+          } else {
+            const due = Math.max(0, (Number(batch.totalCost) || 0) - update.amountPaid);
+            await refreshCommitmentAmountIfActive('material', update.id, due, Number(batch.totalCost) || 0);
+          }
+        } catch (commitmentError) {
+          console.error('⚠️ Payment commitment tracking failed (non-fatal):', commitmentError);
+        }
+      }
     }
 
     // ── Recompute the aggregate for the affected batches ──────────────────

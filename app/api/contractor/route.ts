@@ -4,11 +4,17 @@ import { Projects } from "@/lib/models/Project";
 import { checkValidClient } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { assignStaffToProject, removeStaffFromProject } from "@/lib/utils/staffProjectUtils";
-import { 
+import {
   safeRedisDelCache,
-  safeRedisKeysCache 
+  safeRedisKeysCache
 } from "@/lib/utils/redis-helpers";
 import { Types, Model, Document } from "mongoose";
+import {
+  upsertCommitment,
+  autoResolveCommitment,
+  refreshCommitmentAmountIfActive,
+  findActiveCommitments,
+} from "@/lib/services/paymentCommitmentService";
 
 // Type definitions for the models
 interface ContractorDocument extends Document {
@@ -96,16 +102,27 @@ export const GET = async (req: NextRequest) => {
       .populate("staffId", "firstName lastName email phoneNumber")
       .sort({ createdAt: -1 });
 
-    if (staffId && contractors.length > 0) {
+    // Join live commitment status onto each contractor (not cached — this
+    // route doesn't cache its response, so it's always fresh by construction).
+    const commitmentsById = await findActiveCommitments(
+      "contractor",
+      contractors.map((c: any) => c._id)
+    );
+    const contractorsWithCommitment = contractors.map((c: any) => {
+      const obj = c.toObject();
+      return { ...obj, commitment: commitmentsById.get(String(c._id)) || null };
+    });
+
+    if (staffId && contractorsWithCommitment.length > 0) {
       const allContracts = searchParams.get("all") === "true";
       if (allContracts) {
-        return successResponse(contractors, "All contractor details retrieved successfully");
+        return successResponse(contractorsWithCommitment, "All contractor details retrieved successfully");
       }
       // If requesting a specific staff member's contractor details, return the first matching contract
-      return successResponse(contractors[0], "Contractor details retrieved successfully");
+      return successResponse(contractorsWithCommitment[0], "Contractor details retrieved successfully");
     }
 
-    return successResponse(contractors, "Contractors list retrieved successfully");
+    return successResponse(contractorsWithCommitment, "Contractors list retrieved successfully");
   } catch (error: unknown) {
     console.error("GET /api/contractor error:", error);
     return errorResponse("Failed to fetch contractors", 500, error);
@@ -274,7 +291,7 @@ export const PATCH = async (req: NextRequest) => {
   try {
     await connect();
     const data = await req.json();
-    const { contractorId, action, amount, paymentType, notes, paymentDate, status } = data;
+    const { contractorId, action, amount, paymentType, notes, paymentDate, status, commitmentDate: rawCommitmentDate } = data;
 
     if (!contractorId) {
       return errorResponse("Contractor ID is required", 400);
@@ -301,6 +318,18 @@ export const PATCH = async (req: NextRequest) => {
         return errorResponse("Payment type is required", 400);
       }
 
+      // Optional — when supplied, when the still-outstanding balance will be
+      // paid. Validated up front so a bad date never lands after the payment
+      // itself has already been recorded below.
+      let commitmentDate: Date | undefined;
+      if (rawCommitmentDate) {
+        const parsed = new Date(rawCommitmentDate);
+        if (isNaN(parsed.getTime())) {
+          return errorResponse("commitmentDate must be a valid date", 400);
+        }
+        commitmentDate = parsed;
+      }
+
       // Initialize payments array if not present
       if (!contractor.payments) {
         contractor.payments = [];
@@ -325,6 +354,45 @@ export const PATCH = async (req: NextRequest) => {
       contractor.markModified("payments");
       await contractor.save();
       console.log(`✅ Recorded payment of ₹${amount} for contractor ${contractor._id}. Total Paid: ₹${contractor.totalPaid}`);
+
+      // Track/clear the payment commitment against the freshly recorded
+      // balance. Never let a commitment-tracking hiccup fail an otherwise-
+      // successful payment.
+      try {
+        const remaining = contractor.totalAmount - contractor.totalPaid;
+        if (remaining <= 0) {
+          await autoResolveCommitment('contractor', contractor._id, 'paid_full');
+        } else if (commitmentDate) {
+          const projectModule = await import("@/lib/models/Project");
+          const ProjectModel = projectModule.Projects;
+          const project = await ProjectModel.findById(contractor.projectId).select("clientId name");
+
+          const staffModule = await import("@/lib/models/users/Staff");
+          const StaffModel = staffModule.Staff as Model<StaffDocument>;
+          const staffDoc = await StaffModel.findById(contractor.staffId).select("firstName lastName");
+          const staffName = staffDoc ? `${staffDoc.firstName} ${staffDoc.lastName}`.trim() : "Contractor";
+
+          if (project) {
+            await upsertCommitment({
+              clientId: project.clientId,
+              projectId: project._id,
+              projectName: project.name,
+              entityType: 'contractor',
+              entityId: contractor._id,
+              entityLabel: `${staffName} — ${contractor.contractType}`,
+              amountDue: remaining,
+              totalCost: contractor.totalAmount,
+              commitmentDate,
+            });
+          }
+        } else {
+          // No new commitment date supplied — just refresh the amount on any
+          // existing open commitment rather than creating one without a date.
+          await refreshCommitmentAmountIfActive('contractor', contractor._id, remaining, contractor.totalAmount);
+        }
+      } catch (commitmentError) {
+        console.error('⚠️ Payment commitment tracking failed for contractor (non-fatal):', commitmentError);
+      }
 
     } else if (action === "update_status") {
       if (!status || !["active", "completed"].includes(status)) {

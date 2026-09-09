@@ -13,6 +13,12 @@ import {
 } from "@/lib/utils/redis-helpers";
 import { errorResponse } from "@/lib/utils/api-response";
 import { notifyMaterialActivityCreated } from "@/lib/services/notificationService";
+import {
+  upsertCommitment,
+  autoResolveCommitment,
+  refreshCommitmentAmountIfActive,
+  findActiveCommitments,
+} from "@/lib/services/paymentCommitmentService";
 
 type Specs = Record<string, unknown>;
 
@@ -37,6 +43,9 @@ type AddMaterialStockItem = {
   amountPaid?: number;
   billingDate?: string;
   billImages?: Array<{ url?: string; publicId?: string; uploadedAt?: string }> | null;
+  // Required when paymentStatus is 'partial'/'unpaid' — when the vendor will
+  // be paid. Drives the payment-commitment reminder/overdue notifications.
+  commitmentDate?: string;
 };
 
 type MaterialSubdoc = {
@@ -86,6 +95,20 @@ const mergeBillImages = (existing: BillImage[] = [], incoming: BillImage[] = [])
     if (bill?.url && !byUrl.has(bill.url)) byUrl.set(bill.url, bill);
   }
   return Array.from(byUrl.values());
+};
+
+// Merges live PaymentCommitment status onto each material batch. Kept out of
+// the Redis-cached payload (which lives for 24h) so an overdue transition
+// from the daily cron, or a payment recorded elsewhere, always shows up
+// immediately instead of waiting for the material cache to expire.
+const attachCommitments = async (materials: any[]): Promise<any[]> => {
+  if (!Array.isArray(materials) || materials.length === 0) return materials;
+  const ids = materials.map((m) => m?._id).filter(Boolean);
+  const commitmentsById = await findActiveCommitments("material", ids);
+  return materials.map((m) => ({
+    ...m,
+    commitment: commitmentsById.get(String(m?._id)) || null,
+  }));
 };
 
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
@@ -143,6 +166,9 @@ export const GET = async (req: NextRequest) => {
     const cachedData = await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
+      if (Array.isArray(cacheValue.MaterialAvailable)) {
+        cacheValue.MaterialAvailable = await attachCommitments(cacheValue.MaterialAvailable);
+      }
       return NextResponse.json(cacheValue, { status: 200 });
     }
 
@@ -316,10 +342,15 @@ export const GET = async (req: NextRequest) => {
       }
     };
 
-    // Cache the response with 24-hour expiration
+    // Cache the base response (without live commitment status) with 24-hour expiration
     await safeRedisSetCache(cacheKey, JSON.stringify(responsePayload), 'EX', 86400);
 
-    return NextResponse.json(responsePayload, { status: 200 });
+    const responseWithCommitments = {
+      ...responsePayload,
+      MaterialAvailable: await attachCommitments(responsePayload.MaterialAvailable),
+    };
+
+    return NextResponse.json(responseWithCommitments, { status: 200 });
   } catch (error: unknown) {
     console.error("❌ Material GET Error:", error);
     return NextResponse.json(
@@ -354,6 +385,23 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json({ success: false, error: "No materials provided" }, { status: 400 });
     }
 
+    // Who's submitting — attached to any PaymentCommitment created below.
+    let commitmentCreatedBy: { userId?: string; fullName?: string; userType?: string } | undefined;
+    const userDetailsHeaderForCommitment = req.headers.get('x-user-details');
+    if (userDetailsHeaderForCommitment) {
+      try {
+        const parsed = JSON.parse(userDetailsHeaderForCommitment);
+        commitmentCreatedBy = {
+          userId: parsed._id || parsed.id || undefined,
+          fullName: parsed.fullName ||
+            (parsed.firstName && parsed.lastName ? `${parsed.firstName} ${parsed.lastName}` : parsed.firstName || parsed.lastName || parsed.name || undefined),
+          userType: parsed.userType || undefined,
+        };
+      } catch {
+        // Non-fatal — commitment is still created, just without createdBy.
+      }
+    }
+
     const results: Array<{
       input: Partial<AddMaterialStockItem>;
       success: boolean;
@@ -379,6 +427,7 @@ export const POST = async (req: NextRequest) => {
         amountPaid,
         billingDate: rawBillingDate,
         billImages: rawBillImages,
+        commitmentDate: rawCommitmentDate,
       } = item as AddMaterialStockItem;
       const hasPaymentInfo = paymentStatus !== undefined || amountPaid !== undefined;
 
@@ -394,6 +443,23 @@ export const POST = async (req: NextRequest) => {
           continue;
         }
         billingDate = parsed;
+      }
+
+      // Commitment date — required (not optional, unlike billingDate) whenever
+      // the vendor is left partially/unpaid, so there's always a promise date
+      // for the reminder/overdue cron to track.
+      let commitmentDate: Date | undefined;
+      if (paymentStatus === 'partial' || paymentStatus === 'unpaid') {
+        if (!rawCommitmentDate) {
+          results.push({ input: item, success: false, error: "commitmentDate is required when paymentStatus is partial or unpaid" });
+          continue;
+        }
+        const parsedCommitment = new Date(rawCommitmentDate);
+        if (Number.isNaN(parsedCommitment.getTime())) {
+          results.push({ input: item, success: false, error: "commitmentDate must be a valid date" });
+          continue;
+        }
+        commitmentDate = parsedCommitment;
       }
 
       // 🔍 DEBUG: Log contractor_name extraction
@@ -533,6 +599,42 @@ export const POST = async (req: NextRequest) => {
               Number(m.perUnitCost || 0) === Number(perUnitCost)
           );
 
+          // Track/clear the payment commitment for this batch against its
+          // freshly-recomputed merged status. Never let a commitment-tracking
+          // hiccup fail an otherwise-successful material merge.
+          try {
+            const mergedAmountDue = Math.max(0, newTotalCost - Number(existing.amountPaid || 0));
+            if (existing.paymentStatus === 'full') {
+              await autoResolveCommitment('material', existing._id!, 'paid_full');
+            } else if (existing.paymentStatus === 'partial' || existing.paymentStatus === 'unpaid') {
+              if (commitmentDate) {
+                // commitmentDate is guaranteed present here whenever the
+                // incoming item's own paymentStatus is partial/unpaid
+                // (validated above) — creates or updates the open commitment.
+                await upsertCommitment({
+                  clientId: project.clientId,
+                  projectId: project._id,
+                  projectName: project.name,
+                  entityType: 'material',
+                  entityId: existing._id!,
+                  entityLabel: materialName,
+                  vendorName: contractor_name || existing.contractor_name || undefined,
+                  amountDue: mergedAmountDue,
+                  totalCost: newTotalCost,
+                  commitmentDate,
+                  createdBy: commitmentCreatedBy,
+                });
+              } else {
+                // The merge only became partial because of the pre-existing
+                // batch's debt (incoming item was fully paid) — no new date to
+                // record. Just refresh the amount on any open commitment.
+                await refreshCommitmentAmountIfActive('material', existing._id!, mergedAmountDue, newTotalCost);
+              }
+            }
+          } catch (commitmentError) {
+            console.error('⚠️ Payment commitment tracking failed for merged batch (non-fatal):', commitmentError);
+          }
+
           results.push({
             ...resultBase,
             success: true,
@@ -579,6 +681,27 @@ export const POST = async (req: NextRequest) => {
       );
 
       if (updatedProject) {
+        if (newMaterial.paymentStatus === 'partial' || newMaterial.paymentStatus === 'unpaid') {
+          try {
+            await upsertCommitment({
+              clientId: project.clientId,
+              projectId: project._id,
+              projectName: project.name,
+              entityType: 'material',
+              entityId: newMaterial._id!,
+              entityLabel: materialName,
+              vendorName: contractor_name || undefined,
+              amountDue: Math.max(0, totalCost - Number(newMaterial.amountPaid || 0)),
+              totalCost,
+              // Guaranteed present — required above whenever paymentStatus is partial/unpaid.
+              commitmentDate: commitmentDate!,
+              createdBy: commitmentCreatedBy,
+            });
+          } catch (commitmentError) {
+            console.error('⚠️ Payment commitment tracking failed for new batch (non-fatal):', commitmentError);
+          }
+        }
+
         results.push({
           ...resultBase,
           success: true,
