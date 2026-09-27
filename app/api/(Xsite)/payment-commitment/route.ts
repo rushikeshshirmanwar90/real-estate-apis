@@ -53,11 +53,14 @@ export const GET = async (req: NextRequest) => {
       return successResponse(commitment || null, "Commitment retrieved");
     }
 
-    if (projectId) {
-      if (!Types.ObjectId.isValid(projectId)) {
-        return errorResponse("Invalid projectId", 400);
+    if (projectId || clientId) {
+      const query: Record<string, unknown> = {};
+      if (projectId) {
+        if (!Types.ObjectId.isValid(projectId)) {
+          return errorResponse("Invalid projectId", 400);
+        }
+        query.projectId = projectId;
       }
-      const query: Record<string, unknown> = { projectId };
       if (clientId) {
         if (!Types.ObjectId.isValid(clientId)) {
           return errorResponse("Invalid clientId", 400);
@@ -69,7 +72,7 @@ export const GET = async (req: NextRequest) => {
     }
 
     return errorResponse(
-      "Provide commitmentId, entityType+entityId, or projectId",
+      "Provide commitmentId, entityType+entityId, clientId, or projectId",
       400
     );
   } catch (error) {

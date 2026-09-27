@@ -76,16 +76,26 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
     const staffId = searchParams.get("staffId");
+    const clientId = searchParams.get("clientId");
 
-    if (!projectId) {
-      return errorResponse("Project ID is required", 400);
+    let query: any = {};
+
+    if (projectId) {
+      if (!isValidObjectId(projectId)) {
+        return errorResponse("Invalid project ID format", 400);
+      }
+      query.projectId = projectId;
+    } else if (clientId) {
+      if (!isValidObjectId(clientId)) {
+        return errorResponse("Invalid client ID format", 400);
+      }
+      const clientProjects = await Projects.find({ clientId }).select('_id');
+      const projectIds = clientProjects.map(p => p._id);
+      query.projectId = { $in: projectIds };
+    } else {
+      return errorResponse("Project ID or Client ID is required", 400);
     }
 
-    if (!isValidObjectId(projectId)) {
-      return errorResponse("Invalid project ID format", 400);
-    }
-
-    let query: any = { projectId };
     if (staffId) {
       if (!isValidObjectId(staffId)) {
         return errorResponse("Invalid staff ID format", 400);
