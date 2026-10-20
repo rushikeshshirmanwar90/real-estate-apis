@@ -13,6 +13,11 @@ import {
   autoResolveCommitment,
   refreshCommitmentAmountIfActive,
 } from "@/lib/services/paymentCommitmentService";
+import {
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+} from "@/lib/services/partnershipService";
 
 // Vendor bill photo uploaded via POST /api/material/bill-upload. Only the hosted
 // URL travels with the material — never the image binary.
@@ -79,6 +84,8 @@ export async function POST(request: NextRequest) {
             // Required when paymentStatus is 'partial'/'unpaid' — when the vendor
             // will be paid. Drives the payment-commitment reminder/overdue notifications.
             commitmentDate: rawCommitmentDate,
+            // Who paid amountPaid, when the project has a partnership
+            paidBy,
         } = body;
 
         console.log('\n========================================');
@@ -202,6 +209,14 @@ export async function POST(request: NextRequest) {
         }
 
         const material = project.MaterialAvailable[materialIndex];
+
+        const attribution = await resolvePaymentAttribution(project._id, paidBy);
+        if (!attribution.ok) {
+            return NextResponse.json(
+                { success: false, error: attribution.error },
+                { status: 400 }
+            );
+        }
 
         // Store old values for logging
         const oldQuantity = Number(material.qnt) || 0;
@@ -455,6 +470,21 @@ export async function POST(request: NextRequest) {
             console.log('Added Cost:', addedCost);
         }
 
+        // Only this purchase's payment; earlier payments on a merged batch were
+        // attributed when they were made
+        const vendorName = (contractor_name && contractor_name.trim()) || updatedMaterial.contractor_name;
+        const partnershipLedger = await recordAttributedPayments(
+            attribution.value,
+            [{
+                category: 'material',
+                amount: Number(amountPaid) || 0,
+                sourceIds: [updatedMaterial._id],
+                label: vendorName ? `${updatedMaterial.name} — ${vendorName}` : updatedMaterial.name,
+                description: `Paid with ${quantity} ${updatedMaterial.unit} of ${updatedMaterial.name}`,
+            }],
+            resolveActor(request, body)
+        );
+
         console.log('\n✅ Material updated successfully');
         console.log('Action:', action);
         console.log('========================================\n');
@@ -612,6 +642,7 @@ export async function POST(request: NextRequest) {
                 projectName: project.name,
                 isNewEntry: action === 'created',
                 newEntryReason: newEntryReason,
+                partnershipLedger,
             }
         });
 

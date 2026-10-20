@@ -19,6 +19,14 @@ import {
   refreshCommitmentAmountIfActive,
   findActiveCommitments,
 } from "@/lib/services/paymentCommitmentService";
+import {
+  combineLedgerResults,
+  LedgerResult,
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+  voidLedgerForSource,
+} from "@/lib/services/partnershipService";
 
 type Specs = Record<string, unknown>;
 
@@ -46,6 +54,8 @@ type AddMaterialStockItem = {
   // Required when paymentStatus is 'partial'/'unpaid' — when the vendor will
   // be paid. Drives the payment-commitment reminder/overdue notifications.
   commitmentDate?: string;
+  // Who paid amountPaid, when the project has a partnership (see partnershipService)
+  paidBy?: unknown;
 };
 
 type MaterialSubdoc = {
@@ -411,6 +421,12 @@ export const POST = async (req: NextRequest) => {
       error?: string;
     }> = [];
 
+    // Partnership attribution of each item's amountPaid, looked up once per
+    // project + payer since every item of one purchase shares them
+    const attributionCache = new Map<string, Awaited<ReturnType<typeof resolvePaymentAttribution>>>();
+    const ledgerResults: LedgerResult[] = [];
+    const ledgerActor = resolveActor(req);
+
     for (const item of materialItems) {
       const {
         projectId,
@@ -428,6 +444,7 @@ export const POST = async (req: NextRequest) => {
         billingDate: rawBillingDate,
         billImages: rawBillImages,
         commitmentDate: rawCommitmentDate,
+        paidBy,
       } = item as AddMaterialStockItem;
       const hasPaymentInfo = paymentStatus !== undefined || amountPaid !== undefined;
 
@@ -512,6 +529,19 @@ export const POST = async (req: NextRequest) => {
         results.push({ ...resultBase, error: "project not found" });
         continue;
       }
+
+      const attributionKey = `${projectId}:${JSON.stringify(paidBy ?? null)}`;
+      let attribution = attributionCache.get(attributionKey);
+      if (!attribution) {
+        attribution = await resolvePaymentAttribution(projectId, paidBy);
+        attributionCache.set(attributionKey, attribution);
+      }
+      if (!attribution.ok) {
+        results.push({ ...resultBase, error: attribution.error });
+        continue;
+      }
+      const paidNow = Number(amountPaid) || 0;
+      const ledgerLabel = contractor_name ? `${materialName} — ${contractor_name}` : materialName;
 
       project.MaterialAvailable = project.MaterialAvailable || [];
       const availableArr = project.MaterialAvailable as MaterialSubdoc[];
@@ -635,6 +665,22 @@ export const POST = async (req: NextRequest) => {
             console.error('⚠️ Payment commitment tracking failed for merged batch (non-fatal):', commitmentError);
           }
 
+          // Only this purchase's payment — the merged batch's earlier payments
+          // were attributed when they were made
+          ledgerResults.push(
+            await recordAttributedPayments(
+              attribution.value,
+              [{
+                category: "material",
+                amount: paidNow,
+                sourceIds: [existing._id],
+                label: ledgerLabel,
+                description: `Paid with ${qnt} ${unit} of ${materialName}`,
+              }],
+              ledgerActor
+            )
+          );
+
           results.push({
             ...resultBase,
             success: true,
@@ -701,6 +747,20 @@ export const POST = async (req: NextRequest) => {
             console.error('⚠️ Payment commitment tracking failed for new batch (non-fatal):', commitmentError);
           }
         }
+
+        ledgerResults.push(
+          await recordAttributedPayments(
+            attribution.value,
+            [{
+              category: "material",
+              amount: paidNow,
+              sourceIds: [newMaterial._id],
+              label: ledgerLabel,
+              description: `Paid with ${qnt} ${unit} of ${materialName}`,
+            }],
+            ledgerActor
+          )
+        );
 
         results.push({
           ...resultBase,
@@ -939,7 +999,10 @@ export const POST = async (req: NextRequest) => {
       await invalidateCachePattern(`material:*`);
     }
 
-    return NextResponse.json({ success: true, results }, { status: 200 });
+    return NextResponse.json(
+      { success: true, results, partnershipLedger: combineLedgerResults(ledgerResults) },
+      { status: 200 }
+    );
   } catch (error: unknown) {
     console.error("Error in material-available POST:", error);
     return NextResponse.json(
@@ -1220,6 +1283,9 @@ export const DELETE = async (req: NextRequest) => {
     }
 
     await project.save();
+
+    // The batch is gone, so its payments stop counting toward the partnership
+    await voidLedgerForSource("material", [materialId], "Material batch deleted");
 
     // Invalidate cache for this project (DELETE method)
     await invalidateCachePattern(`material:${projectId}:*`);

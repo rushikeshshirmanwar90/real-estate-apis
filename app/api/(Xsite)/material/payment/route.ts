@@ -10,6 +10,13 @@ import {
   autoResolveCommitment,
   refreshCommitmentAmountIfActive,
 } from "@/lib/services/paymentCommitmentService";
+import {
+  LedgerPaymentLine,
+  LedgerResult,
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+} from "@/lib/services/partnershipService";
 
 // POST /api/material/payment
 // Records a vendor payment against one or more material batches (variants of a
@@ -17,7 +24,8 @@ import {
 // that still have an outstanding balance, and each batch's paymentStatus is
 // recomputed against its own totalCost.
 //
-// body: { projectId, clientId, materialIds: string[], amountPaid: number }
+// body: { projectId, clientId, materialIds: string[], amountPaid: number, paidBy? }
+// paidBy — who paid, when the project has a partnership (see partnershipService)
 export const POST = async (request: NextRequest) => {
   try {
     await connect();
@@ -50,6 +58,11 @@ export const POST = async (request: NextRequest) => {
         { success: false, error: "amountPaid must be a positive number" },
         { status: 400 }
       );
+    }
+
+    const attribution = await resolvePaymentAttribution(projectId, body?.paidBy);
+    if (!attribution.ok) {
+      return NextResponse.json({ success: false, error: attribution.error }, { status: 400 });
     }
 
     const idSet = new Set(materialIds.map((id: any) => String(id)));
@@ -103,6 +116,8 @@ export const POST = async (request: NextRequest) => {
       amountPaid: number;
       paymentStatus: string;
     }[] = [];
+    // One partnership ledger line per batch, so deleting a batch voids only its share
+    const ledgerLines: LedgerPaymentLine[] = [];
     for (const m of targets) {
       if (remainingToApply <= 0.01) break;
       const cost = Number(m.totalCost) || 0;
@@ -124,6 +139,13 @@ export const POST = async (request: NextRequest) => {
         amountPaid: newPaid,
         paymentStatus: m.paymentStatus,
       });
+      ledgerLines.push({
+        category: "material",
+        amount: applyHere,
+        sourceIds: [m._id],
+        label: m.contractor_name ? `${m.name} — ${m.contractor_name}` : m.name,
+        description: `Payment for ${m.name}`,
+      });
       remainingToApply -= applyHere;
     }
 
@@ -131,6 +153,7 @@ export const POST = async (request: NextRequest) => {
     // a full save re-validates every embedded document in the project, so any
     // legacy subdocument that predates a now-required field (e.g. old Labors
     // without a description) would fail validation and block the payment.
+    let partnershipLedger: LedgerResult = { status: "skipped", count: 0 };
     if (batchUpdates.length > 0) {
       const setOps: Record<string, any> = {};
       const arrayFilters: Record<string, any>[] = [];
@@ -143,6 +166,12 @@ export const POST = async (request: NextRequest) => {
         { _id: project._id },
         { $set: setOps },
         { arrayFilters }
+      );
+
+      partnershipLedger = await recordAttributedPayments(
+        attribution.value,
+        ledgerLines,
+        resolveActor(request, body)
       );
 
       // Auto-resolve/refresh any open payment commitment for each batch, in
@@ -203,6 +232,7 @@ export const POST = async (request: NextRequest) => {
         totalCost,
         amountRemaining,
         paymentStatus,
+        partnershipLedger,
       },
     });
   } catch (error: any) {

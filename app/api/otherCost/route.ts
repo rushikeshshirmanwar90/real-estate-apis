@@ -16,6 +16,13 @@ import {
 import { checkValidClient } from "@/lib/auth";
 import { errorResponse } from "@/lib/utils/api-response";
 import { extractUserInfo } from "@/lib/utils/activity-logger";
+import { Types } from "mongoose";
+import {
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+  voidLedgerForSource,
+} from "@/lib/services/partnershipService";
 
 // POST - Add other cost entries
 export const POST = async (req: NextRequest) => {
@@ -113,6 +120,15 @@ export const POST = async (req: NextRequest) => {
       }
     }
 
+    // Who paid, when the project has a partnership — checked before anything is written
+    const attribution = await resolvePaymentAttribution(projectId, body.paidBy);
+    if (!attribution.ok) {
+      return NextResponse.json(
+        { success: false, message: attribution.error },
+        { status: 400 }
+      );
+    }
+
     // Calculate total cost of all other cost entries
     // The schema field is `amount` (= unitCost * quantity). Support all naming variants.
     const totalOtherCost = otherCostEntries.reduce((sum, entry) => {
@@ -167,6 +183,8 @@ export const POST = async (req: NextRequest) => {
     // Embedded entries — only EmbeddedOtherCostSchema fields
     // (no entityType/entityId/entityModel/projectId)
     const embeddedOtherCostEntries = processedOtherCostEntries.map(entry => ({
+      // Known up front so partnership ledger lines can point at this entry
+      _id: new Types.ObjectId(),
       title: entry.title,
       amount: entry.amount,
       description: entry.description,
@@ -283,6 +301,20 @@ export const POST = async (req: NextRequest) => {
     await safeRedisDelCache(`project:${projectId}`);
     await invalidateCachePattern(`projects:*`);
 
+    // One ledger line per entry, linked by both its embedded and standalone ids
+    // (insertMany keeps input order) so deleting it voids the line
+    const partnershipLedger = await recordAttributedPayments(
+      attribution.value,
+      embeddedOtherCostEntries.map((entry, i) => ({
+        category: 'other' as const,
+        amount: entry.amount,
+        sourceIds: [entry._id, createdOtherCostEntries[i]?._id],
+        label: entry.title,
+        description: entry.description || entry.title,
+      })),
+      resolveActor(req, body)
+    );
+
     // Log an OtherCostActivity so it appears in the notification feed
     const userInfo = extractUserInfo(req, body);
     if (userInfo) {
@@ -343,6 +375,7 @@ export const POST = async (req: NextRequest) => {
         otherCostEntriesAdded: processedOtherCostEntries.length,
         totalCostAdded: totalOtherCost,
         standaloneOtherCostIds: createdOtherCostEntries.map(entry => entry._id),
+        partnershipLedger,
         updatedEntity: {
           id: updatedEntity._id,
           name: updatedEntity.name,
@@ -807,6 +840,9 @@ export const DELETE = async (req: NextRequest) => {
           { status: 400 }
         );
     }
+
+    // Its payment stops counting toward the project's partnership
+    await voidLedgerForSource('other', [otherCostId], 'Other cost deleted');
 
     // Invalidate cache for this entity and project
     await invalidateCachePattern(`otherCost:${entityType}:${entityId}:*`);

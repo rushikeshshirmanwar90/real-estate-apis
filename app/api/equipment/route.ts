@@ -475,6 +475,9 @@ export const DELETE = async (req: NextRequest) => {
     if (!deletedEquipment) {
       return errorResponse("Equipment not found", 404);
     }
+    // Its payment stops counting toward the project's partnership
+    const { voidLedgerForSource } = await import("@/lib/services/partnershipService");
+    await voidLedgerForSource("equipment", [id], "Equipment deleted");
     // Update project's spent amount (subtract the equipment cost)
     try {
       await Projects.findByIdAndUpdate(

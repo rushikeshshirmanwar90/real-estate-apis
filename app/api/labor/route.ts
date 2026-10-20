@@ -16,6 +16,12 @@ import {
 import { checkValidClient } from "@/lib/auth";
 import { errorResponse } from "@/lib/utils/api-response";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
+import {
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+  voidLedgerForSource,
+} from "@/lib/services/partnershipService";
 
 // Helper function to check staff access to project
 async function checkStaffProjectAccess(req: NextRequest, projectId: string): Promise<NextResponse | null> {
@@ -168,6 +174,18 @@ export const POST = async (req: NextRequest) => {
       }
     }
 
+    // Labor logged by a contractor is paid through the contract's payments, so
+    // only directly hired labor counts as a partnership payment here
+    const attribution = contractorRecords.length > 0
+      ? { ok: true as const, value: null }
+      : await resolvePaymentAttribution(projectId, body.paidBy);
+    if (!attribution.ok) {
+      return NextResponse.json(
+        { success: false, message: attribution.error },
+        { status: 400 }
+      );
+    }
+
     // Calculate total cost of all labor entries
     const totalLaborCost = laborEntries.reduce((sum, entry) => {
       const entryCost = entry.totalCost || (entry.count * entry.perLaborCost);
@@ -221,6 +239,8 @@ export const POST = async (req: NextRequest) => {
     const embeddedLaborEntries = processedLaborEntries.map(entry => {
       // Create a clean object with only the fields defined in EmbeddedLaborSchema
       return {
+        // Known up front so partnership ledger lines can point at this entry
+        _id: new Types.ObjectId(),
         type: entry.type,
         category: entry.category,
         skillLevel: entry.skillLevel || 'na',
@@ -351,6 +371,21 @@ export const POST = async (req: NextRequest) => {
     await safeRedisDelCache(`project:${projectId}`);
     await invalidateCachePattern(`projects:*`);
 
+    // One ledger line per entry, linked by both its embedded and standalone ids
+    // (insertMany keeps input order) so deleting either form voids it
+    const partnershipLedger = await recordAttributedPayments(
+      attribution.value,
+      embeddedLaborEntries.map((entry, i) => ({
+        category: 'labor' as const,
+        amount: entry.totalCost,
+        sourceIds: [entry._id, createdLaborEntries[i]?._id],
+        label: `${entry.count} × ${entry.type}`,
+        description: entry.description || entry.type,
+        date: entry.workDate ? new Date(entry.workDate) : undefined,
+      })),
+      resolveActor(req, body)
+    );
+
     // Log activity for labor addition
     const userInfo = extractUserInfo(req, body);
     if (userInfo) {
@@ -417,6 +452,7 @@ export const POST = async (req: NextRequest) => {
         laborEntriesAdded: processedLaborEntries.length,
         totalCostAdded: totalLaborCost,
         standaloneLaborIds: createdLaborEntries.map(entry => entry._id),
+        partnershipLedger,
         updatedEntity: {
           id: updatedEntity._id,
           name: updatedEntity.name,
@@ -876,6 +912,8 @@ export const DELETE = async (req: NextRequest) => {
       // Remove from embedded array
       await removeFromEmbeddedArray(entityType, entityId, laborId);
 
+      await voidLedgerForSource('labor', [standaloneLaborId, laborId], 'Labor entry deleted');
+
       // Update project spent amount
       if (projectId) {
         await Projects.findByIdAndUpdate(
@@ -1006,6 +1044,9 @@ export const DELETE = async (req: NextRequest) => {
           { status: 400 }
         );
     }
+
+    // Its payment stops counting toward the project's partnership
+    await voidLedgerForSource('labor', [laborId], 'Labor entry deleted');
 
     // Recalculate contractor usedAmount if deleted embedded labor has addedBy
     const projectIdToUse = entityType === 'project' ? entityId : currentEntity.projectId;

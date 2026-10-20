@@ -15,6 +15,13 @@ import {
   refreshCommitmentAmountIfActive,
   findActiveCommitments,
 } from "@/lib/services/paymentCommitmentService";
+import {
+  LedgerResult,
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+  voidLedgerForSource,
+} from "@/lib/services/partnershipService";
 
 // Type definitions for the models
 interface ContractorDocument extends Document {
@@ -27,6 +34,8 @@ interface ContractorDocument extends Document {
   totalAmount: number;
   usedAmount: number;
   payments: Array<{
+    // Assigned by Mongoose once the payment is saved
+    _id?: Types.ObjectId;
     amount: number;
     paymentDate: Date;
     paymentType: string;
@@ -320,12 +329,20 @@ export const PATCH = async (req: NextRequest) => {
       return errorResponse("Contractor not found", 404);
     }
 
+    let partnershipLedger: LedgerResult = { status: "skipped", count: 0 };
+
     if (action === "add_payment") {
       if (amount === undefined || isNaN(Number(amount)) || Number(amount) <= 0) {
         return errorResponse("Valid payment amount is required", 400);
       }
       if (!paymentType) {
         return errorResponse("Payment type is required", 400);
+      }
+
+      // Who paid, when the project has a partnership — checked before anything is written
+      const attribution = await resolvePaymentAttribution(contractor.projectId, data.paidBy);
+      if (!attribution.ok) {
+        return errorResponse(attribution.error, 400);
       }
 
       // Optional — when supplied, when the still-outstanding balance will be
@@ -364,6 +381,28 @@ export const PATCH = async (req: NextRequest) => {
       contractor.markModified("payments");
       await contractor.save();
       console.log(`✅ Recorded payment of ₹${amount} for contractor ${contractor._id}. Total Paid: ₹${contractor.totalPaid}`);
+
+      if (attribution.value) {
+        const recordedPayment = contractor.payments[contractor.payments.length - 1];
+        const staffModule = await import("@/lib/models/users/Staff");
+        const StaffModel = staffModule.Staff as Model<StaffDocument>;
+        const staffDoc = await StaffModel.findById(contractor.staffId).select("firstName lastName");
+        const staffName = staffDoc ? `${staffDoc.firstName} ${staffDoc.lastName}`.trim() : "Contractor";
+
+        partnershipLedger = await recordAttributedPayments(
+          attribution.value,
+          [{
+            category: "contractor",
+            amount: Number(amount),
+            // Deleting the contract voids every payment made on it
+            sourceIds: [contractor._id, recordedPayment?._id],
+            label: `${staffName} — ${contractor.contractType}`,
+            description: notes || `${paymentType.charAt(0).toUpperCase()}${paymentType.slice(1)} payment`,
+            date: paymentDate ? new Date(paymentDate) : undefined,
+          }],
+          resolveActor(req, data)
+        );
+      }
 
       // Track/clear the payment commitment against the freshly recorded
       // balance. Never let a commitment-tracking hiccup fail an otherwise-
@@ -442,7 +481,7 @@ export const PATCH = async (req: NextRequest) => {
     await safeRedisDelCache(`project:${contractor.projectId.toString()}`);
 
     return successResponse(
-      contractor,
+      action === "add_payment" ? { ...contractor.toObject(), partnershipLedger } : contractor,
       action === "add_payment" ? "Payment recorded successfully" : "Contractor updated successfully"
     );
   } catch (error: unknown) {
@@ -486,6 +525,9 @@ export const DELETE = async (req: NextRequest) => {
     // Delete contractor
     await ContractorModel.findByIdAndDelete(contractorId);
     console.log(`❌ Deleted Contractor record ${contractorId}`);
+
+    // Payments made on this contract stop counting toward the project's partnership
+    await voidLedgerForSource("contractor", [contractorId], "Contract deleted");
 
     // Automatically remove staff from project assignment when contractor record is deleted
     try {

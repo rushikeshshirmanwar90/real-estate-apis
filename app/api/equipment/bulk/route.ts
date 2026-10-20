@@ -6,13 +6,19 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { checkValidClient } from "@/lib/auth";
-import { 
-  safeRedisGetCache, 
-  safeRedisSetCache, 
+import {
+  safeRedisGetCache,
+  safeRedisSetCache,
   invalidateCachePattern,
   safeRedisDelCache,
-  safeRedisKeysCache 
+  safeRedisKeysCache
 } from "@/lib/utils/redis-helpers";
+import {
+  recordAttributedPayments,
+  resolveActor,
+  resolvePaymentAttribution,
+  voidLedgerForSource,
+} from "@/lib/services/partnershipService";
 
 // POST - Bulk operations for equipment
 export const POST = async (req: NextRequest) => {
@@ -29,7 +35,8 @@ export const POST = async (req: NextRequest) => {
   try {
     await connect();
 
-    const { operation, data, filters } = await req.json();
+    const body = await req.json();
+    const { operation, data, filters } = body;
 
     if (!operation) {
       return errorResponse("Operation type is required", 400);
@@ -66,14 +73,33 @@ export const POST = async (req: NextRequest) => {
         }
 
         console.log('Creating equipment entries:', data.length);
-        
+
+        // Who paid, when the project has a partnership — checked before anything is written
+        const attribution = await resolvePaymentAttribution(data[0].projectId, body.paidBy);
+        if (!attribution.ok) {
+          return errorResponse(attribution.error, 400);
+        }
+
         // Calculate total cost for all equipment entries
         const totalEquipmentCost = data.reduce((sum, entry) => sum + (entry.quantity * entry.perUnitCost), 0);
         console.log('Total equipment cost to add to project spent:', totalEquipmentCost);
-        
+
         // Create equipment entries
         const createdEquipment = await Equipment.insertMany(data);
         console.log('Successfully created equipment entries:', createdEquipment.length);
+
+        // One ledger line per item, at the cost the equipment card shows
+        const partnershipLedger = await recordAttributedPayments(
+          attribution.value,
+          createdEquipment.map((equipment: any) => ({
+            category: 'equipment' as const,
+            amount: Number(equipment.totalCost) || equipment.quantity * equipment.perUnitCost,
+            sourceIds: [equipment._id],
+            label: `${equipment.quantity} × ${equipment.type}`,
+            description: equipment.notes || equipment.type,
+          })),
+          resolveActor(req, body)
+        );
         
         // Update project spent field - get projectId from first entry (all should have same projectId)
         const projectId = data[0].projectId;
@@ -93,10 +119,16 @@ export const POST = async (req: NextRequest) => {
           await safeRedisDelCache(...keysToDelete);
         }
         
-        return successResponse(
-          createdEquipment,
-          `${createdEquipment.length} equipment entries created successfully`,
-          201
+        // The created entries stay the payload (the app reads them as an array);
+        // the partnership outcome rides alongside
+        return NextResponse.json(
+          {
+            success: true,
+            message: `${createdEquipment.length} equipment entries created successfully`,
+            data: createdEquipment,
+            partnershipLedger,
+          },
+          { status: 201 }
         );
       }
 
@@ -145,6 +177,13 @@ export const POST = async (req: NextRequest) => {
         }, {} as { [projectId: string]: number });
 
         const deleteResult = await Equipment.deleteMany(filters);
+
+        // Their payments stop counting toward the project's partnership
+        await voidLedgerForSource(
+          'equipment',
+          equipmentToDelete.map((equipment: any) => equipment._id),
+          'Equipment deleted'
+        );
 
         // Update project spent amounts for each affected project
         if (deleteResult.deletedCount > 0) {
