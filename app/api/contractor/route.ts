@@ -9,6 +9,7 @@ import {
   safeRedisKeysCache
 } from "@/lib/utils/redis-helpers";
 import { Types, Model, Document } from "mongoose";
+import { Partnership } from "@/lib/models/Xsite/Partnership";
 import {
   upsertCommitment,
   autoResolveCommitment,
@@ -574,9 +575,14 @@ export const DELETE = async (req: NextRequest) => {
           // Revoke the global 'contractor' permission only when the staff has no
           // remaining contracts across ANY client/project (permissions are global,
           // not per-client, so a contract under another client must keep it).
+          // Active partners keep it too: partners are given every permission.
           if (Array.isArray(staff.permissions) && staff.permissions.includes("contractor")) {
             const totalRemaining = await ContractorModel.countDocuments({ staffId });
-            if (totalRemaining === 0) {
+            const isPartner = await Partnership.exists({
+              status: "active",
+              partners: { $elemMatch: { partnerId: staffId, status: "active" } },
+            });
+            if (totalRemaining === 0 && !isPartner) {
               staff.permissions = staff.permissions.filter((p) => p !== "contractor");
               staff.markModified("permissions");
               staffChanged = true;

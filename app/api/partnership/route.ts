@@ -8,12 +8,15 @@ import { PartnershipTransaction } from "@/lib/models/Xsite/PartnershipTransactio
 import { Projects } from "@/lib/models/Project";
 import * as ClientModule from "@/lib/models/super-admin/Client";
 import * as StaffModule from "@/lib/models/users/Staff";
+import { STAFF_PERMISSIONS } from "@/lib/models/users/Staff";
 import {
   buildSummaries,
   resolveActor,
   roundMoney,
   staffDisplayName,
 } from "@/lib/services/partnershipService";
+import { addProjectToStaff, assignStaffToProject } from "@/lib/utils/staffProjectUtils";
+import { safeRedisDelCache, safeRedisKeysCache } from "@/lib/utils/redis-helpers";
 
 // Per-project partnerships: the business plus staff members who share a money
 // pool for one project. See lib/models/Xsite/Partnership.ts.
@@ -33,6 +36,7 @@ interface TeamStaffRecord {
   email?: string;
   phoneNumber?: string | number;
   clients?: { clientId: string | Types.ObjectId }[];
+  permissions?: string[];
 }
 
 const Client = ClientModule.Client as Model<ClientRecord>;
@@ -97,9 +101,58 @@ const staffPartnerEntry = (staff: TeamStaffRecord): PartnerEntry => ({
   removedAt: null,
 });
 
-const withSummary = async (partnership: PartnershipDoc) => {
+const withSummary = async (partnership: PartnershipDoc, notAssigned: string[] = []) => {
   const summaries = await buildSummaries([partnership]);
-  return { partnership, summary: summaries.get(String(partnership._id)) || null };
+  return { partnership, summary: summaries.get(String(partnership._id)) || null, notAssigned };
+};
+
+// A partner works on the project, so they're made project staff too if they
+// aren't already, as the contractor flow does, and given every staff
+// permission. That gives them the project's material and cost screens.
+// Returns the names that couldn't be assigned.
+const assignPartnersToProject = async (
+  staff: TeamStaffRecord[],
+  projectId: string,
+  clientId: string,
+  clientName: string
+): Promise<string[]> => {
+  const project = await Projects.findById(projectId)
+    .select("name assignedStaff")
+    .lean<{ name: string; assignedStaff?: { _id: string }[] }>();
+  if (!project) return staff.map(staffDisplayName);
+
+  const notAssigned: string[] = [];
+  for (const member of staff) {
+    const staffId = String(member._id);
+    try {
+      const onProject = (project.assignedStaff || []).some((s) => String(s._id) === staffId);
+      if (onProject) {
+        // Already on the project's list; make sure their own record has it too (no-op if so)
+        await addProjectToStaff(staffId, projectId, project.name, clientId, clientName);
+      } else {
+        await assignStaffToProject(staffId, projectId, project.name, clientId, clientName);
+      }
+      // Added to whatever they already have, so nothing is taken away
+      await Staff.updateOne(
+        { _id: member._id },
+        { $addToSet: { permissions: { $each: STAFF_PERMISSIONS } } }
+      );
+    } catch (error) {
+      console.error(`⚠️ Couldn't assign partner ${staffId} to project ${projectId}:`, error);
+      notAssigned.push(staffDisplayName(member));
+    }
+  }
+
+  // Staff lists and the project are cached; drop them so the new assignment shows
+  try {
+    const staffKeys = await safeRedisKeysCache("staff:*");
+    if (staffKeys.length > 0) await safeRedisDelCache(...staffKeys);
+    await safeRedisDelCache(`project:${projectId}`);
+  } catch (cacheError) {
+    console.error("⚠️ Cache invalidation error (non-critical):", cacheError);
+  }
+
+  return notAssigned;
 };
 
 // GET /api/partnership
@@ -279,8 +332,15 @@ export const POST = async (req: NextRequest) => {
       }
     }
 
+    const notAssigned = await assignPartnersToProject(
+      team.value,
+      String(project._id),
+      clientId,
+      client.name || "Business"
+    );
+
     return successResponse(
-      await withSummary(created.toObject() as PartnershipDoc),
+      await withSummary(created.toObject() as PartnershipDoc, notAssigned),
       "Partnership started",
       201
     );
@@ -314,6 +374,8 @@ export const PATCH = async (req: NextRequest) => {
 
     const actor = resolveActor(req, body);
     const partners: PartnerEntry[] = partnership.partners;
+    // Partners who couldn't be made project staff (add_partner only)
+    let notAssigned: string[] = [];
 
     switch (action) {
       case "add_partner": {
@@ -342,6 +404,14 @@ export const PATCH = async (req: NextRequest) => {
         }
         partnership.markModified("partners");
         await partnership.save();
+
+        const client = await Client.findById(partnership.clientId).select("name").lean<ClientRecord>();
+        notAssigned = await assignPartnersToProject(
+          team.value,
+          String(partnership.projectId),
+          String(partnership.clientId),
+          client?.name || "Business"
+        );
 
         if (amount.value > 0) {
           await PartnershipTransaction.create({
@@ -387,7 +457,7 @@ export const PATCH = async (req: NextRequest) => {
     }
 
     return successResponse(
-      await withSummary(partnership.toObject() as PartnershipDoc),
+      await withSummary(partnership.toObject() as PartnershipDoc, notAssigned),
       "Partnership updated"
     );
   } catch (error) {

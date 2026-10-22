@@ -101,16 +101,16 @@ export default function Home() {
       console.log('🔍 Fetching clientId for home page...');
       const id = getClientId();
       console.log('✅ ClientId received:', id);
-      
+
       if (!id) {
         console.error('❌ No valid clientId found. User may need to log in again.');
         toast.error('Session expired. Please log in again.');
         return;
       }
-      
+
       setClientId(id);
     };
-    
+
     fetchClientId();
   }, []);
 
@@ -576,7 +576,7 @@ export default function Home() {
 
   return (
     <main className="container mx-auto p-4 py-8">
-      <h1 className="mb-8 text-center text-3xl font-bold">Website Content Management</h1>
+      <h1 className="mb-8 text-center text-3xl font-bold">Website Management</h1>
 
       <div className="grid gap-8">
         <HeroSectionCard

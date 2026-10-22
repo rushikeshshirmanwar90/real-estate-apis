@@ -1,5 +1,15 @@
 import { models, model, Schema } from "mongoose";
 
+// Every permission a staff member can be given; partners get all of them
+export const STAFF_PERMISSIONS = [
+  "addMaterial",
+  "addMaterialUsage",
+  "addOtherCost",
+  "addEquipmentCost",
+  "contractor",
+  "generateReport",
+];
+
 const ClientAssignmentSchema = new Schema(
   {
     clientId: {
@@ -114,7 +124,7 @@ const StaffSchema = new Schema({
     type: [
       {
         type: String,
-        enum: ['addMaterial', 'addMaterialUsage', 'addOtherCost', 'addEquipmentCost', 'contractor', 'generateReport'],
+        enum: STAFF_PERMISSIONS,
       }
     ],
     default: [],
