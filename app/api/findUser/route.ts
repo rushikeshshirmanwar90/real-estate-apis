@@ -7,7 +7,8 @@ export async function POST(req: NextRequest) {
   try {
     await connect();
     const body = await req.json();
-    const { email } = body;
+    // Stored emails are lowercase; normalize so "Name@Gmail.com " still matches
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : body.email;
 
     console.log("🔍 Finding user with email:", email);
 
