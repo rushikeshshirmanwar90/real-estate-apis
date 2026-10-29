@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuthorization } from "@/lib/auth";
+import { pageFooter } from "@/lib/pdf/costReport";
 import { renderPdf } from "@/lib/pdf/renderPdf";
 
 export const runtime = "nodejs";
@@ -10,7 +11,7 @@ const MAX_HTML_BYTES = 25 * 1024 * 1024;
 const CHUNK_BYTES = 256 * 1024;
 
 // Reports written for the phone's printer set no page size; give them A4.
-const DEFAULT_PAGE_CSS = "<style>@page { size: A4; margin: 10mm; } html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>";
+const DEFAULT_PAGE_CSS = "<style>@page { size: A4; margin: 12mm 12mm 16mm; } html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }</style>";
 
 function streamOf(bytes: Uint8Array): ReadableStream<Uint8Array> {
   let offset = 0;
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const started = Date.now();
-    const pdf = await renderPdf(withPageSize(html));
+    const pdf = await renderPdf(withPageSize(html), { footer: pageFooter(fileName.replace(/\.pdf$/i, "")) });
     const renderMs = Date.now() - started;
     console.log(`[report-pdf] ${Math.round(html.length / 1024)} KB of HTML -> ${Math.round(pdf.length / 1024)} KB PDF in ${renderMs} ms`);
     return new Response(streamOf(pdf), {

@@ -71,7 +71,13 @@ function scheduleIdleClose() {
   idleTimer.unref?.();
 }
 
-async function printOnce(html: string): Promise<Uint8Array> {
+/** Optional running footer, printed in the page's bottom margin on every page. */
+export interface RenderOptions {
+  /** HTML for Chrome's footerTemplate; may use <span class="pageNumber"> and "totalPages". */
+  footer?: string;
+}
+
+async function printOnce(html: string, { footer }: RenderOptions): Promise<Uint8Array> {
   const page = await (await getBrowser()).newPage();
   try {
     await page.setJavaScriptEnabled(false);
@@ -89,6 +95,9 @@ async function printOnce(html: string): Promise<Uint8Array> {
       printBackground: true,
       tagged: false,
       outline: false,
+      displayHeaderFooter: Boolean(footer),
+      headerTemplate: "<span></span>",
+      footerTemplate: footer ?? "<span></span>",
       timeout: 60000,
     });
   } finally {
@@ -101,10 +110,10 @@ async function printOnce(html: string): Promise<Uint8Array> {
 let queue: Promise<unknown> = Promise.resolve();
 
 /** Prints the page to a PDF (size and margins come from its @page rule). */
-export function renderPdf(html: string): Promise<Uint8Array> {
+export function renderPdf(html: string, options: RenderOptions = {}): Promise<Uint8Array> {
   const run = queue.then(async () => {
     try {
-      return await printOnce(html);
+      return await printOnce(html, options);
     } catch (error) {
       // A crashed or closed Chrome takes the page with it: start a fresh one
       // and try once more. Anything else is a real failure.
@@ -112,7 +121,7 @@ export function renderPdf(html: string): Promise<Uint8Array> {
       if (current?.connected) throw error;
       console.warn("[cost-report-pdf] Chrome stopped, starting it again:", error);
       await dropBrowser();
-      return printOnce(html);
+      return printOnce(html, options);
     } finally {
       scheduleIdleClose();
     }

@@ -3,7 +3,7 @@ import { Types } from "mongoose";
 import connect from "@/lib/db";
 import { verifyAuthorization } from "@/lib/auth";
 import { Client } from "@/lib/models/super-admin/Client";
-import { costReportFileName, costReportHtml, CostReportRequestError, parseCostReport } from "@/lib/pdf/costReport";
+import { costReportFileName, costReportFooter, costReportHtml, CostReportRequestError, parseCostReport } from "@/lib/pdf/costReport";
 import { renderPdf } from "@/lib/pdf/renderPdf";
 
 export const runtime = "nodejs";
@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const started = Date.now();
-    const html = costReportHtml(report, await companyNameOf(report.clientId));
-    const pdf = await renderPdf(html);
+    const companyName = await companyNameOf(report.clientId);
+    const pdf = await renderPdf(costReportHtml(report, companyName), { footer: costReportFooter(report, companyName) });
     const renderMs = Date.now() - started;
     console.log(
       `[cost-report-pdf] ${report.type}, ${report.rows.length} rows, ${Math.round(pdf.length / 1024)} KB in ${renderMs} ms`
