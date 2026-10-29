@@ -76,6 +76,13 @@ FROM node:${NODE_VERSION} AS runner
 # Set working directory
 WORKDIR /app
 
+# Headless Chromium prints the Cost Summary report PDFs (/api/cost-report-pdf).
+# The Noto fonts cover the ₹ sign and the emoji in the report headings.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends chromium fonts-noto-core fonts-noto-color-emoji \
+  && rm -rf /var/lib/apt/lists/*
+ENV CHROME_PATH=/usr/bin/chromium
+
 # Set production environment variables
 ENV NODE_ENV=production
 ENV PORT=3000

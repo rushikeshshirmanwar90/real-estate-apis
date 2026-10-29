@@ -22,6 +22,8 @@ const nextConfig: NextConfig = {
     "expo-server-sdk",
     "node-fetch",
     "resend",
+    // Headless Chrome for report PDFs is loaded at runtime, not bundled.
+    "puppeteer-core",
   ],
 
   images: {

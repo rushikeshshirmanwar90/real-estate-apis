@@ -60,6 +60,7 @@
     "nextjs-toploader": "^3.7.15",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.11",
+    "puppeteer-core": "~25.11.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-hook-form": "^7.71.1",
