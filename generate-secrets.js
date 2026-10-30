@@ -28,9 +28,20 @@ const cronSecret = crypto.randomBytes(24).toString('hex');
 console.log('CRON_SECRET=' + cronSecret);
 console.log('');
 
-// API Bearer Token (384 bits = 48 bytes, base64 encoded)
-const bearerToken = crypto.randomBytes(48).toString('base64');
-console.log('API_BEARER_TOKEN=' + bearerToken);
+// Partner token for the other apps that call this API (384 bits, base64url)
+const partnerToken = crypto.randomBytes(48).toString('base64url');
+console.log('PARTNER_API_TOKEN=' + partnerToken);
+console.log('');
+
+// Super-admin password hash: pass the password as an argument
+//   node generate-secrets.js 'your-new-super-admin-password'
+const superAdminPassword = process.argv[2];
+if (superAdminPassword) {
+  const bcrypt = require('bcrypt');
+  console.log('SUPER_ADMIN_PASSWORD_HASH=' + bcrypt.hashSync(superAdminPassword, 12));
+} else {
+  console.log("# SUPER_ADMIN_PASSWORD_HASH: run again with the password: node generate-secrets.js 'password'");
+}
 console.log('');
 
 // Authentication Code (256 bits = 32 bytes, base64url encoded)
