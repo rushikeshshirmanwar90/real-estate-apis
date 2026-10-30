@@ -75,6 +75,11 @@ const MaterialUsedSchema = new Schema(
       type: String,
       required: false,
     },
+    // Set on entries created by a super-admin Excel import, so the import can be undone
+    importId: {
+      type: String,
+      required: false,
+    },
     // explicit addedAt for material usage entries
     addedAt: {
       type: Date,

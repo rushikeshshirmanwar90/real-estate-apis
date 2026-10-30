@@ -117,6 +117,12 @@ export const MaterialSchema = new Schema(
       default: undefined,
     },
 
+    // Set on entries created by a super-admin Excel import, so the import can be undone
+    importId: {
+      type: String,
+      required: false,
+    },
+
     addedAt: {
       type: Date,
       default: Date.now,
@@ -238,6 +244,13 @@ const MaterialActivitySchema = new Schema({
   date: {
     type: String,
     required: true,
+  },
+
+  // Set on activity entries created by a super-admin Excel import
+  importId: {
+    type: String,
+    required: false,
+    index: true,
   },
 });
 
