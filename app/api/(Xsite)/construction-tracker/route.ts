@@ -1,12 +1,16 @@
+import { OtherSection } from "@/lib/models/OtherSection";
+import { MiniSection } from "@/lib/models/MiniSection";
+import { projectAccessError, recordAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import connect from "@/lib/db";
 import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
 import { buildPhase, buildPhases, recalculatePhases, SLAB_WORK_SUB_PHASES } from "@/lib/utils/constructionTracker";
 
 export const GET = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -21,6 +25,10 @@ export const GET = async (req: NextRequest) => {
     const miniSectionId = searchParams.get("miniSectionId");
     const projectId = searchParams.get("projectId");
     const sectionName = searchParams.get("sectionName");
+    const denied = projectId
+      ? await projectAccessError(session, projectId)
+      : await recordAccessError(session, [MiniSection, OtherSection], miniSectionId);
+    if (denied) return denied;
 
     if (!miniSectionId && (!projectId || !sectionName)) {
       return NextResponse.json(
@@ -72,8 +80,9 @@ export const GET = async (req: NextRequest) => {
 // building its phases from the slabwork.md template (keyed off sectionName) on first
 // creation. Each mini-section gets its own independent copy — never shared with siblings.
 export const POST = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -90,6 +99,9 @@ export const POST = async (req: NextRequest) => {
     // create a second, unreachable tracker doc for the same mini-section.
     const miniSectionId = body?.miniSectionId !== undefined && body?.miniSectionId !== null ? String(body.miniSectionId) : undefined;
     const projectId = body?.projectId !== undefined && body?.projectId !== null ? String(body.projectId) : undefined;
+    const denied = (await projectAccessError(session, projectId))
+      ?? (await recordAccessError(session, [MiniSection, OtherSection], miniSectionId));
+    if (denied) return denied;
 
     if (!miniSectionId || !projectId || !projectName || !sectionName) {
       return NextResponse.json(
@@ -150,8 +162,9 @@ export const POST = async (req: NextRequest) => {
 // Appends a single new phase to an existing tracker.
 // body: { miniSectionId, phaseName }
 export const PUT = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -165,6 +178,8 @@ export const PUT = async (req: NextRequest) => {
     const body = await req.json();
     const miniSectionId = body?.miniSectionId !== undefined ? String(body.miniSectionId) : undefined;
     const phaseName: string | undefined = body?.phaseName;
+    const denied = await recordAccessError(session, [MiniSection, OtherSection, ConstructionTracker], miniSectionId);
+    if (denied) return denied;
 
     if (!miniSectionId || !phaseName?.trim()) {
       return NextResponse.json(

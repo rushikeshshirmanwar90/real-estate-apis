@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
@@ -71,12 +73,21 @@ interface ImportedMaterialPayload {
 
 // GET: Fetch material activities
 export const GET = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   const clientId = searchParams.get("clientId");
   const userId = searchParams.get("userId");
   const activity = searchParams.get("activity");
   const targetDate = searchParams.get("targetDate"); // Get activities for specific date
+  const denied = await scopeAccessError(session, { clientId, projectId });
+  if (denied) return denied;
 
     try {
     await connect();
@@ -168,6 +179,13 @@ export const GET = async (req: NextRequest | Request) => {
 
 // POST: Create imported material request
 export const POST = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -203,6 +221,8 @@ export const POST = async (req: NextRequest | Request) => {
       contractor_name?: string; // ✅ NEW: Add contractor_name type
       billImages?: BillImage[]; // 🧾 NEW: Add billImages type
     };
+    const denied = await scopeAccessError(session, { clientId, projectId: reqProjectId });
+    if (denied) return denied;
 
     // Validation
     if (!clientId) {
@@ -353,6 +373,13 @@ export const POST = async (req: NextRequest | Request) => {
 
 // DELETE: Delete material activities
 export const DELETE = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -367,9 +394,17 @@ export const DELETE = async (req: NextRequest | Request) => {
         406
       );
     }
+    const denied = id === "all"
+      ? await scopeAccessError(session, { clientId, projectId })
+      : await recordAccessError(session, MaterialActivity, id);
+    if (denied) return denied;
 
     // Handle delete all entries
     if (id === "all") {
+      // Never delete every company's entries: a project or client filter is required
+      if (!projectId && !clientId) {
+        return errorResponse("projectId or clientId is required to delete all entries", 400);
+      }
       // Build query based on provided parameters
       const query: Record<string, string> = {};
 
@@ -381,8 +416,6 @@ export const DELETE = async (req: NextRequest | Request) => {
         query.clientId = clientId;
       }
 
-      // If neither projectId nor clientId is provided, delete ALL entries
-      // (use with caution!)
       const deletedCount = await MaterialActivity.deleteMany(query);
 
       if (deletedCount.deletedCount === 0) {

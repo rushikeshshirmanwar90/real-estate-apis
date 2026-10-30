@@ -1,12 +1,19 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { PaymentSchedule } from "@/lib/models/Shivai/Payment";
 import { Booking } from "@/lib/models/Shivai/Booking";
-import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // GET - Retrieve payment schedule data for a customer
 export async function GET(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
@@ -77,6 +84,12 @@ export async function GET(request: NextRequest) {
 
 // POST - Create or update payment schedule data
 export async function POST(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
@@ -278,6 +291,12 @@ export async function POST(request: NextRequest) {
 
 // PUT - Update payment status (for admin use)
 export async function PUT(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     

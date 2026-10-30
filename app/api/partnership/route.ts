@@ -1,5 +1,6 @@
+import { docAccessError, isOwnUserId, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest, NextResponse } from "next/server";
 import { Model, Types } from "mongoose";
@@ -160,8 +161,9 @@ const assignPartnersToProject = async (
 //   ?partnerId=  → active partnerships this staff member is an active partner in
 //   ?clientId=   → every partnership of the business
 export const GET = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -172,6 +174,12 @@ export const GET = async (req: NextRequest) => {
     const projectId = searchParams.get("projectId");
     const partnerId = searchParams.get("partnerId");
     const clientId = searchParams.get("clientId");
+    const denied = projectId || clientId
+      ? await scopeAccessError(session, { clientId, projectId })
+      : session.kind === "user" && !isOwnUserId(session, partnerId)
+        ? errorResponse("You can only view your own partnerships", 403)
+        : null;
+    if (denied) return denied;
 
     if (projectId) {
       if (!Types.ObjectId.isValid(projectId)) return errorResponse("Invalid project ID", 400);
@@ -220,8 +228,9 @@ export const GET = async (req: NextRequest) => {
 //   date?, recordedBy?
 // }
 export const POST = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -234,6 +243,8 @@ export const POST = async (req: NextRequest) => {
 
     if (!Types.ObjectId.isValid(clientId)) return errorResponse("Valid clientId is required", 400);
     if (!Types.ObjectId.isValid(projectId)) return errorResponse("Valid projectId is required", 400);
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     const staffInputs: Array<{ staffId?: unknown; initialAmount?: unknown }> =
       Array.isArray(body?.partners) ? body.partners : [];
@@ -355,8 +366,9 @@ export const POST = async (req: NextRequest) => {
 //   remove_partner  { partnerId }   — their past money stays in the totals
 //   close | reopen
 export const PATCH = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -371,6 +383,8 @@ export const PATCH = async (req: NextRequest) => {
 
     const partnership = await Partnership.findById(partnershipId);
     if (!partnership) return errorResponse("Partnership not found", 404);
+    const denied = await docAccessError(session, partnership);
+    if (denied) return denied;
 
     const actor = resolveActor(req, body);
     const partners: PartnerEntry[] = partnership.partners;

@@ -10,9 +10,9 @@ export const POST = async (req: NextRequest) => {
   try {
     // Verify cron job authorization
     const authHeader = req.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET || 'your-secret-key';
+    const cronSecret = process.env.CRON_SECRET;
     
-    if (authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
       return errorResponse("Unauthorized", 401);
     }
 

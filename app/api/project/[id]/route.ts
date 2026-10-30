@@ -1,3 +1,5 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import { Projects } from "@/lib/models/Project";
 import { Building } from "@/lib/models/Building";
 import { Section } from "@/lib/models/Section";
@@ -17,7 +19,6 @@ import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { checkValidClient } from "@/lib/auth";
 
 // Type for project document
 interface ProjectDocument {
@@ -42,6 +43,12 @@ export const GET = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { id } = await params;
     const { searchParams } = new URL(req.url);
@@ -95,6 +102,12 @@ export const DELETE = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { id } = await params;
 
@@ -277,6 +290,12 @@ export const PUT = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { id } = await params;
 

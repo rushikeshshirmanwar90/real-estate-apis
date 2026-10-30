@@ -7,7 +7,7 @@ import { checkValidClient, authStatus } from "@/lib/auth";
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -18,7 +18,10 @@ export const POST = async (req: NextRequest) => {
   try {
     logger.info("Manual license update triggered");
     
-    const cronSecret = process.env.CRON_SECRET || 'your-secret-key';
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret) {
+      return errorResponse("CRON_SECRET is not configured", 500);
+    }
     const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
     
     // Call the cron endpoint

@@ -1,9 +1,16 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { ReferenceLeads } from "@/lib/models/ReferencedLeads";
-import { checkValidClient } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: Request | NextRequest) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -47,6 +54,12 @@ export const GET = async (req: Request | NextRequest) => {
 };
 
 export const POST = async (req: Request | NextRequest) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -124,6 +137,12 @@ export const POST = async (req: Request | NextRequest) => {
 
 export const DELETE = async (req: Request | NextRequest) => {
   try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
+  try {
     await connect();
 
     const { searchParams } = new URL(req.url);
@@ -197,6 +216,12 @@ export const DELETE = async (req: Request | NextRequest) => {
 };
 
 export const PUT = async (req: Request | NextRequest) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 

@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },

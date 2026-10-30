@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -31,9 +31,9 @@ export const POST = async (req: NextRequest) => {
 
     // Basic security check - verify this is an internal/scheduled call
     const authHeader = req.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET || 'default-secret';
+    const cronSecret = process.env.CRON_SECRET;
     
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret || !authHeader || authHeader !== `Bearer ${cronSecret}`) {
       console.warn('🚫 Unauthorized scheduled maintenance attempt');
       return errorResponse("Unauthorized", 401);
     }
@@ -191,7 +191,7 @@ export const POST = async (req: NextRequest) => {
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -204,9 +204,9 @@ export const GET = async (req: NextRequest) => {
 
     // Basic security check
     const authHeader = req.headers.get('authorization');
-    const cronSecret = process.env.CRON_SECRET || 'default-secret';
+    const cronSecret = process.env.CRON_SECRET;
     
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+    if (!cronSecret || !authHeader || authHeader !== `Bearer ${cronSecret}`) {
       return errorResponse("Unauthorized", 401);
     }
 

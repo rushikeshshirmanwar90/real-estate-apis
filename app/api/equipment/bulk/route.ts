@@ -1,3 +1,4 @@
+import { projectAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Equipment } from "@/lib/models/Xsite/Equipment";
 import { Projects } from "@/lib/models/Project";
@@ -5,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import {
   safeRedisGetCache,
   safeRedisSetCache,
@@ -23,8 +24,9 @@ import {
 // POST - Bulk operations for equipment
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -37,6 +39,21 @@ export const POST = async (req: NextRequest) => {
 
     const body = await req.json();
     const { operation, data, filters } = body;
+    if (session.kind === "user") {
+      // Filters come from the client: only plain project ids are accepted, and every project must be the user's
+      if (filters && typeof filters.projectId !== "string") {
+        return errorResponse("filters.projectId is required", 400);
+      }
+      const projectIds = new Set<string>();
+      if (Array.isArray(data)) data.forEach((e: any) => e?.projectId && projectIds.add(String(e.projectId)));
+      if (data?.targetProjectId) projectIds.add(String(data.targetProjectId));
+      if (filters?.projectId) projectIds.add(String(filters.projectId));
+      if (projectIds.size === 0) return errorResponse("projectId is required", 400);
+      for (const pid of projectIds) {
+        const denied = await projectAccessError(session, pid);
+        if (denied) return denied;
+      }
+    }
 
     if (!operation) {
       return errorResponse("Operation type is required", 400);

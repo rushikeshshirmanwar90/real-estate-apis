@@ -20,7 +20,7 @@ import connect from '@/lib/db';
 export const POST = async (req: NextRequest) => {
   // Authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : 'Unauthorized' },
@@ -115,7 +115,7 @@ export const POST = async (req: NextRequest) => {
 // GET endpoint to check test notification capability
 export const GET = async (req: NextRequest) => {
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : 'Unauthorized' },

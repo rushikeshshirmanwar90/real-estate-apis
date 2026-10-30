@@ -311,9 +311,114 @@ export const docAccessError = async (
 ): Promise<NextResponse | null> => {
   if (session.kind !== "user" || !doc) return null;
   if (doc.clientId) return clientAccessError(session, doc.clientId);
-  if (doc.projectId) return projectAccessError(session, doc.projectId);
+  // Some collections (e.g. mini-sections) keep the project under projectDetails
+  const projectId = doc.projectId ?? doc.projectDetails?.projectId;
+  if (projectId) return projectAccessError(session, projectId);
   return errorResponse("You don't have access to this record", 403);
 };
+
+/**
+ * For list/filter endpoints that take clientId and/or projectId.
+ * Users must give at least one, and every one they give must be theirs,
+ * so a missing filter can never return other companies' data.
+ */
+export const scopeAccessError = async (
+  session: Session,
+  scope: { clientId?: unknown; projectId?: unknown }
+): Promise<NextResponse | null> => {
+  if (session.kind !== "user") return null;
+  const hasClient = !!toId(scope.clientId);
+  const hasProject = !!toId(scope.projectId);
+  if (!hasClient && !hasProject) {
+    return errorResponse("clientId or projectId is required", 400);
+  }
+  if (hasClient) {
+    const denied = clientAccessError(session, scope.clientId);
+    if (denied) return denied;
+  }
+  if (hasProject) {
+    return projectAccessError(session, scope.projectId);
+  }
+  return null;
+};
+
+type FindableModel = { findById: (id: string) => any };
+
+/**
+ * For a record addressed by id: loads its clientId/projectId and checks them.
+ * Pass several models when the id may belong to any of them (first match wins).
+ * Returns null when the id is missing/invalid or the record doesn't exist,
+ * so the route's own validation and 404 handling still apply.
+ */
+export const recordAccessError = async (
+  session: Session,
+  model: FindableModel | FindableModel[],
+  id: unknown
+): Promise<NextResponse | null> => {
+  if (session.kind !== "user") return null;
+  const recordId = toId(id);
+  if (!recordId || !Types.ObjectId.isValid(recordId)) return null;
+  await connect();
+  for (const m of Array.isArray(model) ? model : [model]) {
+    const doc = await m.findById(recordId).select("clientId projectId projectDetails.projectId").lean();
+    if (doc) return docAccessError(session, doc);
+  }
+  return null;
+};
+
+/**
+ * Keeps only the user ids that belong to the caller's companies
+ * (the company itself, its admins and its staff). Other callers are not filtered.
+ */
+export const filterRecipientIds = async (session: Session, ids: unknown[]): Promise<string[]> => {
+  const all = ids.map((id) => toId(id)).filter((id): id is string => !!id);
+  if (session.kind !== "user") return all;
+  const valid = all.filter((id) => Types.ObjectId.isValid(id));
+  await connect();
+  const [staff, admins] = await Promise.all([
+    Staff.find({ _id: { $in: valid }, "clients.clientId": { $in: session.clientIds } }).select("_id").lean(),
+    Admin.find({ _id: { $in: valid }, clientId: { $in: session.clientIds } }).select("_id").lean(),
+  ]);
+  const allowed = new Set<string>([
+    ...session.clientIds,
+    ...(staff as any[]).map((s) => String(s._id)),
+    ...(admins as any[]).map((a) => String(a._id)),
+  ]);
+  return all.filter((id) => allowed.has(id));
+};
+
+/**
+ * True when `userId` is the caller themselves (their role record, login record,
+ * or — for company owners — their company id). Super-admin may act for anyone.
+ */
+export const isOwnUserId = (session: Session, userId: unknown): boolean => {
+  if (session.kind === "superadmin") return true;
+  if (session.kind !== "user") return false;
+  const id = toId(userId);
+  if (!id) return false;
+  if (id === session.userId || id === session.loginUserId) return true;
+  return session.userType !== "staff" && session.clientIds.includes(id);
+};
+
+/** A staff record the caller may see: themselves, or staff assigned to one of their companies. */
+export const staffAccessError = async (
+  session: Session,
+  staffId: unknown
+): Promise<NextResponse | null> => {
+  if (session.kind !== "user") return null;
+  const id = toId(staffId);
+  if (!id || !Types.ObjectId.isValid(id)) return null;
+  if (isOwnUserId(session, id)) return null;
+  await connect();
+  const inCompany = await Staff.exists({ _id: id, "clients.clientId": { $in: session.clientIds } });
+  return inCompany ? null : errorResponse("You don't have access to this staff member", 403);
+};
+
+/** For actions only the super-admin panel may perform. */
+export const superAdminOnlyError = (session: Session): NextResponse | null =>
+  session.kind === "superadmin"
+    ? null
+    : errorResponse("Only the super-admin can do this", 403);
 
 /** Standard response for an error thrown by getSession. */
 export const authErrorResponse = (error: unknown): NextResponse =>

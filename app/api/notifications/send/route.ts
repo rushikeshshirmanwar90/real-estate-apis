@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, filterRecipientIds } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
@@ -13,6 +15,13 @@ const EXPO_BATCH_SIZE = 100; // Expo's hard limit
  * Used by the notification system for multi-user notification delivery
  */
 export async function POST(request: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(request, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
@@ -53,6 +62,12 @@ export async function POST(request: NextRequest) {
     if (recipientUserIds.length === 0) {
       return errorResponse('No valid userIds found in recipients', 400);
     }
+    // Only people in the sender's own companies can be notified
+    const allowedIds = await filterRecipientIds(session, recipientUserIds);
+    if (allowedIds.length === 0) {
+      return errorResponse("None of the recipients belong to your company", 403);
+    }
+    recipientUserIds.splice(0, recipientUserIds.length, ...allowedIds);
     
     const originalCount = recipients.length;
     const deduplicatedCount = recipientUserIds.length;

@@ -1,3 +1,5 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
@@ -67,6 +69,12 @@ const Booking = mongoose.models.Booking || mongoose.model('Booking', bookingSche
 
 // POST - Create a new booking
 export const POST = async (req: NextRequest) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     const body = await req.json();
@@ -160,6 +168,12 @@ export const POST = async (req: NextRequest) => {
 // GET - Retrieve bookings
 export const GET = async (req: NextRequest) => {
   try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
+  try {
     await connect();
 
     const { searchParams } = new URL(req.url);
@@ -215,6 +229,12 @@ export const GET = async (req: NextRequest) => {
 // PUT - Update booking
 export const PUT = async (req: NextRequest) => {
   try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
+  try {
     await connect();
 
     const { searchParams } = new URL(req.url);
@@ -262,6 +282,12 @@ export const PUT = async (req: NextRequest) => {
 
 // DELETE - Cancel booking
 export const DELETE = async (req: NextRequest) => {
+  try {
+    await checkValidClient(req, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 

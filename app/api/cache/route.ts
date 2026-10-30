@@ -1,9 +1,16 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import redis, { safeRedisGet, safeRedisSet, safeRedisDel } from "@/lib/services/redis";
-import { checkValidClient } from "@/lib/auth";
 
 // GET - Retrieve cached data
 export async function GET(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
@@ -61,6 +68,12 @@ export async function GET(request: NextRequest) {
 // POST - Set cache data
 export async function POST(req: NextRequest) {
   try {
+    await checkValidClient(req, ["superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
+  try {
     const body = await req.json();
     const { key, value, ttl = 3600 } = body;
 
@@ -99,6 +112,12 @@ export async function POST(req: NextRequest) {
 
 // DELETE - Delete cache data
 export async function DELETE(req: NextRequest) {
+  try {
+    await checkValidClient(req, ["superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const pattern = searchParams.get('pattern');

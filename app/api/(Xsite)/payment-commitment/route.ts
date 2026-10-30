@@ -1,7 +1,8 @@
+import { recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import connect from "@/lib/db";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { PaymentCommitment } from "@/lib/models/Xsite/PaymentCommitment";
 import {
@@ -14,8 +15,9 @@ import {
 // GET /api/payment-commitment?commitmentId=            (single lookup by id)
 // GET /api/payment-commitment?projectId=&clientId=     (list for a project)
 export const GET = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -28,6 +30,10 @@ export const GET = async (req: NextRequest) => {
     const entityId = searchParams.get("entityId");
     const projectId = searchParams.get("projectId");
     const clientId = searchParams.get("clientId");
+    const denied = commitmentId
+      ? await recordAccessError(session, PaymentCommitment, commitmentId)
+      : await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     if (commitmentId) {
       if (!Types.ObjectId.isValid(commitmentId)) {
@@ -88,8 +94,9 @@ export const GET = async (req: NextRequest) => {
 // body: { clientId, projectId, projectName, entityType, entityId, entityLabel,
 //         vendorName?, amountDue, totalCost, commitmentDate, createdBy? }
 export const POST = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -110,6 +117,8 @@ export const POST = async (req: NextRequest) => {
       commitmentDate,
       createdBy,
     } = body || {};
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     if (!clientId || !Types.ObjectId.isValid(clientId)) {
       return errorResponse("Valid clientId is required", 400);
@@ -165,8 +174,9 @@ export const POST = async (req: NextRequest) => {
 // body: { commitmentId, action: 'recommit', newCommitmentDate }
 //    or { commitmentId, action: 'resolve' }
 export const PATCH = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -179,6 +189,8 @@ export const PATCH = async (req: NextRequest) => {
     if (!commitmentId || !Types.ObjectId.isValid(commitmentId)) {
       return errorResponse("Valid commitmentId is required", 400);
     }
+    const denied = await recordAccessError(session, PaymentCommitment, commitmentId);
+    if (denied) return denied;
 
     if (action === "recommit") {
       const parsedDate = newCommitmentDate ? new Date(newCommitmentDate) : null;

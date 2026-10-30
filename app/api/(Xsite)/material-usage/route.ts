@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, projectAccessError, scopeAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
@@ -26,6 +28,13 @@ type MaterialSubdoc = {
 
 // GET: Fetch MaterialUsed from Projects collection with filtering and pagination
 export const GET = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
@@ -44,6 +53,8 @@ export const GET = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // Validate pagination parameters
     if (page < 1 || limit < 1) {
@@ -266,6 +277,13 @@ export const GET = async (req: NextRequest) => {
 };
 
 export const POST = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     const body = await req.json();
@@ -287,6 +305,8 @@ export const POST = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     if (qnt <= 0) {
       return NextResponse.json(
@@ -524,6 +544,13 @@ export const POST = async (req: NextRequest) => {
 };
 
 export const PUT = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
@@ -548,6 +575,13 @@ export const PUT = async (req: NextRequest) => {
 };
 
 export const DELETE = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     

@@ -13,7 +13,7 @@ import { checkValidClient, authStatus } from "@/lib/auth";
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -70,7 +70,7 @@ export const POST = async (req: NextRequest) => {
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }

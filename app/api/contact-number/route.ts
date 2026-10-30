@@ -8,7 +8,7 @@ import { checkValidClient } from "@/lib/auth";
 
 const authenticate = async (req: NextRequest) => {
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
     return null;
   } catch (error) {
     return NextResponse.json(

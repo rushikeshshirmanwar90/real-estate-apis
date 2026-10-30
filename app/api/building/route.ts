@@ -1,3 +1,5 @@
+import { RowHouse } from "@/lib/models/RowHouse";
+import { clientAccessError, projectAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import { Building } from "@/lib/models/Building";
 import { Projects } from "@/lib/models/Project";
 import { MiniSection } from "@/lib/models/Xsite/mini-section";
@@ -10,7 +12,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import {
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -20,8 +22,9 @@ import {
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -32,6 +35,14 @@ export const GET = async (req: NextRequest) => {
     const id = searchParams.get("id");
     const projectId = searchParams.get("projectId");
     const rowHouseId = searchParams.get("rowHouseId");
+    const denied = id
+      ? await recordAccessError(session, Building, id)
+      : projectId
+        ? await projectAccessError(session, projectId)
+        : rowHouseId
+          ? await recordAccessError(session, RowHouse, rowHouseId)
+          : await scopeAccessError(session, {});
+    if (denied) return denied;
 
     if (id) {
       if (!isValidObjectId(id)) {
@@ -148,8 +159,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -166,6 +178,8 @@ export const POST = async (req: NextRequest) => {
     if (!isValidObjectId(body.projectId)) {
       return errorResponse("Invalid project ID format", 400);
     }
+    const denied = (await projectAccessError(session, body.projectId)) ?? (body.clientId ? clientAccessError(session, body.clientId) : null);
+    if (denied) return denied;
 
     const project = await Projects.findById(body.projectId);
     if (!project) {
@@ -358,8 +372,9 @@ export const POST = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -379,6 +394,8 @@ export const DELETE = async (req: NextRequest) => {
       console.error('❌ Missing required parameters');
       return errorResponse("Project ID and Section ID are required", 400);
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     if (!isValidObjectId(projectId) || !isValidObjectId(sectionId)) {
       console.error('❌ Invalid ID format');
@@ -455,8 +472,9 @@ export const DELETE = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -480,6 +498,8 @@ export const PUT = async (req: NextRequest) => {
       console.error('❌ Invalid building ID format:', id);
       return errorResponse("Invalid building ID format", 400);
     }
+    const denied = await recordAccessError(session, Building, id);
+    if (denied) return denied;
 
     const body = await req.json();
     console.log('📦 Request body:', JSON.stringify(body, null, 2));
@@ -583,8 +603,9 @@ export const PUT = async (req: NextRequest) => {
 
 export const PATCH = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -598,6 +619,8 @@ export const PATCH = async (req: NextRequest) => {
     if (!id || typeof isCompleted !== 'boolean') {
       return errorResponse("Missing required fields: id, isCompleted", 400);
     }
+    const denied = await recordAccessError(session, Building, id);
+    if (denied) return denied;
 
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid building ID format", 400);

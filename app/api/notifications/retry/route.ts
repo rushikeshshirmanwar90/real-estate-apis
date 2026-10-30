@@ -1,6 +1,7 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from 'next/server';
 import { getRetryManager } from '@/lib/services/retryManager';
-import { checkValidClient } from "@/lib/auth";
 
 /**
  * Retry Management API
@@ -12,6 +13,12 @@ import { checkValidClient } from "@/lib/auth";
  * GET /api/notifications/retry - Get retry queue statistics and status
  */
 export async function GET(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const notificationId = searchParams.get('notificationId');
@@ -66,6 +73,12 @@ export async function GET(request: NextRequest) {
  * POST /api/notifications/retry - Manually trigger retry processing or force retry
  */
 export async function POST(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const body = await request.json();
     const { action, notificationId } = body;
@@ -172,6 +185,12 @@ export async function POST(request: NextRequest) {
  */
 export async function PUT(request: NextRequest) {
   try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
+  try {
     const body = await request.json();
     const {
       maxAttempts,
@@ -259,6 +278,12 @@ export async function PUT(request: NextRequest) {
  * DELETE /api/notifications/retry - Clear retries (alternative to POST with clear actions)
  */
 export async function DELETE(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const notificationId = searchParams.get('notificationId');

@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
@@ -27,11 +29,20 @@ import {
 // body: { projectId, clientId, materialIds: string[], amountPaid: number, paidBy? }
 // paidBy — who paid, when the project has a partnership (see partnershipService)
 export const POST = async (request: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(request, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
     const body = await request.json();
     const { projectId, clientId, materialIds, amountPaid } = body || {};
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // ── Validation ────────────────────────────────────────────────────────
     if (!projectId || !Types.ObjectId.isValid(projectId)) {

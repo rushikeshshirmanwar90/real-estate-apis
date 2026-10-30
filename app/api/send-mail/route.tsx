@@ -3,8 +3,8 @@ import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { render } from '@react-email/components';
 import { transporter } from "@/lib/transporter";
-import { withBearerAuth } from "@/lib/middleware/bearer-auth";
-export const POST = withBearerAuth(async (req: NextRequest) => {
+import { withAuthFor } from "@/lib/middleware/bearer-auth";
+export const POST = withAuthFor(["user", "superadmin"])(async (req: NextRequest) => {
     try {
         await connect();
         const body = await req.json();

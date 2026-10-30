@@ -1,16 +1,18 @@
+import { clientAccessError, isOwnUserId } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { Staff } from "@/lib/models/users/Staff";
 import { Client } from "@/lib/models/super-admin/Client";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 // Simple push token registration with clientId support
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -31,6 +33,8 @@ export const POST = async (req: NextRequest) => {
       // ✅ Add clientId for proper notification grouping
       clientId,
     } = await req.json();
+    const denied = (clientId ? clientAccessError(session, clientId) : null) ?? (session.kind === "user" && !isOwnUserId(session, userId) ? errorResponse("You can only manage your own notification settings", 403) : null);
+    if (denied) return denied;
 
     console.log('📤 Simple push token registration:', {
       userId,
@@ -159,8 +163,9 @@ export const POST = async (req: NextRequest) => {
 // GET: Get push tokens for a user
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -178,6 +183,8 @@ export const GET = async (req: NextRequest) => {
     if (!userId) {
       return errorResponse("userId is required", 400);
     }
+    const denied = session.kind === "user" && !isOwnUserId(session, userId) ? errorResponse("You can only manage your own notification settings", 403) : null;
+    if (denied) return denied;
 
     // ✅ Build query with optional clientId filter
     const query: any = { userId, isActive: true };

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 
 // ─── POST /api/material/bill-upload ──────────────────────────────────────────
@@ -60,8 +60,9 @@ const parseDataUri = (raw: string, fallbackMime?: string) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication (same guard as the material routes)
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(
       error instanceof Error ? error.message : "Unauthorized",

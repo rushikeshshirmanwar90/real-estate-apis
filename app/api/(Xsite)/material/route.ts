@@ -1,9 +1,10 @@
+import { clientAccessError, projectAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -124,8 +125,9 @@ const attachCommitments = async (materials: any[]): Promise<any[]> => {
 // ─── GET: Fetch MaterialAvailable ────────────────────────────
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -149,6 +151,8 @@ export const GET = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // Validate ObjectId format
     if (!Types.ObjectId.isValid(projectId) || !Types.ObjectId.isValid(clientId)) {
@@ -377,8 +381,9 @@ export const GET = async (req: NextRequest) => {
 // ─── POST: Add or merge materials ────────────────────────────────────────────
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -393,6 +398,11 @@ export const POST = async (req: NextRequest) => {
 
     if (materialItems.length === 0) {
       return NextResponse.json({ success: false, error: "No materials provided" }, { status: 400 });
+    }
+    for (const item of materialItems) {
+      const denied = (await projectAccessError(session, item?.projectId))
+        ?? ((item as any)?.clientId ? clientAccessError(session, (item as any).clientId) : null);
+      if (denied) return denied;
     }
 
     // Who's submitting — attached to any PaymentCommitment created below.
@@ -1018,8 +1028,9 @@ export const POST = async (req: NextRequest) => {
 // ─── PUT: Replace MaterialAvailable array ────────────────────────────────────
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -1044,6 +1055,8 @@ export const PUT = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     await connect();
     const body = await req.json();
@@ -1098,8 +1111,9 @@ export const PUT = async (req: NextRequest) => {
 // ─── PATCH: Edit a single MaterialAvailable entry (only if unused) ───────────
 export const PATCH = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -1125,6 +1139,8 @@ export const PATCH = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     await connect();
 
@@ -1232,8 +1248,9 @@ export const PATCH = async (req: NextRequest) => {
 // ─── DELETE: Remove a material from MaterialAvailable ────────────────────────
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -1259,6 +1276,8 @@ export const DELETE = async (req: NextRequest) => {
         { status: 400 }
       );
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     await connect();
 

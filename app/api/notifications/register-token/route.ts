@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, clientAccessError, isOwnUserId } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
@@ -10,10 +12,19 @@ import { NextRequest } from "next/server";
  * Used by the frontend to register device tokens for push notifications
  */
 export async function POST(req: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
     const { userId, clientId, role, token, platform } = await req.json();
+    const denied = clientAccessError(session, clientId) ?? (session.kind === "user" && !isOwnUserId(session, userId) ? errorResponse("You can only manage your own notification settings", 403) : null);
+    if (denied) return denied;
 
     // Validate required fields
     if (!userId || !clientId || !role || !token) {
@@ -95,11 +106,20 @@ export async function POST(req: NextRequest) {
  * Get token registration status for a user
  */
 export async function GET(req: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
+    const denied = session.kind === "user" && !isOwnUserId(session, userId) ? errorResponse("You can only manage your own notification settings", 403) : null;
+    if (denied) return denied;
 
     if (!userId) {
       return errorResponse("userId is required", 400);
@@ -148,11 +168,20 @@ export async function GET(req: NextRequest) {
  * Unregister a user's push token
  */
 export async function DELETE(req: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId");
+    const denied = session.kind === "user" && !isOwnUserId(session, userId) ? errorResponse("You can only manage your own notification settings", 403) : null;
+    if (denied) return denied;
 
     if (!userId) {
       return errorResponse("userId is required", 400);

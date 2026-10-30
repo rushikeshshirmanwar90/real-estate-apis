@@ -1,8 +1,9 @@
+import { projectAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { RowHouse } from "@/lib/models/RowHouse";
 import { NextRequest, NextResponse } from "next/server";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -12,8 +13,9 @@ import {
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -23,6 +25,8 @@ export const GET = async (req: NextRequest) => {
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
+  const denied = id ? await recordAccessError(session, RowHouse, id) : await scopeAccessError(session, {});
+  if (denied) return denied;
   
   try {
     await connect();
@@ -75,8 +79,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -87,6 +92,8 @@ export const POST = async (req: NextRequest) => {
   try {
     await connect();
     const data = await req.json();
+    const denied = await projectAccessError(session, data.projectId);
+    if (denied) return denied;
 
     const newData = await new RowHouse(data);
     const savedData = await newData.save();
@@ -138,8 +145,9 @@ export const POST = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -150,6 +158,8 @@ export const DELETE = async (req: NextRequest) => {
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   const sectionId = searchParams.get("sectionId");
+  const denied = (await projectAccessError(session, projectId)) ?? (await recordAccessError(session, RowHouse, sectionId));
+  if (denied) return denied;
 
   console.log('🗑️ DELETE /api/rowHouse - Request received');
   console.log('   Project ID:', projectId);
@@ -231,8 +241,9 @@ export const DELETE = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -244,6 +255,8 @@ export const PUT = async (req: NextRequest) => {
   const projectId = searchParams.get("projectId");
   const sectionId = searchParams.get("sectionId");
   const newData = await req.json();
+  const denied = (await projectAccessError(session, projectId)) ?? (await recordAccessError(session, RowHouse, sectionId));
+  if (denied) return denied;
 
   console.log('🔄 PUT /api/rowHouse - Request received');
   console.log('   Project ID:', projectId);

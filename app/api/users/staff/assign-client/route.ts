@@ -1,3 +1,4 @@
+import { clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Staff } from "@/lib/models/users/Staff";
 import { Client } from "@/lib/models/super-admin/Client";
@@ -5,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -24,8 +25,9 @@ const isValidObjectId = (id: string): boolean => {
  */
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -55,6 +57,10 @@ export const POST = async (req: NextRequest) => {
       if (!isValidObjectId(clientId)) {
         return errorResponse(`Invalid client ID format: ${clientId}`, 400);
       }
+    }
+    for (const clientId of data.clientIds) {
+      const denied = clientAccessError(session, clientId);
+      if (denied) return denied;
     }
 
     // Find the staff member
@@ -199,8 +205,9 @@ export const POST = async (req: NextRequest) => {
  */
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -221,6 +228,10 @@ export const DELETE = async (req: NextRequest) => {
 
     if (!clientIdsParam) {
       return errorResponse("Client IDs are required", 400);
+    }
+    for (const clientId of clientIdsParam.split(",").map((c) => c.trim()).filter(Boolean)) {
+      const denied = clientAccessError(session, clientId);
+      if (denied) return denied;
     }
 
     // Parse comma-separated client IDs

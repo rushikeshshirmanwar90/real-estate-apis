@@ -1,12 +1,16 @@
+import { OtherSection } from "@/lib/models/OtherSection";
+import { MiniSection } from "@/lib/models/MiniSection";
+import { recordAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import connect from "@/lib/db";
 import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
 import { average, recalculatePhases, statusForProgress } from "@/lib/utils/constructionTracker";
 
 export const PATCH = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -20,6 +24,8 @@ export const PATCH = async (req: NextRequest) => {
     const body = await req.json();
     const { phaseId, status, progress, subPhases } = body || {};
     const miniSectionId = body?.miniSectionId !== undefined && body?.miniSectionId !== null ? String(body.miniSectionId) : undefined;
+    const denied = await recordAccessError(session, [MiniSection, OtherSection], miniSectionId);
+    if (denied) return denied;
 
     if (!miniSectionId || !phaseId) {
       return NextResponse.json(

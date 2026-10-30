@@ -1,10 +1,11 @@
+import { clientAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Admin } from "@/lib/models/users/Admin";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -49,8 +50,9 @@ const successResponse = (
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -64,6 +66,12 @@ export const GET = async (req: NextRequest) => {
     const id = searchParams.get("id");
     const email = searchParams.get("email");
     const clientId = searchParams.get("clientId");
+    const denied = id
+      ? await recordAccessError(session, Admin, id)
+      : email
+        ? (session.kind === "user" && email.toLowerCase() !== session.email ? errorResponse("You can only view your own profile", 403) : null)
+        : await scopeAccessError(session, { clientId });
+    if (denied) return denied;
 
     console.log('🔍 Admin API (users/admin) called with:', { id, email, clientId });
 
@@ -183,8 +191,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -195,6 +204,8 @@ export const POST = async (req: NextRequest) => {
   try {
     await connect();
     const data = await req.json();
+    const denied = clientAccessError(session, data.clientId);
+    if (denied) return denied;
 
     // Validate required fields
     if (!data.email) {
@@ -270,8 +281,9 @@ export const POST = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -293,6 +305,8 @@ export const PUT = async (req: NextRequest) => {
     }
 
     const data = await req.json();
+    const denied = (await recordAccessError(session, Admin, id)) ?? (data.clientId ? clientAccessError(session, data.clientId) : null);
+    if (denied) return denied;
 
     // Remove sensitive fields that shouldn't be updated directly
     const { password, ...updateData } = data;
@@ -374,8 +388,9 @@ export const PUT = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -391,6 +406,8 @@ export const DELETE = async (req: NextRequest) => {
     if (!id) {
       return errorResponse("Admin ID is required for deletion", 400);
     }
+    const denied = await recordAccessError(session, Admin, id);
+    if (denied) return denied;
 
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid admin ID format", 400);

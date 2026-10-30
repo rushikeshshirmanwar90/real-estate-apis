@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { OtherCostActivity } from "@/lib/models/Xsite/otherCost-activity";
 import { notifyOtherCostActivityCreated } from "@/lib/services/notificationService";
@@ -29,12 +31,21 @@ interface UserPayload {
 
 // GET: Fetch other cost activities (notification feed)
 export const GET = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   const clientId = searchParams.get("clientId");
   const userId = searchParams.get("userId");
   const activity = searchParams.get("activity");
   const targetDate = searchParams.get("targetDate"); // Get activities for specific date
+  const denied = await scopeAccessError(session, { clientId, projectId });
+  if (denied) return denied;
 
   try {
     await connect();
@@ -109,6 +120,13 @@ export const GET = async (req: NextRequest | Request) => {
 
 // POST: Create an other-cost activity log entry
 export const POST = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -135,6 +153,8 @@ export const POST = async (req: NextRequest | Request) => {
       user: UserPayload;
       date?: string;
     };
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // Validation
     if (!clientId) {
@@ -230,6 +250,13 @@ export const POST = async (req: NextRequest | Request) => {
 
 // DELETE: Delete other cost activities
 export const DELETE = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -244,9 +271,17 @@ export const DELETE = async (req: NextRequest | Request) => {
         406
       );
     }
+    const denied = id === "all"
+      ? await scopeAccessError(session, { clientId, projectId })
+      : await recordAccessError(session, OtherCostActivity, id);
+    if (denied) return denied;
 
     // Handle delete all entries
     if (id === "all") {
+      // Never delete every company's entries: a project or client filter is required
+      if (!projectId && !clientId) {
+        return errorResponse("projectId or clientId is required to delete all entries", 400);
+      }
       const query: Record<string, string> = {};
       if (projectId) query.projectId = projectId;
       if (clientId) query.clientId = clientId;

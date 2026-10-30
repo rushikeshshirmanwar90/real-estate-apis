@@ -17,11 +17,23 @@ jest.mock("@/lib/utils/logger", () => ({ logger: { info: jest.fn(), warn: jest.f
 jest.mock("@/lib/models/Xsite/LoginUsers", () => ({
   LoginUser: { findById: (id: string) => chain(loginUsers[id] ?? null) },
 }));
+const inCompanies = (doc: any, ids: string[]) =>
+  (doc.clients ?? []).some((c: any) => ids.includes(String(c.clientId)));
 jest.mock("@/lib/models/users/Staff", () => ({
-  Staff: { findOne: ({ email }: any) => chain(staffByEmail[email] ?? null) },
+  Staff: {
+    findOne: ({ email }: any) => chain(staffByEmail[email] ?? null),
+    find: (q: any) =>
+      chain(Object.values(staffByEmail).filter((s: any) => q._id.$in.includes(s._id) && inCompanies(s, q["clients.clientId"].$in))),
+    exists: async (q: any) =>
+      Object.values(staffByEmail).some((s: any) => s._id === q._id && inCompanies(s, q["clients.clientId"].$in)) ? { _id: q._id } : null,
+  },
 }));
 jest.mock("@/lib/models/users/Admin", () => ({
-  Admin: { findOne: ({ email }: any) => chain(adminByEmail[email] ?? null) },
+  Admin: {
+    findOne: ({ email }: any) => chain(adminByEmail[email] ?? null),
+    find: (q: any) =>
+      chain(Object.values(adminByEmail).filter((a: any) => q._id.$in.includes(a._id) && q.clientId.$in.includes(String(a.clientId)))),
+  },
 }));
 jest.mock("@/lib/models/super-admin/Client", () => ({
   Client: { findOne: ({ email }: any) => chain(clientByEmail[email] ?? null) },
@@ -34,11 +46,16 @@ import {
   AuthError,
   clientAccessError,
   docAccessError,
+  filterRecipientIds,
   getSession,
+  isOwnUserId,
   projectAccessError,
   signResetToken,
   signSuperAdminToken,
   signUserToken,
+  scopeAccessError,
+  staffAccessError,
+  superAdminOnlyError,
   verifyResetToken,
 } from "./session";
 
@@ -51,6 +68,10 @@ const STAFF_LOGIN_ID = "64b000000000000000000001";
 const ADMIN_LOGIN_ID = "64b000000000000000000002";
 const PROJECT_A = "64b000000000000000000c01";
 const PROJECT_B = "64b000000000000000000c02";
+const STAFF_A = "64b000000000000000000d01";
+const STAFF_B = "64b000000000000000000d02";
+const ADMIN_A = "64b000000000000000000e01";
+const ADMIN_B = "64b000000000000000000e02";
 
 const req = (token?: string, url = "http://localhost/api/project") =>
   new Request(url, { headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -67,8 +88,10 @@ beforeEach(() => {
 
   loginUsers[STAFF_LOGIN_ID] = { _id: STAFF_LOGIN_ID, email: "staff@a.com", userType: "staff", tokenVersion: 0 };
   loginUsers[ADMIN_LOGIN_ID] = { _id: ADMIN_LOGIN_ID, email: "admin@a.com", userType: "admin" };
-  staffByEmail["staff@a.com"] = { _id: "s1", role: "site-engineer", clients: [{ clientId: COMPANY_A }] };
-  adminByEmail["admin@a.com"] = { _id: "a1", clientId: COMPANY_A };
+  staffByEmail["staff@a.com"] = { _id: STAFF_A, role: "site-engineer", clients: [{ clientId: COMPANY_A }] };
+  staffByEmail["other@b.com"] = { _id: STAFF_B, role: "supervisor", clients: [{ clientId: COMPANY_B }] };
+  adminByEmail["admin@a.com"] = { _id: ADMIN_A, clientId: COMPANY_A };
+  adminByEmail["admin@b.com"] = { _id: ADMIN_B, clientId: COMPANY_B };
   projectsById[PROJECT_A] = { _id: PROJECT_A, clientId: COMPANY_A };
   projectsById[PROJECT_B] = { _id: PROJECT_B, clientId: COMPANY_B };
 });
@@ -191,5 +214,45 @@ describe("reset tokens", () => {
     expect(verifyResetToken(signUserToken(loginUsers[STAFF_LOGIN_ID]))).toBeNull();
     expect(verifyResetToken("junk")).toBeNull();
     expect(verifyResetToken(undefined)).toBeNull();
+  });
+});
+
+describe("list and people checks", () => {
+  const staffSession = async () => getSession(req(signUserToken(loginUsers[STAFF_LOGIN_ID])));
+
+  it("list endpoints need a filter the user owns", async () => {
+    const session = await staffSession();
+    expect((await scopeAccessError(session, {}))?.status).toBe(400);
+    expect(await scopeAccessError(session, { clientId: COMPANY_A })).toBeNull();
+    expect((await scopeAccessError(session, { clientId: COMPANY_A, projectId: PROJECT_B }))?.status).toBe(403);
+    expect(await scopeAccessError({ kind: "partner" }, {})).toBeNull();
+  });
+
+  it("staff records: self and own-company staff only", async () => {
+    const session = await staffSession();
+    expect(await staffAccessError(session, STAFF_A)).toBeNull();
+    expect((await staffAccessError(session, STAFF_B))?.status).toBe(403);
+  });
+
+  it("isOwnUserId recognises the caller", async () => {
+    const session = await staffSession();
+    expect(isOwnUserId(session, STAFF_A)).toBe(true);
+    expect(isOwnUserId(session, STAFF_LOGIN_ID)).toBe(true);
+    expect(isOwnUserId(session, STAFF_B)).toBe(false);
+    // staff don't act as the company itself
+    expect(isOwnUserId(session, COMPANY_A)).toBe(false);
+  });
+
+  it("notification recipients are limited to the caller's companies", async () => {
+    const session = await staffSession();
+    const kept = await filterRecipientIds(session, [STAFF_A, STAFF_B, ADMIN_A, ADMIN_B, COMPANY_A, COMPANY_B]);
+    expect(kept.sort()).toEqual([ADMIN_A, COMPANY_A, STAFF_A].sort());
+    expect(await filterRecipientIds({ kind: "superadmin", email: "x" }, [STAFF_B])).toEqual([STAFF_B]);
+  });
+
+  it("super-admin-only actions", async () => {
+    expect(superAdminOnlyError({ kind: "superadmin", email: "x" })).toBeNull();
+    expect(superAdminOnlyError(await staffSession())?.status).toBe(403);
+    expect(superAdminOnlyError({ kind: "partner" })?.status).toBe(403);
   });
 });

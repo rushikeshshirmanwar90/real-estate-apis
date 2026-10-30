@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, scopeAccessError } from "@/lib/auth/session";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import {
   sendNotificationsToRecipients,
@@ -15,6 +17,13 @@ import { NextRequest } from "next/server";
  *    Now the shared sendNotificationsToRecipients() utility is called directly.
  */
 export async function POST(req: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const {
       title,
@@ -28,6 +37,8 @@ export async function POST(req: NextRequest) {
       clientId,
       metadata = {},
     } = await req.json();
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // Validate required fields
     if (!title || !clientId) {

@@ -1,10 +1,11 @@
+import { projectAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { invalidateCachePattern } from "@/lib/utils/redis-helpers";
 
 const isValidObjectId = (id: string): boolean => {
@@ -26,8 +27,9 @@ const isValidObjectId = (id: string): boolean => {
  */
 export const PATCH = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -47,6 +49,8 @@ export const PATCH = async (req: NextRequest) => {
     if (!projectId || !isValidObjectId(projectId)) {
       return errorResponse("Valid projectId is required", 400);
     }
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
     if (
       monthlyPayment === undefined ||
       monthlyPayment === null ||

@@ -7,7 +7,7 @@ import { licenseScheduler } from "@/lib/utils/license-scheduler";
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },

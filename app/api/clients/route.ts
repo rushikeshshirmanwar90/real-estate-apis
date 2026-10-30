@@ -1,3 +1,4 @@
+import { canAccessClient, superAdminOnlyError } from "@/lib/auth/session";
 import bcrypt from "bcrypt";
 import connect from "@/lib/db";
 import mongoose from "mongoose";
@@ -7,7 +8,7 @@ import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -19,8 +20,9 @@ const SALT_ROUNDS = 10;
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -30,6 +32,9 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const email = searchParams.get("email");
+    if (session.kind === "user" && !((id && canAccessClient(session, id)) || (email && email.toLowerCase() === session.email))) {
+      return errorResponse("You can only view your own company", 403);
+    }
     // Get specific Client by ID
     if (id) {
       if (!isValidObjectId(id)) {
@@ -100,14 +105,17 @@ export const GET = async (req: NextRequest) => {
 };
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
     await connect();
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     const data = await req.json();
     // Validate required fields
     if (!data.email) {
@@ -224,8 +232,9 @@ export const POST = async (req: NextRequest) => {
 };
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -233,6 +242,8 @@ export const DELETE = async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     if (!email) {
       return errorResponse("Email is required", 400);
     }
@@ -264,8 +275,9 @@ export const DELETE = async (req: NextRequest) => {
 };
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -279,6 +291,8 @@ export const PUT = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid client ID format", 400);
     }
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     const updateData = await req.json();
     // Don't allow password updates through this endpoint
     delete updateData.password;

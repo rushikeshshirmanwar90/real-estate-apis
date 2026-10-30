@@ -1,8 +1,9 @@
+import { checkValidClient } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Registry } from "@/lib/models/Shivai/Registry";
 import { Booking } from "@/lib/models/Shivai/Booking";
-import { checkValidClient } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Helper function to create a temporary booking
@@ -35,6 +36,12 @@ async function createTemporaryBooking(data: any) {
 
 // GET - Retrieve registry data for a customer
 export async function GET(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     
@@ -105,6 +112,12 @@ export async function GET(request: NextRequest) {
 
 // POST - Create or update registry data
 export async function POST(request: NextRequest) {
+  try {
+    await checkValidClient(request, ["partner", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     

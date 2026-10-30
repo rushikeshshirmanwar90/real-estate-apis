@@ -10,7 +10,7 @@ import { checkValidClient, authStatus } from "@/lib/auth";
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
-    await checkValidClient(req);
+    await checkValidClient(req, ["partner", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }

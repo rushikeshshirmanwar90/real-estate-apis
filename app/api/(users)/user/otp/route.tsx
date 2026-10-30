@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withBearerAuth } from "@/lib/middleware/bearer-auth";
+import { withAuthFor } from "@/lib/middleware/bearer-auth";
 import connect from "@/lib/db";
 
-export const GET = withBearerAuth(async (req: NextRequest) => {
+export const GET = withAuthFor(["partner", "superadmin"])(async (req: NextRequest) => {
   try {
     await connect();
     
@@ -26,7 +26,7 @@ export const GET = withBearerAuth(async (req: NextRequest) => {
   }
 });
 
-export const POST = withBearerAuth(async (req: NextRequest) => {
+export const POST = withAuthFor(["partner", "superadmin"])(async (req: NextRequest) => {
   try {
     await connect();
     
@@ -49,7 +49,7 @@ export const POST = withBearerAuth(async (req: NextRequest) => {
   }
 });
 
-export const PUT = withBearerAuth(async (req: NextRequest) => {
+export const PUT = withAuthFor(["partner", "superadmin"])(async (req: NextRequest) => {
   try {
     await connect();
     
@@ -74,7 +74,7 @@ export const PUT = withBearerAuth(async (req: NextRequest) => {
   }
 });
 
-export const DELETE = withBearerAuth(async (req: NextRequest) => {
+export const DELETE = withAuthFor(["partner", "superadmin"])(async (req: NextRequest) => {
   try {
     await connect();
     

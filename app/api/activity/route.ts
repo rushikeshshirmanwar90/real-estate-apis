@@ -1,3 +1,6 @@
+import { Activity } from "@/lib/models/Xsite/Activity";
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, clientAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
@@ -52,6 +55,13 @@ interface ActivityDocument extends Document {
 
 // GET: Fetch activities with filters
 export const GET = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
   const clientId = searchParams.get("clientId");
@@ -69,6 +79,8 @@ export const GET = async (req: NextRequest | Request) => {
     if (!clientId && !projectId) {
       return errorResponse("clientId or projectId is required", 400);
     }
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // ✅ Validate client exists if clientId is provided
     if (clientId) {
@@ -151,6 +163,13 @@ export const GET = async (req: NextRequest | Request) => {
 
 // POST: Create activity log
 export const POST = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -169,6 +188,8 @@ export const POST = async (req: NextRequest | Request) => {
       console.error('❌ ClientId validation failed:', body.clientId);
       return errorResponse("clientId is required", 400);
     }
+    const denied = clientAccessError(session, body.clientId);
+    if (denied) return denied;
 
     console.log('✅ Basic validation passed');
 
@@ -257,6 +278,13 @@ export const POST = async (req: NextRequest | Request) => {
 
 // DELETE: Delete activities (admin only - optional)
 export const DELETE = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const { searchParams } = new URL(req.url);
   const activityId = searchParams.get("id");
 
@@ -266,6 +294,8 @@ export const DELETE = async (req: NextRequest | Request) => {
     if (!activityId) {
       return errorResponse("Activity ID is required", 400);
     }
+    const denied = await recordAccessError(session, Activity, activityId);
+    if (denied) return denied;
 
     const deletedActivity = await Activity.findByIdAndDelete(activityId);
 

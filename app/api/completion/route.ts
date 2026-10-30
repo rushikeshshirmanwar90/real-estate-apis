@@ -1,3 +1,4 @@
+import { projectAccessError, recordAccessError } from "@/lib/auth/session";
 import { Projects } from "@/lib/models/Project";
 import { MiniSection } from "@/lib/models/Xsite/mini-section";
 import { OtherSection } from "@/lib/models/OtherSection";
@@ -6,7 +7,7 @@ import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -23,8 +24,9 @@ interface BodyType {
 
 export const PATCH = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -40,6 +42,9 @@ export const PATCH = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid ID format", 400);
     }
+    const denied = (projectId ? await projectAccessError(session, projectId) : null)
+      ?? (await recordAccessError(session, [Projects, Building, OtherSection, MiniSection], id));
+    if (denied) return denied;
 
     let updatedDocument;
 
@@ -256,8 +261,9 @@ export const PATCH = async (req: NextRequest) => {
  
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -280,6 +286,9 @@ export const GET = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid ID format", 400);
     }
+    const denied = (projectId ? await projectAccessError(session, projectId) : null)
+      ?? (await recordAccessError(session, [Projects, Building, OtherSection, MiniSection], id));
+    if (denied) return denied;
 
     // Check cache first
     const cacheKey = `completion:${updateType}:${projectId || 'none'}:${id}`;

@@ -1,14 +1,15 @@
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET: Get push token system status
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },

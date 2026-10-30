@@ -1,3 +1,4 @@
+import { docAccessError, recordAccessError } from "@/lib/auth/session";
 import { Building } from "@/lib/models/Building";
 import connect from "@/lib/db";
 import mongoose from "mongoose";
@@ -5,12 +6,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -23,6 +25,8 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const buildingId = searchParams.get("buildingId");
     const floorId = searchParams.get("id");
+    const denied = await recordAccessError(session, Building, buildingId);
+    if (denied) return denied;
 
     if (!buildingId) {
       return errorResponse("Building ID is required", 400);
@@ -57,8 +61,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -69,6 +74,8 @@ export const POST = async (req: NextRequest) => {
   try {
     await connect();
     const body = await req.json();
+    const denied = await recordAccessError(session, Building, body.buildingId);
+    if (denied) return denied;
 
     // Check if this is a bulk creation request
     const isBulkCreate = Array.isArray(body.floors);
@@ -231,8 +238,9 @@ export const POST = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -253,6 +261,8 @@ export const PUT = async (req: NextRequest) => {
     if (!isValidObjectId(floorId) || !isValidObjectId(buildingId)) {
       return errorResponse("Invalid ID format", 400);
     }
+    const denied = await recordAccessError(session, Building, buildingId);
+    if (denied) return denied;
 
     const body = await req.json();
 
@@ -297,8 +307,9 @@ export const PUT = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -336,6 +347,8 @@ export const DELETE = async (req: NextRequest) => {
     if (!building) {
       return errorResponse("Building not found", 404);
     }
+    const denied = await docAccessError(session, building);
+    if (denied) return denied;
 
     // Find the floor to get its totalUnits before deletion
     const floorToDelete = building.floors?.find((f: any) => f._id.toString() === floorId);

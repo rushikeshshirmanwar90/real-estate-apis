@@ -1,13 +1,15 @@
+import { clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -21,6 +23,8 @@ export const GET = async (req: NextRequest) => {
         const { searchParams } = new URL(req.url);
         const clientId = searchParams.get('clientId');
         const staffId = searchParams.get('staffId'); // Add staffId parameter for filtering
+        const denied = clientAccessError(session, clientId);
+        if (denied) return denied;
 
         console.log('\n========================================');
         console.log('📋 CLIENT PROJECTS API');

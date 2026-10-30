@@ -1,5 +1,6 @@
+import { docAccessError, recordAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
@@ -28,8 +29,9 @@ const unauthorized = (error: unknown) =>
 // GET /api/partnership/transactions?partnershipId=&page=1&limit=50&includeVoid=false
 // Newest first.
 export const GET = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -39,6 +41,8 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const partnershipId = searchParams.get("partnershipId") || "";
     if (!Types.ObjectId.isValid(partnershipId)) return errorResponse("Valid partnershipId is required", 400);
+    const denied = await recordAccessError(session, Partnership, partnershipId);
+    if (denied) return denied;
 
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
     const limit = Math.min(
@@ -75,8 +79,9 @@ export const GET = async (req: NextRequest) => {
 // POST /api/partnership/transactions — a partner puts money into the pool
 // body: { partnershipId, partnerId, amount, category: 'initial' | 'additional', date?, description?, recordedBy? }
 export const POST = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -90,6 +95,8 @@ export const POST = async (req: NextRequest) => {
     const amount = Number(body?.amount);
 
     if (!Types.ObjectId.isValid(partnershipId)) return errorResponse("Valid partnershipId is required", 400);
+    const denied = await recordAccessError(session, Partnership, partnershipId);
+    if (denied) return denied;
     if (!(CONTRIBUTION_CATEGORIES as readonly string[]).includes(category)) {
       return errorResponse("category must be initial or additional", 400);
     }
@@ -137,8 +144,9 @@ export const POST = async (req: NextRequest) => {
 //   { transactionId, action: 'void', reason? }            — take a wrong line out of the totals
 //   { transactionId, action: 'reassign', paidBy }         — fix who paid a payment
 export const PATCH = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return unauthorized(error);
   }
@@ -152,6 +160,8 @@ export const PATCH = async (req: NextRequest) => {
 
     const transaction = await PartnershipTransaction.findById(transactionId);
     if (!transaction) return errorResponse("Entry not found", 404);
+    const denied = await docAccessError(session, transaction);
+    if (denied) return denied;
     if (transaction.status !== "active") return errorResponse("This entry was already removed", 400);
 
     const actor = resolveActor(req, body);

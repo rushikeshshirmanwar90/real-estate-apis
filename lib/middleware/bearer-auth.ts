@@ -22,3 +22,8 @@ export const withBearerAuth = (
     return handler(req);
   };
 };
+
+/** Same as withBearerAuth, with the allowed callers given first: withAuthFor(["user"])(handler) */
+export const withAuthFor =
+  (allow: SessionKind[]) => (handler: (req: NextRequest) => Promise<NextResponse>) =>
+    withBearerAuth(handler, allow);

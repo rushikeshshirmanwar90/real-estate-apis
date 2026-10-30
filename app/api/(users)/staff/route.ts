@@ -1,3 +1,4 @@
+import { clientAccessError, projectAccessError, staffAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import { Staff } from "@/lib/models/users/Staff";
@@ -8,7 +9,7 @@ import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import bcrypt from "bcrypt";
 import { isStrongPassword } from "@/lib/utils/validation";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -17,8 +18,9 @@ const isValidObjectId = (id: string): boolean => {
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -32,6 +34,11 @@ export const GET = async (req: NextRequest) => {
     const id = searchParams.get("id");
     const email = searchParams.get("email");
     const clientId = searchParams.get("clientId");
+    const denied = session.kind === "user" && email && email.toLowerCase() === session.email
+      ? null
+      : (clientId ? clientAccessError(session, clientId) : null)
+        ?? (id ? await staffAccessError(session, id) : clientAccessError(session, clientId));
+    if (denied) return denied;
 
     console.log('🔍 Staff API (users) called with:', { id, email, clientId });
 
@@ -162,9 +169,13 @@ export const GET = async (req: NextRequest) => {
 };
 
 export const POST = async (req: NextRequest) => {
-  // Bearer token authentication
+  // Signed-in callers are checked as usual. With no token at all this is a
+  // self-registration from the sign-up screen, which gets no company access.
+  let session: Session | null = null;
   try {
-    await checkValidClient(req);
+    if (req.headers.get("authorization")) {
+      session = await checkValidClient(req, ["user", "superadmin"]);
+    }
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -177,6 +188,26 @@ export const POST = async (req: NextRequest) => {
     const data = await req.json();
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action");
+
+    if (!session) {
+      if (action) {
+        return errorResponse("Authentication required", 401);
+      }
+      // A new staff member is linked to a company only when its admin assigns them
+      data.clients = [];
+      delete data.clientId;
+      delete data.assignedProjects;
+    } else if (session.kind === "user") {
+      const companies = [...(Array.isArray(data.clients) ? data.clients : []), ...(data.clientId ? [{ clientId: data.clientId }] : [])];
+      for (const c of companies) {
+        const denied = clientAccessError(session, c?.clientId);
+        if (denied) return denied;
+      }
+      if (data.projectId) {
+        const denied = await projectAccessError(session, data.projectId);
+        if (denied) return denied;
+      }
+    }
 
     // Handle staff assignment action
     if (action === "assign" && data.staffId && data.projectId) {
@@ -240,7 +271,10 @@ export const POST = async (req: NextRequest) => {
           const axios = require('axios');
           const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
           
-          await axios.post(`${domain}/api/activity`, activityPayload);
+          await axios.post(`${domain}/api/activity`, activityPayload, {
+            // Pass the caller's token so the activity is recorded as them
+            headers: { Authorization: req.headers.get("authorization") ?? "" },
+          });
           console.log(`✅ Staff assignment activity logged for ${staff.firstName} ${staff.lastName}`);
         } catch (activityError) {
           console.error('❌ Error logging staff assignment activity:', activityError);
@@ -400,8 +434,9 @@ export const POST = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -422,6 +457,8 @@ export const PUT = async (req: NextRequest) => {
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
+    const denied = clientAccessError(session, clientId) ?? (await staffAccessError(session, id));
+    if (denied) return denied;
 
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid staff ID format", 400);
@@ -515,8 +552,9 @@ export const PUT = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -531,6 +569,8 @@ export const DELETE = async (req: NextRequest) => {
     const action = searchParams.get("action");
     const projectId = searchParams.get("projectId");
     const clientId = searchParams.get("clientId");
+    const denied = clientAccessError(session, clientId) ?? (await staffAccessError(session, id));
+    if (denied) return denied;
 
     if (!id) {
       return errorResponse("Staff ID is required for deletion", 400);
@@ -616,7 +656,10 @@ export const DELETE = async (req: NextRequest) => {
           const axios = require('axios');
           const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
           
-          await axios.post(`${domain}/api/activity`, activityPayload);
+          await axios.post(`${domain}/api/activity`, activityPayload, {
+            // Pass the caller's token so the activity is recorded as them
+            headers: { Authorization: req.headers.get("authorization") ?? "" },
+          });
           console.log(`✅ Staff removal activity logged for ${staff.firstName} ${staff.lastName}`);
         } catch (activityError) {
           console.error('❌ Error logging staff removal activity:', activityError);

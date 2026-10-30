@@ -1,8 +1,9 @@
+import { projectAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 type Specs = Record<string, unknown>;
 
@@ -19,8 +20,9 @@ type MaterialSubdoc = {
 // POST: Transfer material from one project to another
 export const POST = async (req: NextRequest | Request) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -42,6 +44,8 @@ export const POST = async (req: NextRequest | Request) => {
       specs = {},
       clientId
     } = body;
+    const denied = (await scopeAccessError(session, { clientId, projectId: fromProjectId })) ?? (await projectAccessError(session, toProjectId));
+    if (denied) return denied;
 
     console.log('\n========================================');
     console.log('MATERIAL TRANSFER REQUEST');

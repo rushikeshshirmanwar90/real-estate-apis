@@ -1,33 +1,17 @@
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
+import { isOwnUserId } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
-import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
 // Security configuration
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-encryption-key-for-tokens';
 
 
 
 // Security middleware functions
-function authenticateToken(req: NextRequest): { success: boolean; user?: any; error?: string } {
-  const authHeader = req.headers.get('authorization');
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (!token) {
-    return { success: false, error: 'Access token required' };
-  }
-  
-  try {
-    const user = jwt.verify(token, JWT_SECRET);
-    return { success: true, user };
-  } catch (error) {
-    return { success: false, error: 'Invalid or expired token' };
-  }
-}
 
 
 
@@ -122,8 +106,9 @@ function securityLog(req: NextRequest, message: string, level: 'INFO' | 'WARN' |
 // POST: Register or update push token
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -134,12 +119,6 @@ export const POST = async (req: NextRequest) => {
   try {
 
     // Security: Authentication
-    const authResult = authenticateToken(req);
-    if (!authResult.success) {
-      securityLog(req, `Authentication failed: ${authResult.error}`, 'WARN');
-      return errorResponse(authResult.error!, 401);
-    }
-
     await connect();
 
     const rawData = await req.json();
@@ -165,8 +144,8 @@ export const POST = async (req: NextRequest) => {
     } = sanitizedData;
 
     // Security: Verify user owns this userId
-    if (authResult.user.id !== userId) {
-      securityLog(req, `User ${authResult.user.id} attempted to register token for user ${userId}`, 'ERROR');
+    if (!isOwnUserId(session, userId)) {
+      securityLog(req, `User ${session.kind === "user" ? session.email : session.kind} attempted to register token for user ${userId}`, 'ERROR');
       return errorResponse("Cannot register token for another user", 403);
     }
 
@@ -275,8 +254,9 @@ export const POST = async (req: NextRequest) => {
 // GET: Get push tokens for a user
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -287,12 +267,6 @@ export const GET = async (req: NextRequest) => {
   try {
 
     // Security: Authentication
-    const authResult = authenticateToken(req);
-    if (!authResult.success) {
-      securityLog(req, `Authentication failed: ${authResult.error}`, 'WARN');
-      return errorResponse(authResult.error!, 401);
-    }
-
     await connect();
 
     const { searchParams } = new URL(req.url);
@@ -305,8 +279,8 @@ export const GET = async (req: NextRequest) => {
     }
 
     // Security: Verify user can access this data
-    if (authResult.user.id !== userId) {
-      securityLog(req, `User ${authResult.user.id} attempted to access tokens for user ${userId}`, 'ERROR');
+    if (!isOwnUserId(session, userId)) {
+      securityLog(req, `User ${session.kind === "user" ? session.email : session.kind} attempted to access tokens for user ${userId}`, 'ERROR');
       return errorResponse("Cannot access another user's tokens", 403);
     }
 
@@ -347,8 +321,9 @@ export const GET = async (req: NextRequest) => {
 // DELETE: Deactivate push token
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -359,12 +334,6 @@ export const DELETE = async (req: NextRequest) => {
   try {
 
     // Security: Authentication
-    const authResult = authenticateToken(req);
-    if (!authResult.success) {
-      securityLog(req, `Authentication failed: ${authResult.error}`, 'WARN');
-      return errorResponse(authResult.error!, 401);
-    }
-
     await connect();
 
     const { searchParams } = new URL(req.url);
@@ -385,8 +354,8 @@ export const DELETE = async (req: NextRequest) => {
       query.token = encryptToken(token);
     } else if (userId) {
       // Security: Verify user can deactivate this token
-      if (authResult.user.id !== userId) {
-        securityLog(req, `User ${authResult.user.id} attempted to deactivate tokens for user ${userId}`, 'ERROR');
+      if (!isOwnUserId(session, userId)) {
+        securityLog(req, `User ${session.kind === "user" ? session.email : session.kind} attempted to deactivate tokens for user ${userId}`, 'ERROR');
         return errorResponse("Cannot deactivate another user's tokens", 403);
       }
       query.userId = userId;

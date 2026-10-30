@@ -1,3 +1,4 @@
+import { docAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
@@ -13,7 +14,7 @@ import {
   safeRedisDelCache 
 } from "@/lib/utils/redis-helpers";
 
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse } from "@/lib/utils/api-response";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 import {
@@ -50,8 +51,9 @@ async function checkStaffProjectAccess(req: NextRequest, projectId: string): Pro
 // POST - Add labor entries
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -73,6 +75,8 @@ export const POST = async (req: NextRequest) => {
       sectionId,
       addedBy, // Optional user ID who added the labor
     } = body;
+    const denied = await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId);
+    if (denied) return denied;
 
     // Validation
     if (!laborEntries || !Array.isArray(laborEntries) || laborEntries.length === 0) {
@@ -500,8 +504,9 @@ export const POST = async (req: NextRequest) => {
 // GET - Retrieve labor entries
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -519,6 +524,10 @@ export const GET = async (req: NextRequest) => {
     const status = searchParams.get('status') || 'active';
     const useStandalone = searchParams.get('useStandalone') === 'true';
     const addedBy = searchParams.get('addedBy');
+    const denied = entityId
+      ? await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId)
+      : await scopeAccessError(session, { projectId });
+    if (denied) return denied;
 
     // Check cache first
     const cacheKey = `labor:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status}:${useStandalone}:${addedBy || 'all'}`;
@@ -697,8 +706,9 @@ export const GET = async (req: NextRequest) => {
 // PUT - Update labor entry
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -713,6 +723,8 @@ export const PUT = async (req: NextRequest) => {
       laborId,
       updates
     } = body;
+    const denied = await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId);
+    if (denied) return denied;
 
     if (!entityType || !entityId || !laborId || !updates) {
       return NextResponse.json(
@@ -876,8 +888,9 @@ export const PUT = async (req: NextRequest) => {
 // DELETE - Remove labor entry
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -890,6 +903,8 @@ export const DELETE = async (req: NextRequest) => {
     const entityId = searchParams.get('entityId');
     const laborId = searchParams.get('laborId');
     const standaloneLaborId = searchParams.get('standaloneLaborId');
+    const deniedEntity = entityId ? await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId) : null;
+    if (deniedEntity) return deniedEntity;
 
     if (standaloneLaborId) {
       // Delete standalone labor entry
@@ -900,6 +915,8 @@ export const DELETE = async (req: NextRequest) => {
           { status: 404 }
         );
       }
+      const denied = await docAccessError(session, laborEntry);
+      if (denied) return denied;
 
       const laborCost = laborEntry.totalCost || 0;
       const projectId = laborEntry.projectId;

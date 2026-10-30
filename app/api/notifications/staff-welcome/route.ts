@@ -1,10 +1,11 @@
+import { clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 // Interface for notification payload
 interface StaffWelcomeNotification {
@@ -25,8 +26,9 @@ interface StaffWelcomeNotification {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -38,6 +40,8 @@ export const POST = async (req: NextRequest) => {
         await connect();
         
         const data: StaffWelcomeNotification = await req.json();
+        const denied = clientAccessError(session, data.clientId);
+        if (denied) return denied;
         
         console.log('📱 Staff Welcome Notification Request:', {
             recipient: data.recipientEmail,
@@ -155,7 +159,10 @@ export const POST = async (req: NextRequest) => {
                 const axios = require('axios');
                 const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:3000';
                 
-                await axios.post(`${domain}/api/activity`, activityPayload);
+                await axios.post(`${domain}/api/activity`, activityPayload, {
+            // Pass the caller's token so the activity is recorded as them
+            headers: { Authorization: req.headers.get("authorization") ?? "" },
+          });
                 console.log('✅ Staff welcome notification activity logged');
             } catch (activityError) {
                 console.error('❌ Error logging staff welcome notification activity:', activityError);
@@ -197,8 +204,9 @@ export const POST = async (req: NextRequest) => {
 // GET endpoint to retrieve notification history (optional)
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -213,6 +221,8 @@ export const GET = async (req: NextRequest) => {
         const clientId = searchParams.get('clientId');
         const staffId = searchParams.get('staffId');
         const type = searchParams.get('type') || 'staff_welcome';
+        const denied = clientAccessError(session, clientId);
+        if (denied) return denied;
 
         if (!clientId) {
             return errorResponse("Client ID is required", 400);

@@ -1,10 +1,11 @@
+import { clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -21,8 +22,9 @@ import {
  */
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -36,6 +38,8 @@ export const GET = async (req: NextRequest) => {
     if (!clientId) {
       return errorResponse("Client ID is required", 400);
     }
+    const denied = clientAccessError(session, clientId);
+    if (denied) return denied;
 
     // Validate client ID format
     if (!Types.ObjectId.isValid(clientId)) {

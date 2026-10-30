@@ -120,7 +120,10 @@ export const POST = async (req: NextRequest) => {
     }
 
     // Generate JWT token
-    const jwtSecret = process.env.JWT_SECRET || 'your-super-secret-jwt-key-here';
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return NextResponse.json({ success: false, message: "Server configuration error" }, { status: 500 });
+    }
     const jwtToken = jwt.sign(
       {
         id: customer._id.toString(),

@@ -1,10 +1,11 @@
+import { clientAccessError, recordAccessError } from "@/lib/auth/session";
 import { Projects } from "@/lib/models/Project";
 import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
@@ -21,8 +22,9 @@ import {
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -45,6 +47,11 @@ export const GET = async (req: NextRequest) => {
     if (!isValidObjectId(clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
+    const denied = clientAccessError(session, clientId)
+      ?? (session.kind === "user" && session.userType === "staff" && staffId && staffId !== session.userId
+        ? errorResponse("You can only view your own assigned projects", 403)
+        : null);
+    if (denied) return denied;
 
     // Validate staffId if provided
     if (staffId && !isValidObjectId(staffId)) {
@@ -155,8 +162,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -177,6 +185,8 @@ export const POST = async (req: NextRequest) => {
     if (!isValidObjectId(body.clientId)) {
       return errorResponse("Invalid client ID format", 400);
     }
+    const denied = clientAccessError(session, body.clientId);
+    if (denied) return denied;
 
     // ✅ Validate client exists before creating project
     try {
@@ -290,8 +300,9 @@ export const POST = async (req: NextRequest) => {
 
 export const PATCH = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -312,6 +323,8 @@ export const PATCH = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid project ID format", 400);
     }
+    const denied = await recordAccessError(session, Projects, id);
+    if (denied) return denied;
 
     const updatedProject = await Projects.findByIdAndUpdate(
       id,

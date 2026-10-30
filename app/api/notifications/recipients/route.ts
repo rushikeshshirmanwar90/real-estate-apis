@@ -1,9 +1,10 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, clientAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Admin } from "@/lib/models/users/Admin";
 import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
 import { NextRequest } from "next/server";
 
 // Type definitions for notification recipients
@@ -92,6 +93,13 @@ const recipientCache = new RecipientCache();
  * Used by the notification system to determine who gets notified
  */
 export async function GET(request: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(request, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const startTime = Date.now();
   
   try {
@@ -101,6 +109,8 @@ export async function GET(request: NextRequest) {
     const clientId = searchParams.get('clientId');
     const projectId = searchParams.get('projectId') || undefined; // Convert null to undefined
     const skipCache = searchParams.get('skipCache') === 'true';
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
     
     console.log('🔍 Enhanced recipient resolution for clientId:', clientId, 'projectId:', projectId);
     
@@ -481,9 +491,18 @@ async function resolveFallbackRecipients(clientId: string, projectId?: string): 
  * DELETE /api/notifications/recipients - Clear recipient cache
  */
 export async function DELETE(request: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(request, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     const clientId = searchParams.get('clientId');
+    const denied = clientAccessError(session, clientId);
+    if (denied) return denied;
     
     if (clientId) {
       recipientCache.clear(clientId);

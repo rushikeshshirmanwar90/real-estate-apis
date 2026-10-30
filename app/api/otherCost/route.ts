@@ -1,3 +1,4 @@
+import { recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
@@ -13,7 +14,7 @@ import {
   safeRedisDelCache,
 } from "@/lib/utils/redis-helpers";
 
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse } from "@/lib/utils/api-response";
 import { extractUserInfo } from "@/lib/utils/activity-logger";
 import { Types } from "mongoose";
@@ -27,8 +28,9 @@ import {
 // POST - Add other cost entries
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -50,6 +52,8 @@ export const POST = async (req: NextRequest) => {
       sectionId,
       addedBy, // Optional user ID who added the cost
     } = body;
+    const denied = await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId);
+    if (denied) return denied;
 
     // Validation
     if (!otherCostEntries || !Array.isArray(otherCostEntries) || otherCostEntries.length === 0) {
@@ -423,8 +427,9 @@ export const POST = async (req: NextRequest) => {
 // GET - Retrieve other cost entries
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -442,6 +447,10 @@ export const GET = async (req: NextRequest) => {
     const status = searchParams.get('status');
     const useStandalone = searchParams.get('useStandalone') === 'true';
     const addedBy = searchParams.get('addedBy');
+    const denied = entityId
+      ? await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId)
+      : await scopeAccessError(session, { projectId });
+    if (denied) return denied;
 
     // Check cache first
     const cacheKey = `otherCost:${entityType || 'all'}:${entityId || 'all'}:${projectId || 'all'}:${sectionId || 'all'}:${miniSectionId || 'all'}:${category || 'all'}:${status || 'all'}:${useStandalone}:${addedBy || 'all'}`;
@@ -571,8 +580,9 @@ export const GET = async (req: NextRequest) => {
 // PUT - Update other cost entry
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -587,6 +597,8 @@ export const PUT = async (req: NextRequest) => {
       otherCostId,
       updates
     } = body;
+    const denied = await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId);
+    if (denied) return denied;
 
     if (!entityType || !entityId || !otherCostId || !updates) {
       return NextResponse.json(
@@ -731,8 +743,9 @@ export const PUT = async (req: NextRequest) => {
 // DELETE - Remove other cost entry
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -744,6 +757,8 @@ export const DELETE = async (req: NextRequest) => {
     const entityType = searchParams.get('entityType');
     const entityId = searchParams.get('entityId');
     const otherCostId = searchParams.get('otherCostId');
+    const denied = await recordAccessError(session, [Projects, Building, OtherSection, RowHouse], entityId);
+    if (denied) return denied;
 
     if (!entityType || !entityId || !otherCostId) {
       return NextResponse.json(

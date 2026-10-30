@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/utils/api-response";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -393,8 +393,9 @@ const equipmentCategories = {
 // GET - Retrieve equipment categories and types
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },

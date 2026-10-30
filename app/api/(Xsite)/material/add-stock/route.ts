@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
@@ -65,6 +67,13 @@ const mergeBillImages = (existing: BillImage[] = [], incoming: BillImage[] = [])
 };
 
 export async function POST(request: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(request, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
     try {
         await connect();
 
@@ -87,6 +96,8 @@ export async function POST(request: NextRequest) {
             // Who paid amountPaid, when the project has a partnership
             paidBy,
         } = body;
+        const denied = clientAccessError(session, clientId);
+        if (denied) return denied;
 
         console.log('\n========================================');
         console.log('📦 ADD STOCK REQUEST');

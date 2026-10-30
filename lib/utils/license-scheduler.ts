@@ -73,7 +73,11 @@ class LicenseScheduler {
       
       logger.info(`License scheduler using domain: ${domain}`);
       
-      const cronSecret = process.env.CRON_SECRET || 'your-secret-key';
+      const cronSecret = process.env.CRON_SECRET;
+      if (!cronSecret) {
+        logger.error("CRON_SECRET is not set; skipping license update");
+        return;
+      }
       
       const response = await fetch(`${domain}/api/cron/license-update`, {
         method: 'POST',

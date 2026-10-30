@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, scopeAccessError } from "@/lib/auth/session";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { NextRequest } from "next/server";
 
@@ -8,6 +10,13 @@ import { NextRequest } from "next/server";
  * This endpoint wraps the main /api/notifications/send endpoint with material-specific logic
  */
 export async function POST(req: NextRequest) {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     const { 
       activity, 
@@ -19,6 +28,8 @@ export async function POST(req: NextRequest) {
       recipients, 
       clientId 
     } = await req.json();
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     // Validate required fields
     if (!activity || !recipients || !clientId) {
@@ -55,7 +66,11 @@ export async function POST(req: NextRequest) {
     const domain = process.env.NEXT_PUBLIC_DOMAIN || "http://localhost:3000";
     const sendRes = await fetch(`${domain}/api/notifications/send`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Forward the caller's token; /api/notifications/send limits recipients to their company
+        Authorization: req.headers.get("authorization") ?? "",
+      },
       body: JSON.stringify({
         title: actionLabel,
         body: notifBody,

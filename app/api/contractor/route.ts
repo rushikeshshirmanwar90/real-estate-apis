@@ -1,7 +1,9 @@
+import { Contractor } from "@/lib/models/Xsite/Contractor";
+import { projectAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { assignStaffToProject, removeStaffFromProject } from "@/lib/utils/staffProjectUtils";
 import {
@@ -72,8 +74,9 @@ const isValidObjectId = (id: string): boolean => {
 
 // GET - Retrieve contractors for a project, optionally filtered by staffId
 export const GET = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -87,6 +90,8 @@ export const GET = async (req: NextRequest) => {
     const projectId = searchParams.get("projectId");
     const staffId = searchParams.get("staffId");
     const clientId = searchParams.get("clientId");
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     let query: any = {};
 
@@ -151,8 +156,9 @@ export const GET = async (req: NextRequest) => {
 
 // POST - Assign a staff member as a contractor for a project
 export const POST = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -164,6 +170,8 @@ export const POST = async (req: NextRequest) => {
     await connect();
     const data = await req.json();
     const { projectId, sectionId, staffId, contractType, totalAmount, paymentSchedule } = data;
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     // Validate fields
     if (!projectId || !staffId || !contractType || totalAmount === undefined) {
@@ -299,8 +307,9 @@ export const POST = async (req: NextRequest) => {
 
 // PATCH - Record payouts or update contractor status
 export const PATCH = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -316,6 +325,8 @@ export const PATCH = async (req: NextRequest) => {
     if (!contractorId) {
       return errorResponse("Contractor ID is required", 400);
     }
+    const denied = await recordAccessError(session, Contractor, contractorId);
+    if (denied) return denied;
 
     if (!isValidObjectId(contractorId)) {
       return errorResponse("Invalid contractor ID format", 400);
@@ -493,8 +504,9 @@ export const PATCH = async (req: NextRequest) => {
 
 // DELETE - Remove contractor budget allocation and reset staff flag if necessary
 export const DELETE = async (req: NextRequest) => {
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -510,6 +522,8 @@ export const DELETE = async (req: NextRequest) => {
     if (!contractorId || !isValidObjectId(contractorId)) {
       return errorResponse("Valid contractor ID is required", 400);
     }
+    const denied = await recordAccessError(session, Contractor, contractorId);
+    if (denied) return denied;
 
     // Import Contractor model dynamically
     const contractorModule = await import("@/lib/models/Xsite/Contractor");

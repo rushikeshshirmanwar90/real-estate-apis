@@ -1,15 +1,17 @@
+import { scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Projects } from "@/lib/models/Project";
 import { MiniSection } from "@/lib/models/MiniSection";
 import { Section } from "@/lib/models/Section";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -27,6 +29,8 @@ export const GET = async (req: NextRequest) => {
         const activity = searchParams.get('activity'); // 'imported', 'used', or 'all'
         const projectId = searchParams.get('projectId'); // optional project filter
         const miniSectionId = searchParams.get('miniSectionId'); // optional mini-section filter
+        const denied = await scopeAccessError(session, { clientId, projectId });
+        if (denied) return denied;
 
         console.log('\n========================================');
         console.log('📊 MATERIAL ACTIVITY REPORT API');

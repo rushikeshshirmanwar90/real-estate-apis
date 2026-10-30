@@ -1,5 +1,6 @@
+import { superAdminOnlyError } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import connect from "@/lib/db";
 import { Admin } from "@/lib/models/users/Admin";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
@@ -14,8 +15,9 @@ import {
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin", "user"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -29,6 +31,9 @@ export const GET = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     const email = searchParams.get("email");
+    if (session.kind === "user" && !((email && email.toLowerCase() === session.email) || (id && id === session.userId))) {
+      return errorResponse("You can only view your own profile", 403);
+    }
     
     // Get specific Admin by ID
     if (id) {
@@ -118,8 +123,9 @@ export const GET = async (req: NextRequest) => {
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin", "user"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -129,6 +135,8 @@ export const POST = async (req: NextRequest) => {
 
   try {
     await connect();
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     
     const data = await req.json();
     
@@ -208,8 +216,9 @@ export const POST = async (req: NextRequest) => {
 
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin", "user"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -230,6 +239,8 @@ export const PUT = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid admin ID format", 400);
     }
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     
     const updateData = await req.json();
     
@@ -310,8 +321,9 @@ export const PUT = async (req: NextRequest) => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["superadmin", "user"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -324,6 +336,8 @@ export const DELETE = async (req: NextRequest) => {
     
     const { searchParams } = new URL(req.url);
     const email = searchParams.get("email");
+    const denied = superAdminOnlyError(session);
+    if (denied) return denied;
     
     if (!email) {
       return errorResponse("Email is required", 400);

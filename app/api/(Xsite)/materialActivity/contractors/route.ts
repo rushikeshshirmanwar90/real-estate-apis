@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
@@ -5,9 +7,18 @@ import { NextRequest } from "next/server";
 
 // GET: Fetch unique contractors for a client
 export const GET = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("clientId");
   const projectId = searchParams.get("projectId");
+  const denied = await scopeAccessError(session, { clientId, projectId });
+  if (denied) return denied;
 
   if (!clientId) {
     return errorResponse("clientId is required", 406);

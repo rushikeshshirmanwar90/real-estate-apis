@@ -1,3 +1,4 @@
+import { clientAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Staff } from "@/lib/models/users/Staff";
 import { Client } from "@/lib/models/super-admin/Client";
@@ -10,7 +11,7 @@ import {
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -19,8 +20,9 @@ const isValidObjectId = (id: string): boolean => {
 
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -33,6 +35,8 @@ export const DELETE = async (req: NextRequest) => {
     const { searchParams } = new URL(req.url);
     const staffId = searchParams.get("staffId");
     const clientId = searchParams.get("clientId");
+    const denied = clientAccessError(session, clientId);
+    if (denied) return denied;
 
     // Validate required parameters
     if (!staffId) {
@@ -185,7 +189,10 @@ export const DELETE = async (req: NextRequest) => {
         const axios = require('axios');
         const domain = process.env.NEXT_PUBLIC_DOMAIN || 'http://localhost:8080';
         
-        await axios.post(`${domain}/api/activity`, activityPayload);
+        await axios.post(`${domain}/api/activity`, activityPayload, {
+            // Pass the caller's token so the activity is recorded as them
+            headers: { Authorization: req.headers.get("authorization") ?? "" },
+          });
         console.log(`✅ Staff removal activity logged for ${result.staffName}`);
       } catch (activityError) {
         console.error('❌ Error logging staff removal activity:', activityError);

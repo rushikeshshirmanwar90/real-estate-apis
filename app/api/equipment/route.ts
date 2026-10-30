@@ -1,3 +1,4 @@
+import { projectAccessError, recordAccessError, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
@@ -10,7 +11,7 @@ import {
   safeRedisDelCache,
   safeRedisKeysCache 
 } from "@/lib/utils/redis-helpers";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 
 // Import models AFTER connecting to database
@@ -49,8 +50,9 @@ async function checkStaffProjectAccess(req: NextRequest, projectId: string): Pro
 // GET - Retrieve equipment entries
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -69,6 +71,8 @@ export const GET = async (req: NextRequest) => {
     const category = searchParams.get("category");
     const status = searchParams.get("status");
     const costType = searchParams.get("costType");
+    const denied = id ? await recordAccessError(session, Equipment, id) : await scopeAccessError(session, { projectId });
+    if (denied) return denied;
     // Get specific equipment by ID
     if (id) {
       if (!isValidObjectId(id)) {
@@ -150,8 +154,9 @@ export const GET = async (req: NextRequest) => {
 // POST - Create new equipment entry
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -175,6 +180,8 @@ export const POST = async (req: NextRequest) => {
     if (!isValidObjectId(data.projectId)) {
       return errorResponse("Invalid project ID format", 400);
     }
+    const denied = await projectAccessError(session, data.projectId);
+    if (denied) return denied;
     if (!isValidObjectId(data.projectSectionId)) {
       return errorResponse("Invalid project section ID format", 400);
     }
@@ -353,8 +360,9 @@ export const POST = async (req: NextRequest) => {
 // PUT - Update equipment entry
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -374,6 +382,8 @@ export const PUT = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid equipment ID format", 400);
     }
+    const denied = await recordAccessError(session, Equipment, id);
+    if (denied) return denied;
     const updateData = await req.json();
     // Validate numeric fields if provided
     if (updateData.quantity !== undefined && updateData.quantity <= 0) {
@@ -442,8 +452,9 @@ export const PUT = async (req: NextRequest) => {
 // DELETE - Delete equipment entry
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
@@ -463,6 +474,8 @@ export const DELETE = async (req: NextRequest) => {
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid equipment ID format", 400);
     }
+    const denied = await recordAccessError(session, Equipment, id);
+    if (denied) return denied;
     
     // Get the equipment before deleting to calculate cost to subtract
     const equipment = await Equipment.findById(id);

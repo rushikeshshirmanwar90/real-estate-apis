@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, projectAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
@@ -8,11 +10,20 @@ import { NextRequest } from "next/server";
 // Returns the list of low-stock materialKeys the user has dismissed for this
 // project. Shared across every device viewing the project.
 export const GET = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     if (!projectId) {
       return errorResponse("Project ID is required", 400);
@@ -41,6 +52,13 @@ export const GET = async (req: NextRequest) => {
 // body: { projectId: string, materialKey: string }
 // Adds materialKey to the project's ignore list (no-op if already present).
 export const POST = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
@@ -52,6 +70,8 @@ export const POST = async (req: NextRequest) => {
     }
 
     const { projectId, materialKey } = body;
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     if (!projectId) {
       return errorResponse("Project ID is required", 400);
@@ -85,12 +105,21 @@ export const POST = async (req: NextRequest) => {
 // DELETE /api/material/ignore?projectId=...&materialKey=...
 // Removes materialKey from the ignore list (undo).
 export const DELETE = async (req: NextRequest) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
 
     const { searchParams } = new URL(req.url);
     const projectId = searchParams.get("projectId");
     const materialKey = searchParams.get("materialKey");
+    const denied = await projectAccessError(session, projectId);
+    if (denied) return denied;
 
     if (!projectId) {
       return errorResponse("Project ID is required", 400);

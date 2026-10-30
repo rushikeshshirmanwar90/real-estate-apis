@@ -1,3 +1,5 @@
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, scopeAccessError } from "@/lib/auth/session";
 import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
@@ -42,6 +44,13 @@ type UserInfo = {
 };
 
 export const GET = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   return NextResponse.json(
     {
       success: false,
@@ -52,11 +61,20 @@ export const GET = async (req: NextRequest | Request) => {
 };
 
 export const POST = async (req: NextRequest | Request) => {
+  let session: Session;
+  try {
+    session = await checkValidClient(req, ["user", "superadmin"]);
+  } catch (error) {
+    return authErrorResponse(error);
+  }
+
   try {
     await connect();
     const body = await req.json();
     const { projectId, materialUsages, miniSectionId, clientId, user, phaseId, phaseName } = body;
     let { sectionId } = body;
+    const denied = await scopeAccessError(session, { clientId, projectId });
+    if (denied) return denied;
 
     console.log('\n========================================');
     console.log('📝 BATCH MATERIAL USAGE API - REQUEST RECEIVED');

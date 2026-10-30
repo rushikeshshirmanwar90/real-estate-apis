@@ -1,3 +1,4 @@
+import { docAccessError } from "@/lib/auth/session";
 import { Building } from "@/lib/models/Building";
 import connect from "@/lib/db";
 import mongoose from "mongoose";
@@ -5,12 +6,13 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient, authStatus } from "@/lib/auth";
+import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -52,6 +54,8 @@ export const POST = async (req: NextRequest) => {
     if (!building) {
       return errorResponse("Building not found", 404);
     }
+    const denied = await docAccessError(session, building);
+    if (denied) return denied;
     // Find the floor
     const floor = building.floors.id(body.floorId);
     if (!floor) {
@@ -203,8 +207,9 @@ export const POST = async (req: NextRequest) => {
 };
 export const DELETE = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -226,6 +231,8 @@ export const DELETE = async (req: NextRequest) => {
     if (!building) {
       return errorResponse("Building not found", 404);
     }
+    const denied = await docAccessError(session, building);
+    if (denied) return denied;
     // Find the floor
     const floor = building.floors.id(floorId);
     if (!floor) {
@@ -269,8 +276,9 @@ export const DELETE = async (req: NextRequest) => {
 };
 export const PUT = async (req: NextRequest) => {
   // Bearer token authentication
+  let session: Session;
   try {
-    await checkValidClient(req);
+    session = await checkValidClient(req, ["user", "superadmin"]);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
@@ -293,6 +301,8 @@ export const PUT = async (req: NextRequest) => {
     if (!building) {
       return errorResponse("Building not found", 404);
     }
+    const denied = await docAccessError(session, building);
+    if (denied) return denied;
     // Find the floor
     const floor = building.floors.id(floorId);
     if (!floor) {
