@@ -56,9 +56,11 @@ const MaterialUsedSchema = new Schema(
       required: true,
       min: 0,
     },
+    // Optional: usage imported from Excel without a section counts for the whole project.
+    // Usage recorded in the app always has a section.
     sectionId: {
       type: String,
-      required: true,
+      required: false,
     },
     miniSectionId: {
       type: String,

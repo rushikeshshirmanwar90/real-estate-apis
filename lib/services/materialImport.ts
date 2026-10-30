@@ -84,8 +84,9 @@ export interface PlannedUsed {
   qnt: number;
   perUnitCost: number;
   totalCost: number;
-  sectionId: string;
-  sectionName: string;
+  // Blank when the Usage row has no section: counted for the whole project
+  sectionId?: string;
+  sectionName?: string;
   miniSectionId?: string;
   miniSectionName?: string;
   addedAt: Date;
@@ -307,20 +308,33 @@ export const planImport = (input: {
     else if (Number.isNaN(qnt) || qnt <= 0) err("Usage", r.row, "Quantity used must be a number greater than 0.");
     if (date === "invalid") err("Usage", r.row, "Date used isn't a date. Use DD/MM/YYYY.");
 
+    // Section and mini-section are optional. Without a section the usage counts
+    // for the project as a whole; a mini-section alone implies its section.
     let section: SectionInfo | undefined;
-    if (!sectionName) {
-      err("Usage", r.row, "Section is missing. Pick one from the list.");
-    } else {
+    let sectionOk = true;
+    if (sectionName) {
       section = sectionsByName.get(norm(sectionName));
-      if (!section) err("Usage", r.row, `Section "${sectionName}" doesn't exist in this project.`);
+      if (!section) {
+        err("Usage", r.row, `Section "${sectionName}" doesn't exist in this project.`);
+        sectionOk = false;
+      }
     }
 
     let mini: MiniSectionInfo | undefined;
-    if (miniName && section) {
-      mini = (input.miniSections ?? []).find(
-        (m) => m.sectionId === section!.sectionId && norm(m.name) === norm(miniName)
+    if (miniName && sectionOk) {
+      const matches = (input.miniSections ?? []).filter(
+        (m) => norm(m.name) === norm(miniName) && (!section || m.sectionId === section.sectionId)
       );
-      if (!mini) err("Usage", r.row, `Mini-section "${miniName}" doesn't exist in section "${section.name}".`);
+      if (matches.length === 1) {
+        mini = matches[0];
+        section = section ?? (input.sections ?? []).find((s) => s.sectionId === mini!.sectionId);
+      } else if (section) {
+        err("Usage", r.row, `Mini-section "${miniName}" doesn't exist in section "${section.name}".`);
+      } else if (matches.length > 1) {
+        err("Usage", r.row, `Mini-section "${miniName}" is in more than one section. Fill in the Section column too.`);
+      } else {
+        err("Usage", r.row, `Mini-section "${miniName}" doesn't exist in this project.`);
+      }
     }
     if (errors.length > before) continue;
 
@@ -354,8 +368,7 @@ export const planImport = (input: {
         qnt: take,
         perUnitCost: p.perUnitCost,
         totalCost: round2(take * p.perUnitCost),
-        sectionId: section!.sectionId,
-        sectionName: section!.name,
+        ...(section ? { sectionId: section.sectionId, sectionName: section.name } : {}),
         ...(mini ? { miniSectionId: mini.id, miniSectionName: mini.name } : {}),
         addedAt: date instanceof Date ? date : now,
       });

@@ -100,20 +100,46 @@ describe("planImport", () => {
     expect(p.errors[0]).toMatchObject({ sheet: "Usage", row: 2, message: expect.stringContaining("isn't on the Purchases sheet") });
   });
 
-  it("checks sections and mini-sections", () => {
+  it("checks sections and mini-sections when given", () => {
     const p = plan(
       [cement(2)],
       [
         { row: 2, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1, section: "Tower Z" },
         { row: 3, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1, section: "Row Houses", miniSection: "Ground Floor" },
-        { row: 4, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1 },
+        { row: 4, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1, miniSection: "Terrace" },
       ]
     );
     expect(p.errors.map((e) => [e.row, e.message])).toEqual([
       [2, 'Section "Tower Z" doesn\'t exist in this project.'],
       [3, 'Mini-section "Ground Floor" doesn\'t exist in section "Row Houses".'],
-      [4, "Section is missing. Pick one from the list."],
+      [4, 'Mini-section "Terrace" doesn\'t exist in this project.'],
     ]);
+  });
+
+  it("section, mini-section and date are optional", () => {
+    const p = plan([cement(2)], [{ row: 2, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 10 }]);
+    expect(p.errors).toEqual([]);
+    expect(p.used).toHaveLength(1);
+    expect(p.used[0].sectionId).toBeUndefined();
+    expect(p.used[0].miniSectionId).toBeUndefined();
+    expect(p.used[0].addedAt).toEqual(now);
+  });
+
+  it("fills in the section from a mini-section that exists in one section only", () => {
+    const p = plan([cement(2)], [{ row: 2, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1, miniSection: "first floor" }]);
+    expect(p.errors).toEqual([]);
+    expect(p.used[0]).toMatchObject({ sectionId: "sec-a", sectionName: "Building A", miniSectionId: "mini-2" });
+  });
+
+  it("asks for the section when a mini-section name is in several sections", () => {
+    const p = planImport({
+      purchases: [cement(2)],
+      usages: [{ row: 2, material: "Cement", unit: "bags", specs: "Brand: UltraTech, Grade: 53", quantity: 1, miniSection: "Ground Floor" }],
+      sections,
+      miniSections: [...miniSections, { id: "mini-9", name: "Ground Floor", sectionId: "sec-b" }],
+      now,
+    });
+    expect(p.errors[0].message).toBe('Mini-section "Ground Floor" is in more than one section. Fill in the Section column too.');
   });
 
   it("reports every problem on a purchase row", () => {

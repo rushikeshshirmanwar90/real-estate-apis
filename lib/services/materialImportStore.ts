@@ -138,7 +138,7 @@ export const applyImport = async (ctx: ProjectContext, plan: ImportPlan, fileNam
     ];
     const groups = new Map<string, typeof plan.used>();
     for (const u of plan.used) {
-      const key = `${u.sectionId}|${u.miniSectionId ?? ""}`;
+      const key = `${u.sectionId ?? ""}|${u.miniSectionId ?? ""}`;
       groups.set(key, [...(groups.get(key) ?? []), u]);
     }
     for (const items of groups.values()) {
@@ -146,8 +146,7 @@ export const applyImport = async (ctx: ProjectContext, plan: ImportPlan, fileNam
       activities.push({
         ...base,
         activity: "used",
-        sectionId: first.sectionId,
-        sectionName: first.sectionName,
+        ...(first.sectionId ? { sectionId: first.sectionId, sectionName: first.sectionName } : {}),
         ...(first.miniSectionId ? { miniSectionId: first.miniSectionId, miniSectionName: first.miniSectionName } : {}),
         message: `Usage imported from Excel${fileName ? ` (${fileName})` : ""}`,
         materials: items.map((u) => ({ ...stripNames(u), cost: u.totalCost, importId })),
