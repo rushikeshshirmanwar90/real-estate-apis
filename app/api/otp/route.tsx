@@ -14,7 +14,8 @@ import { withBearerAuth } from "@/lib/middleware/bearer-auth";
  * Does NOT store OTP in database - verification happens on client side
  * NO AUTH REQUIRED - used during registration/login process
  */
-export async function POST(req: NextRequest) {
+// Partner apps only. xsite uses /api/auth/otp/send, where the server creates the code.
+export const POST = withBearerAuth(async (req: NextRequest) => {
   try {
 
 
@@ -86,4 +87,4 @@ export async function POST(req: NextRequest) {
     logger.error("Error in OTP endpoint", error);
     return errorResponse("Failed to send OTP", 500);
   }
-}
+}, ["partner"]);

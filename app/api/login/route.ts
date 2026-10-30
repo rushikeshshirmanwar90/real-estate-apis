@@ -1,7 +1,7 @@
 import connect from "@/lib/db";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
 import * as bcrypt from "bcrypt";
-import * as jwt from "jsonwebtoken";
+import { signUserToken } from "@/lib/auth/session";
 import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail, sanitizeInput } from "@/lib/utils/validation";
@@ -290,23 +290,12 @@ export const POST = async (req: NextRequest) => {
       return errorResponse("Error loading account details", 500);
     }
 
-    // Generate JWT token
-    const jwtSecret = process.env.JWT_SECRET;
-    if (!jwtSecret) {
+    // Login token: never expires; revoked by bumping LoginUser.tokenVersion
+    if (!process.env.JWT_SECRET) {
       logger.error("JWT_SECRET not configured");
       return errorResponse("Server configuration error", 500);
     }
-
-    const tokenPayload = {
-      id: userDetails.id,
-      email: userDetails.email,
-      userType: loginUser.userType,
-      clientId: clientId,
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60), // 24 hours
-    };
-
-    const jwtToken = jwt.sign(tokenPayload, jwtSecret, { algorithm: 'HS256' });
+    const jwtToken = signUserToken(loginUser);
 
     // Success response
     const responseData = {

@@ -36,14 +36,6 @@ export const POST = async (req: NextRequest | Request) => {
             })
         }
 
-        if (password != user.password) {
-            return NextResponse.json({
-                message: "Invalid password"
-            }, {
-                status: 403
-            })
-        }
-
         // Success response - you might want to add more user data or a token here
         return NextResponse.json({
             message: "User logged in successfully",
