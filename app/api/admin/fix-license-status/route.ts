@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { logger } from "@/lib/utils/logger";
 
 /**
@@ -18,7 +18,7 @@ export const POST = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
 
   try {

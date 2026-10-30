@@ -1,56 +1,41 @@
 // lib/auth.ts
-import { NextRequest } from "next/server";
+// Entry points used by route handlers. The logic lives in lib/auth/session.ts.
+import {
+  ALL_CALLERS,
+  authStatus,
+  getSession,
+  type Session,
+  type SessionKind,
+} from "@/lib/auth/session";
 
-export const verifyAuthorization = (req: Request): { valid: boolean; message?: string } => {
-  const authHeader = req.headers.get("authorization");
+export { authStatus };
+export type { Session, SessionKind };
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+/**
+ * Authenticates the request and returns who is calling.
+ * By default accepts signed-in users, the super-admin panel and partner apps;
+ * pass `allow` to narrow it. Throws AuthError — use authStatus(error) for the HTTP status.
+ */
+export const checkValidClient = async (
+  req: Request,
+  allow: SessionKind[] = ALL_CALLERS
+): Promise<Session> => getSession(req, allow);
+
+/**
+ * Non-throwing variant kept for older routes.
+ */
+export const verifyAuthorization = async (
+  req: Request,
+  allow: SessionKind[] = ALL_CALLERS
+): Promise<{ valid: boolean; message?: string; status?: number; session?: Session }> => {
+  try {
+    const session = await getSession(req, allow);
+    return { valid: true, session };
+  } catch (error) {
     return {
       valid: false,
-      message: "Authorization header missing or malformed",
+      message: error instanceof Error ? error.message : "Unauthorized",
+      status: authStatus(error),
     };
   }
-
-  const token = authHeader.split(" ")[1];
-  const validToken = process.env.API_BEARER_TOKEN;
-
-  if (token !== validToken) {
-    return { valid: false, message: "Invalid or expired token" };
-  }
-
-  return { valid: true };
-};
-
-export const checkValidClient = async (req: NextRequest | Request) => {
-  const authHeader = req.headers.get("authorization");
-  console.log('🔍 DEBUG: Authorization header:', authHeader);
-
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.log('❌ DEBUG: Missing or malformed authorization header');
-    throw new Error("Authorization header missing or malformed");
-  }
-
-  const token = authHeader.substring(7);
-  const validToken = process.env.API_BEARER_TOKEN;
-
-  console.log('🔍 DEBUG: Received token:', token);
-  console.log('🔍 DEBUG: Expected token:', validToken);
-  console.log('🔍 DEBUG: Tokens match:', token === validToken);
-  console.log('🔍 DEBUG: Received token length:', token?.length);
-  console.log('🔍 DEBUG: Expected token length:', validToken?.length);
-
-  if (!validToken) {
-    console.log('❌ DEBUG: API_BEARER_TOKEN not set in environment');
-    throw new Error("Server configuration error - API_BEARER_TOKEN not set");
-  }
-
-  if (token !== validToken) {
-    console.log('❌ DEBUG: Token mismatch!');
-    console.log('❌ DEBUG: Received bytes:', Buffer.from(token).toString('hex').substring(0, 100));
-    console.log('❌ DEBUG: Expected bytes:', Buffer.from(validToken).toString('hex').substring(0, 100));
-    throw new Error("Invalid or expired token");
-  }
-
-  console.log('✅ DEBUG: API access granted - valid Bearer token provided');
-  return;
 };

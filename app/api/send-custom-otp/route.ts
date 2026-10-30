@@ -7,7 +7,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidEmail } from "@/lib/utils/validation";
 
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 /**
  * Send Custom OTP Endpoint
@@ -20,7 +20,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

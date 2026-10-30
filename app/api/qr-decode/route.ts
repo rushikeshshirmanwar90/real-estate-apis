@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Jimp } from "jimp";
 // @ts-ignore - jsqr doesn't have TypeScript definitions
 import jsQR from "jsqr";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
@@ -11,7 +11,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

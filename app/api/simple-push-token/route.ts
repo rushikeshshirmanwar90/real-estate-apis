@@ -3,7 +3,7 @@ import { PushToken } from "@/lib/models/PushToken";
 import { Staff } from "@/lib/models/users/Staff";
 import { Client } from "@/lib/models/super-admin/Client";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 // Simple push token registration with clientId support
@@ -14,7 +14,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -164,7 +164,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { LoginUser } from "@/lib/models/Xsite/LoginUsers";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { Types } from "mongoose";
 import bcrypt from "bcrypt";
 
@@ -92,7 +92,7 @@ export const GET = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -162,7 +162,7 @@ export const POST = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

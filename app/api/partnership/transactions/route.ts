@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
@@ -22,7 +22,7 @@ const MAX_LIMIT = 200;
 const unauthorized = (error: unknown) =>
   NextResponse.json(
     { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-    { status: 401 }
+    { status: authStatus(error) }
   );
 
 // GET /api/partnership/transactions?partnershipId=&page=1&limit=50&includeVoid=false

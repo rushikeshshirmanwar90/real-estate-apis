@@ -36,9 +36,9 @@ function withPageSize(html: string): string {
  * every network request refused, so the page can only show what it contains.
  */
 export async function POST(req: NextRequest) {
-  const auth = verifyAuthorization(req);
+  const auth = await verifyAuthorization(req, ["user", "superadmin"]);
   if (!auth.valid) {
-    return NextResponse.json({ error: auth.message ?? "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: auth.message ?? "Unauthorized" }, { status: auth.status ?? 401 });
   }
 
   let html: string;

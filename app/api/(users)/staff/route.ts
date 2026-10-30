@@ -8,7 +8,7 @@ import { errorResponse, successResponse } from "@/lib/models/utils/API";
 import { requireValidClient } from "@/lib/utils/client-validation";
 import bcrypt from "bcrypt";
 import { isStrongPassword } from "@/lib/utils/validation";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 // Helper function to validate MongoDB ObjectId
 const isValidObjectId = (id: string): boolean => {
@@ -22,7 +22,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -168,7 +168,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -405,7 +405,7 @@ export const PUT = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -520,7 +520,7 @@ export const DELETE = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

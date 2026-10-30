@@ -5,7 +5,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 // GET all Leads records or a specific one by ID
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
@@ -14,7 +14,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -69,7 +69,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -117,7 +117,7 @@ export const PUT = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -162,7 +162,7 @@ export const DELETE = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

@@ -22,6 +22,7 @@ export interface ILoginUser extends Document {
   email: string;
   password?: string;
   userType: LoginUserType;
+  tokenVersion?: number;
 }
 
 const LoginUserSchema = new Schema<ILoginUser>({
@@ -39,6 +40,12 @@ const LoginUserSchema = new Schema<ILoginUser>({
     type: String,
     required: true,
     enum: LOGIN_USER_TYPES,
+  },
+  // Login tokens never expire. Bumping this number (on password change/reset)
+  // invalidates every token issued before, on all devices.
+  tokenVersion: {
+    type: Number,
+    default: 0,
   },
 });
 

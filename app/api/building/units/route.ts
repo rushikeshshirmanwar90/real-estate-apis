@@ -5,14 +5,14 @@ import { NextRequest } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -206,7 +206,7 @@ export const DELETE = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -272,7 +272,7 @@ export const PUT = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

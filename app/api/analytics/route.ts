@@ -8,14 +8,14 @@ import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { requireValidClient } from "@/lib/utils/client-validation";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 
 // ─── POST /api/material/bill-upload ──────────────────────────────────────────
@@ -65,7 +65,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return errorResponse(
       error instanceof Error ? error.message : "Unauthorized",
-      401
+      authStatus(error)
     );
   }
 

@@ -4,7 +4,7 @@ import { Staff } from "@/lib/models/users/Staff";
 import { Projects } from "@/lib/models/Project";
 import { syncStaffProjectAssignments } from "@/lib/utils/staffProjectUtils";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
@@ -13,7 +13,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -46,7 +46,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

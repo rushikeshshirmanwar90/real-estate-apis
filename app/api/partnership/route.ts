@@ -1,5 +1,5 @@
 import connect from "@/lib/db";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { NextRequest, NextResponse } from "next/server";
 import { Model, Types } from "mongoose";
@@ -47,7 +47,7 @@ const MAX_AMOUNT = 1_000_000_000_000;
 const unauthorized = (error: unknown) =>
   NextResponse.json(
     { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-    { status: 401 }
+    { status: authStatus(error) }
   );
 
 // Blank means "nothing yet"; anything else has to be a sane, non-negative amount

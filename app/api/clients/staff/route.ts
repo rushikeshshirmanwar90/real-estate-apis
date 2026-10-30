@@ -4,7 +4,7 @@ import { Staff } from "@/lib/models/users/Staff";
 import { NextRequest } from "next/server";
 import { Types } from "mongoose";
 import { errorResponse, successResponse } from "@/lib/models/utils/API";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -24,7 +24,7 @@ export const GET = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

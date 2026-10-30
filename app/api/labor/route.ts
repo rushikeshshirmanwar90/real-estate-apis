@@ -13,7 +13,7 @@ import {
   safeRedisDelCache 
 } from "@/lib/utils/redis-helpers";
 
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { errorResponse } from "@/lib/utils/api-response";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
 import {
@@ -55,7 +55,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
   
@@ -503,7 +503,7 @@ export const GET = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -700,7 +700,7 @@ export const PUT = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -879,7 +879,7 @@ export const DELETE = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

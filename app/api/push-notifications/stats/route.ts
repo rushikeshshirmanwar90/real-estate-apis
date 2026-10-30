@@ -1,7 +1,7 @@
 import connect from "@/lib/db";
 import { PushNotificationService } from "@/lib/services/pushNotificationService";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET: Get push notification statistics
@@ -12,7 +12,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -46,7 +46,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

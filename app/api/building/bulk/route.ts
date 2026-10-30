@@ -6,7 +6,7 @@ import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
 import { logger } from "@/lib/utils/logger";
 import { logActivity, extractUserInfo } from "@/lib/utils/activity-logger";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 // POST: Bulk operations for floors and units
 export const POST = async (req: NextRequest) => {
@@ -14,7 +14,7 @@ export const POST = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

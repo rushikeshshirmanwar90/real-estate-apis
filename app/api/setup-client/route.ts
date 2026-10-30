@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
 import { Admin } from "@/lib/models/users/Admin";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { Types } from "mongoose";
 
 const SHIVAI_CLIENT_ID = "69600d70cd1b223a43790497";
@@ -14,7 +14,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -83,7 +83,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

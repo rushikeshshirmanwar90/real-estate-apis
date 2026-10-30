@@ -2,7 +2,7 @@ import connect from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { logger } from "@/lib/utils/logger";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import mongoose from "mongoose";
 
 // POST - Reset Equipment model and clear cache
@@ -13,7 +13,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -54,7 +54,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

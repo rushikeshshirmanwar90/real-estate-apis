@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/db";
 import { Customer } from "@/lib/models/users/Customer";
 import { Building } from "@/lib/models/Building";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Helper function to validate MongoDB ObjectId
@@ -46,7 +46,7 @@ export const GET = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

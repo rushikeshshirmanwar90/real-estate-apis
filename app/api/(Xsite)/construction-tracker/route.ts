@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import connect from "@/lib/db";
 import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
 import { buildPhase, buildPhases, recalculatePhases, SLAB_WORK_SUB_PHASES } from "@/lib/utils/constructionTracker";
@@ -10,7 +10,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -77,7 +77,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -155,7 +155,7 @@ export const PUT = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

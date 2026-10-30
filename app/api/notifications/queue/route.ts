@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { NotificationQueue } from "@/lib/middleware/notificationMiddleware";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 // POST: Add notification to queue for batch processing
 export const POST = async (req: NextRequest) => {
   // Bearer token authentication
@@ -10,7 +10,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -91,7 +91,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -118,7 +118,7 @@ export const DELETE = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

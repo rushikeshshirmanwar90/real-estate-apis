@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { successResponse } from "@/lib/utils/api-response";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { 
   safeRedisGetCache, 
   safeRedisSetCache, 
@@ -398,7 +398,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

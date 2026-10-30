@@ -4,7 +4,7 @@ import { Equipment } from "@/lib/models/Xsite/Equipment";
 import { NextRequest, NextResponse } from "next/server";
 import { errorResponse, successResponse } from "@/lib/utils/api-response";
 import { isValidObjectId } from "@/lib/utils/validation";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 // GET - Debug project and equipment data
 export const GET = async (req: NextRequest) => {
@@ -14,7 +14,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

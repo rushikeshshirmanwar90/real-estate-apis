@@ -3,7 +3,7 @@ import { successResponse, errorResponse } from "@/lib/utils/api-response";
 import { NotificationMetrics, NotificationQueue } from "@/lib/middleware/notificationMiddleware";
 import { PushNotificationService } from "@/lib/services/pushNotificationService";
 import connect from "@/lib/db";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 // GET: Get notification metrics and system status
 export const GET = async (req: NextRequest) => {
@@ -13,7 +13,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
@@ -108,7 +108,7 @@ export const POST = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

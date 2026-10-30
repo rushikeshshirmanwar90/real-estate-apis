@@ -6,7 +6,7 @@ import { Customer } from "@/lib/models/users/Customer";
 import { Booking } from "@/lib/models/Shivai/Booking";
 import { Registry } from "@/lib/models/Shivai/Registry";
 import { PaymentSchedule } from "@/lib/models/Shivai/Payment";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { Types } from "mongoose";
 
 // Property assignment interface
@@ -86,7 +86,7 @@ export const GET = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {
@@ -186,7 +186,7 @@ export const POST = async (req: NextRequest) => {
   try {
     await checkValidClient(req);
   } catch (error) {
-    return errorResponse(error instanceof Error ? error.message : "Unauthorized", 401);
+    return errorResponse(error instanceof Error ? error.message : "Unauthorized", authStatus(error));
   }
   
   try {

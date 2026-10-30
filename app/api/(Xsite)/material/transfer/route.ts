@@ -2,7 +2,7 @@ import connect from "@/lib/db";
 import { Projects } from "@/lib/models/Project";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 
 type Specs = Record<string, unknown>;
 
@@ -24,7 +24,7 @@ export const POST = async (req: NextRequest | Request) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 

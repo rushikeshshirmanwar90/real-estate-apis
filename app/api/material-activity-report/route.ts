@@ -3,7 +3,7 @@ import { MaterialActivity } from "@/lib/models/Xsite/materials-activity";
 import { Projects } from "@/lib/models/Project";
 import { MiniSection } from "@/lib/models/MiniSection";
 import { Section } from "@/lib/models/Section";
-import { checkValidClient } from "@/lib/auth";
+import { checkValidClient, authStatus } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const GET = async (req: NextRequest) => {
@@ -13,7 +13,7 @@ export const GET = async (req: NextRequest) => {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: error instanceof Error ? error.message : "Unauthorized" },
-      { status: 401 }
+      { status: authStatus(error) }
     );
   }
 
