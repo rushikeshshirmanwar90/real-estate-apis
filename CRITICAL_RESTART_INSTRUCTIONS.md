@@ -7,7 +7,7 @@ You're getting 401 errors because **your backend server is still running the OLD
 ## ✅ Verified Working
 
 I've confirmed that:
-- ✅ The bearer token in `.env` is correct: `eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.`
+- ✅ The bearer token in `.env` is correct: `<API_TOKEN_REDACTED>`
 - ✅ All 126 API endpoints have been updated with `checkValidClient`
 - ✅ The mobile app is sending the correct bearer token
 - ✅ The authentication logic is correct
@@ -67,9 +67,9 @@ npm run dev
 When you make a request from the mobile app, you should now see detailed debug logs:
 
 ```
-🔍 DEBUG: Authorization header: Bearer eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
-🔍 DEBUG: Received token: eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
-🔍 DEBUG: Expected token: eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
+🔍 DEBUG: Authorization header: Bearer <API_TOKEN_REDACTED>
+🔍 DEBUG: Received token: <API_TOKEN_REDACTED>
+🔍 DEBUG: Expected token: <API_TOKEN_REDACTED>
 🔍 DEBUG: Tokens match: true
 ✅ DEBUG: API access granted - valid Bearer token provided
 ```
@@ -80,7 +80,7 @@ When you make a request from the mobile app, you should now see detailed debug l
 
 ```bash
 # In a NEW terminal (keep the server running), test with the bearer token:
-curl -H "Authorization: Bearer eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9." \
+curl -H "Authorization: Bearer <API_TOKEN_REDACTED>" \
      http://localhost:3000/api/clients?id=69db423932f75fa039cfb76f
 ```
 
@@ -115,8 +115,8 @@ node test-bearer-auth.js
 
 #### Scenario 1: Token Mismatch
 ```
-🔍 DEBUG: Received token: eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
-🔍 DEBUG: Expected token: eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
+🔍 DEBUG: Received token: <API_TOKEN_REDACTED>
+🔍 DEBUG: Expected token: <API_TOKEN_REDACTED>
 🔍 DEBUG: Tokens match: false
 ❌ DEBUG: Token mismatch!
 ```

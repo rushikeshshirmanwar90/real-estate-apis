@@ -89,7 +89,7 @@ Watch for:
 3. **Test Labor API**:
 ```bash
 curl -X GET "http://10.153.255.56:8080/api/labor?entityType=project&entityId=69f66545fabc6698339e14b1" \
-  -H "Authorization: Bearer eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9."
+  -H "Authorization: Bearer <API_TOKEN_REDACTED>"
 ```
 
 4. **Check Other Endpoints**:

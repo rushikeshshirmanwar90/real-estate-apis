@@ -6,7 +6,7 @@ The following credentials were exposed in the repository and **MUST BE ROTATED I
 
 ### 1. Database Credentials
 - **MongoDB Username**: `exponentor_xsite`
-- **MongoDB Password**: `REuxsphoinkeensthor123`
+- **MongoDB Password**: `<MONGO_PASSWORD_REDACTED>`
 - **Action Required**: 
   1. Login to MongoDB server at `187.127.137.30:27017`
   2. Create a new user with a strong password
@@ -14,14 +14,14 @@ The following credentials were exposed in the repository and **MUST BE ROTATED I
   4. Delete the old user
 
 ### 2. Redis Password
-- **Old Password**: `Exponentor@Rushikesh@123`
+- **Old Password**: `<REDIS_PASSWORD_REDACTED>`
 - **Action Required**:
   1. Login to Redis server at `187.127.137.30:6379`
   2. Run: `CONFIG SET requirepass "NEW_STRONG_PASSWORD"`
   3. Update `.env.local` with new password
 
 ### 3. JWT Secret
-- **Old Secret**: `sjdlfjaorinaldjlf13\$zldsjflasjf`
+- **Old Secret**: `<JWT_SECRET_REDACTED>`
 - **Action Required**:
   1. Generate a new strong secret (minimum 32 characters)
   2. Use: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
@@ -39,14 +39,14 @@ The following credentials were exposed in the repository and **MUST BE ROTATED I
   5. Revoke the old app password
 
 ### 5. API Bearer Token
-- **Old Token**: `eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.`
+- **Old Token**: `<API_TOKEN_REDACTED>`
 - **Action Required**:
   1. Generate a new bearer token
   2. Use: `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`
   3. Update `.env.local` with new token
 
 ### 6. Authentication Code
-- **Old Code**: `Q7xLm92GpTCnB3sZgWAeYR8dMloK5Ujf8vrw02nl`
+- **Old Code**: `<AUTH_CODE_REDACTED>`
 - **Action Required**:
   1. Generate a new authentication code
   2. Use: `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`

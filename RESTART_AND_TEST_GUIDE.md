@@ -63,7 +63,7 @@ Status: 401
 
 ```bash
 # Test WITH bearer token (should return 200)
-curl -H "Authorization: Bearer eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9." \
+curl -H "Authorization: Bearer <API_TOKEN_REDACTED>" \
      http://localhost:3000/api/clients?id=69db423932f75fa039cfb76f
 
 # Test WITHOUT bearer token (should return 401)
@@ -108,13 +108,13 @@ curl http://localhost:3000/api/clients?id=69db423932f75fa039cfb76f
 grep API_BEARER_TOKEN real-estate-apis/.env
 
 # Should show:
-# API_BEARER_TOKEN=eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.
+# API_BEARER_TOKEN=<API_TOKEN_REDACTED>
 
 # Mobile app (axiosConfig.ts):
 grep BEARER_TOKEN Xsite/utils/axiosConfig.ts
 
 # Should show:
-# const BEARER_TOKEN = 'eyJhbGciOiJIUIsInRbaDas2344rr308ohagn0wer4XVCJ9.';
+# const BEARER_TOKEN = '<API_TOKEN_REDACTED>';
 ```
 
 **Check 3: Server logs**
