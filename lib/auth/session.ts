@@ -215,7 +215,7 @@ export const getSession = async (
   }
 
   if (payload?.typ === "superadmin") {
-    const superEmail = process.env.SUPER_ADMIN_EMAIL;
+    const superEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
     if (!superEmail || payload.email !== superEmail) {
       throw new AuthError("Invalid or expired token", 401);
     }
