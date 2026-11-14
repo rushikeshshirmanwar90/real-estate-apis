@@ -55,14 +55,22 @@ export async function POST(req: NextRequest) {
     // registered push tokens. The client-supplied list is only a fallback so
     // the route can't be used to push to arbitrary users.
     let finalRecipients: Array<{ userId: string }> =
-      await resolveRecipientsFromDB(clientId);
+      await resolveRecipientsFromDB(clientId, projectId);
 
     if (finalRecipients.length === 0 && Array.isArray(recipients)) {
       console.log(
-        "⚠️ No admin push tokens found in DB — falling back to client-supplied recipients (admins only)"
+        "⚠️ No admin push tokens found in DB — falling back to client-supplied recipients"
       );
+      const { getActivePartnerStaffIdsForProject } = await import(
+        "@/lib/services/partnershipService"
+      );
+      const partnerIds = projectId
+        ? new Set(await getActivePartnerStaffIdsForProject(projectId))
+        : new Set<string>();
       finalRecipients = recipients.filter(
-        (r: any) => r?.userId && r.userType === "admin"
+        (r: any) =>
+          r?.userId &&
+          (r.userType === "admin" || partnerIds.has(String(r.userId)))
       );
     }
 

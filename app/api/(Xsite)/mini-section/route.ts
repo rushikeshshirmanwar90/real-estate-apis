@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkValidClient, authStatus, type Session } from "@/lib/auth";
 import connect from "@/lib/db";
 import { MiniSection } from "@/lib/models/Xsite/mini-section";
+import { ConstructionTracker } from "@/lib/models/Xsite/construction-tracker";
+import { buildPhases } from "@/lib/utils/constructionTracker";
 
 export const GET = async (req: NextRequest) => {
   // Bearer token authentication
@@ -133,12 +135,25 @@ export const POST = async (req: NextRequest) => {
     const denied = await projectAccessError(session, body.projectDetails?.projectId ?? body.projectId);
     if (denied) return denied;
     
-    // Create new mini-section
+    const secId = body.mainSectionDetails?.sectionId || body.sectionId;
+    const projId = body.projectDetails?.projectId || body.projectId;
+    const projName = body.projectDetails?.projectName || body.projectName || '';
+    const secName = body.mainSectionDetails?.sectionName || body.sectionName || '';
+
+    // Create new mini-section with both root and nested fields populated
     const newMiniSection = new MiniSection({
       name: body.name,
       description: body.description || '',
-      projectDetails: body.projectDetails || {},
-      mainSectionDetails: body.mainSectionDetails || {},
+      sectionId: secId,
+      projectId: projId,
+      projectDetails: {
+        projectName: projName,
+        projectId: projId,
+      },
+      mainSectionDetails: {
+        sectionName: secName,
+        sectionId: secId,
+      },
       isCompleted: false,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -148,6 +163,23 @@ export const POST = async (req: NextRequest) => {
     const savedMiniSection = await newMiniSection.save();
     
     console.log('✅ Mini-section created successfully:', savedMiniSection._id);
+
+    // Auto-create initial ConstructionTracker for the new slab/mini-section
+    if (projId) {
+      try {
+        await ConstructionTracker.create({
+          miniSectionId: savedMiniSection._id.toString(),
+          projectId: projId.toString(),
+          projectName: projName,
+          sectionName: body.name,
+          overallProgress: 0,
+          phases: buildPhases(body.name),
+        });
+        console.log('✅ Construction tracker auto-created for mini-section:', savedMiniSection._id);
+      } catch (trackerError) {
+        console.warn('⚠️ Could not auto-create tracker for mini-section:', trackerError);
+      }
+    }
     
     return NextResponse.json(
       { 

@@ -1,12 +1,14 @@
 import { render } from "@react-email/components";
 import connect from "@/lib/db";
 import { Client } from "@/lib/models/super-admin/Client";
+import { Staff } from "@/lib/models/users/Staff";
 import { transporter } from "@/lib/transporter";
 import { PaymentCommitmentEmail } from "@/components/mail/PaymentCommitmentEmail";
 import {
   resolveRecipientsFromDB,
   sendNotificationsToRecipients,
 } from "@/lib/utils/notificationSender";
+import { getActiveStaffPartnersForProject } from "@/lib/services/partnershipService";
 import { PaymentCommitmentDoc } from "@/lib/models/Xsite/PaymentCommitment";
 import { logger } from "@/lib/utils/logger";
 
@@ -46,11 +48,13 @@ const notify = async (
       ? `${formatAmount(commitment.amountDue)} to ${who} was due ${commitmentDateLabel} and is still unpaid. Tap to set a new date.`
       : `${formatAmount(commitment.amountDue)} owed to ${who} for ${commitment.projectName} is due on ${commitmentDateLabel}.`;
 
+  const projectId = String(commitment.projectId);
+
   // ── Push ────────────────────────────────────────────────────────────────
   try {
-    const recipients = await resolveRecipientsFromDB(clientId);
+    const recipients = await resolveRecipientsFromDB(clientId, projectId);
     if (recipients.length === 0) {
-      logger.info(`No admin push tokens for client ${clientId} — skipping push`);
+      logger.info(`No admin or partner push tokens for client ${clientId}, project ${projectId} — skipping push`);
     } else {
       await sendNotificationsToRecipients({
         title,
@@ -78,9 +82,37 @@ const notify = async (
 
   // ── Email ───────────────────────────────────────────────────────────────
   try {
-    const client = await Client.findById(clientId).select("email name");
-    if (!client?.email) {
-      logger.info(`No email on file for client ${clientId} — skipping mail`);
+    const [client, partnerEntries] = await Promise.all([
+      Client.findById(clientId).select("email name"),
+      getActiveStaffPartnersForProject(projectId),
+    ]);
+
+    const emailSet = new Set<string>();
+    if (client?.email) emailSet.add(String(client.email).trim());
+
+    const missingEmailPartnerIds: string[] = [];
+    for (const partner of partnerEntries) {
+      if (partner.email) {
+        emailSet.add(String(partner.email).trim());
+      } else if (partner.partnerId) {
+        missingEmailPartnerIds.push(partner.partnerId);
+      }
+    }
+
+    if (missingEmailPartnerIds.length > 0) {
+      const partnerStaffDocs = await Staff.find({
+        _id: { $in: missingEmailPartnerIds },
+      })
+        .select("email")
+        .lean<{ email?: string }[]>();
+      for (const s of partnerStaffDocs) {
+        if (s?.email) emailSet.add(String(s.email).trim());
+      }
+    }
+
+    const toEmails = Array.from(emailSet).filter(Boolean);
+    if (toEmails.length === 0) {
+      logger.info(`No email on file for client ${clientId} or partners — skipping mail`);
       return;
     }
 
@@ -97,7 +129,7 @@ const notify = async (
 
     await transporter.sendMail({
       from: `"Xsite" <${process.env.SMTP_USER}>`,
-      to: client.email,
+      to: toEmails.join(", "),
       subject: title,
       html,
     });

@@ -52,6 +52,17 @@ type AddMaterialStockItem = {
   amountPaid?: number;
   billingDate?: string;
   billImages?: Array<{ url?: string; publicId?: string; uploadedAt?: string }> | null;
+  materialImages?: Array<{
+    url?: string;
+    publicId?: string;
+    uploadedAt?: string;
+    location?: {
+      latitude?: number;
+      longitude?: number;
+      address?: string;
+      timestamp?: string;
+    };
+  }> | null;
   // Required when paymentStatus is 'partial'/'unpaid' — when the vendor will
   // be paid. Drives the payment-commitment reminder/overdue notifications.
   commitmentDate?: string;
@@ -72,6 +83,7 @@ type MaterialSubdoc = {
   amountPaid?: number;
   billingDate?: Date;
   billImages?: BillImage[];
+  materialImages?: any[];
 };
 
 // Keeps only entries that carry a usable http(s) URL and drops duplicates, so a
@@ -97,6 +109,49 @@ const sanitizeBillImages = (raw: AddMaterialStockItem["billImages"]): BillImage[
   }
 
   return cleaned;
+};
+
+// Sanitizes material/site photos with embedded location
+const sanitizeMaterialImages = (raw: AddMaterialStockItem["materialImages"]): any[] => {
+  if (!Array.isArray(raw)) return [];
+
+  const seen = new Set<string>();
+  const cleaned: any[] = [];
+
+  for (const entry of raw) {
+    const url = typeof entry?.url === "string" ? entry.url.trim() : "";
+    if (!/^https?:\/\//i.test(url) || seen.has(url)) continue;
+    seen.add(url);
+
+    const uploadedAt = entry?.uploadedAt ? new Date(entry.uploadedAt) : undefined;
+    cleaned.push({
+      url,
+      ...(entry?.publicId ? { publicId: String(entry.publicId) } : {}),
+      uploadedAt:
+        uploadedAt && !Number.isNaN(uploadedAt.getTime()) ? uploadedAt : new Date(),
+      ...(entry?.location && typeof entry.location === 'object'
+        ? {
+            location: {
+              latitude: typeof entry.location.latitude === 'number' ? entry.location.latitude : undefined,
+              longitude: typeof entry.location.longitude === 'number' ? entry.location.longitude : undefined,
+              address: typeof entry.location.address === 'string' ? entry.location.address : undefined,
+              timestamp: typeof entry.location.timestamp === 'string' ? entry.location.timestamp : undefined,
+            },
+          }
+        : {}),
+    });
+  }
+
+  return cleaned;
+};
+
+// Union of two photo lists, first-seen URL wins (used when batches merge).
+const mergeMaterialImages = (existing: any[] = [], incoming: any[] = []): any[] => {
+  const byUrl = new Map<string, any>();
+  for (const img of [...existing, ...incoming]) {
+    if (img?.url && !byUrl.has(img.url)) byUrl.set(img.url, img);
+  }
+  return Array.from(byUrl.values());
 };
 
 // Union of two bill lists, first-seen URL wins (used when batches merge).
@@ -453,6 +508,7 @@ export const POST = async (req: NextRequest) => {
         amountPaid,
         billingDate: rawBillingDate,
         billImages: rawBillImages,
+        materialImages: rawMaterialImages,
         commitmentDate: rawCommitmentDate,
         paidBy,
       } = item as AddMaterialStockItem;
@@ -460,6 +516,9 @@ export const POST = async (req: NextRequest) => {
 
       // Optional vendor bill photos from the payment step.
       const billImages = sanitizeBillImages(rawBillImages);
+
+      // Optional site / material photos with location from the photo step.
+      const materialImages = sanitizeMaterialImages(rawMaterialImages);
 
       // Optional vendor bill date — only stored when the caller sent a valid date.
       let billingDate: Date | undefined;
@@ -626,6 +685,10 @@ export const POST = async (req: NextRequest) => {
           existing.billImages = mergeBillImages(existing.billImages, billImages);
         }
 
+        if (materialImages.length > 0) {
+          existing.materialImages = mergeMaterialImages(existing.materialImages, materialImages);
+        }
+
         project.spent       = (project.spent || 0) + totalCost;
 
         const saved = await project.save();
@@ -725,6 +788,7 @@ export const POST = async (req: NextRequest) => {
         ...(billingDate ? { billingDate } : {}),
         // Left undefined when no bill was uploaded, so the UI shows no bill section.
         ...(billImages.length > 0 ? { billImages } : {}),
+        ...(materialImages.length > 0 ? { materialImages } : {}),
       };
 
       const updatedProject = await Projects.findByIdAndUpdate(
@@ -842,20 +906,34 @@ export const POST = async (req: NextRequest) => {
           // Create materials array for activity
           const materials = projectResults.map(result => {
             const billImages = sanitizeBillImages(result.input.billImages);
+            const materialImages = sanitizeMaterialImages(result.input.materialImages);
+            // This purchase's own numbers, taken from the request. When the purchase was
+            // merged into an existing batch, result.material is the merged batch, whose
+            // qnt/totalCost/billingDate cover earlier purchases too.
+            const purchaseQnt = Number(result.input.qnt) || Number(result.material?.qnt) || 0;
+            const purchaseRate = Number(result.input.perUnitCost) || Number(result.material?.perUnitCost) || 0;
+            const purchaseCost = purchaseQnt * purchaseRate;
+            const purchaseBillingDate = result.input.billingDate ? new Date(result.input.billingDate) : undefined;
+            const hasPayment = result.input.paymentStatus !== undefined || result.input.amountPaid !== undefined;
             return {
               name: result.material?.name || result.input.materialName || 'Unknown',
               unit: result.material?.unit || result.input.unit || 'unit',
               specs: result.material?.specs || result.input.specs || {},
-              qnt: result.material?.qnt || Number(result.input.qnt) || 0,
-              perUnitCost: result.material?.perUnitCost || Number(result.input.perUnitCost) || 0,
-              totalCost: result.material?.totalCost || 0,
-              cost: result.material?.totalCost || 0, // For backward compatibility
-              contractor_name: result.material?.contractor_name || result.input.contractor_name || undefined, // ✅ NEW: Include contractor_name
-              billingDate: result.material?.billingDate || undefined,
+              qnt: purchaseQnt,
+              perUnitCost: purchaseRate,
+              totalCost: purchaseCost,
+              cost: purchaseCost, // For backward compatibility
+              contractor_name: result.input.contractor_name || result.material?.contractor_name || undefined, // ✅ NEW: Include contractor_name
+              billingDate: purchaseBillingDate && !Number.isNaN(purchaseBillingDate.getTime()) ? purchaseBillingDate : undefined,
+              // This purchase's vendor payment, so purchase reports can show it per bill
+              ...(hasPayment
+                ? { paymentStatus: result.input.paymentStatus, amountPaid: Number(result.input.amountPaid) || 0 }
+                : {}),
               // 🧾 Bill photos from the payment step. Taken from the request input rather
               // than result.material because a merged batch's stored list also carries
               // bills from earlier purchases, which don't belong to this activity.
               billImages: billImages.length > 0 ? billImages : undefined,
+              materialImages: materialImages.length > 0 ? materialImages : undefined,
               addedAt: new Date(),
             };
           });
@@ -870,6 +948,11 @@ export const POST = async (req: NextRequest) => {
           // of every material's bills onto the activity for the notification feed.
           const activityBillImages = materials.reduce<BillImage[]>(
             (acc, m) => mergeBillImages(acc, m.billImages || []),
+            []
+          );
+
+          const activityMaterialImages = materials.reduce<any[]>(
+            (acc, m) => mergeMaterialImages(acc, m.materialImages || []),
             []
           );
           
@@ -898,6 +981,7 @@ export const POST = async (req: NextRequest) => {
             contractor_name: contractor_name, // ✅ NEW: Include contractor_name at activity level
             // Omitted entirely when no bill was uploaded, so the card hides its bill row
             ...(activityBillImages.length > 0 ? { billImages: activityBillImages } : {}),
+            ...(activityMaterialImages.length > 0 ? { materialImages: activityMaterialImages } : {}),
           };
           
           console.log(`📦 Creating MaterialActivity for project ${projectId}:`, {

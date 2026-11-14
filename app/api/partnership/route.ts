@@ -9,14 +9,13 @@ import { PartnershipTransaction } from "@/lib/models/Xsite/PartnershipTransactio
 import { Projects } from "@/lib/models/Project";
 import * as ClientModule from "@/lib/models/super-admin/Client";
 import * as StaffModule from "@/lib/models/users/Staff";
-import { STAFF_PERMISSIONS } from "@/lib/models/users/Staff";
 import {
   buildSummaries,
   resolveActor,
   roundMoney,
   staffDisplayName,
 } from "@/lib/services/partnershipService";
-import { addProjectToStaff, assignStaffToProject } from "@/lib/utils/staffProjectUtils";
+import { assignStaffToProject } from "@/lib/utils/staffProjectUtils";
 import { safeRedisDelCache, safeRedisKeysCache } from "@/lib/utils/redis-helpers";
 
 // Per-project partnerships: the business plus staff members who share a money
@@ -118,37 +117,38 @@ const assignPartnersToProject = async (
   clientName: string
 ): Promise<string[]> => {
   const project = await Projects.findById(projectId)
-    .select("name assignedStaff")
-    .lean<{ name: string; assignedStaff?: { _id: string }[] }>();
+    .select("name")
+    .lean<{ name: string }>();
   if (!project) return staff.map(staffDisplayName);
 
+  // Partners get admin privileges ONLY for this project via Partnership
+  // membership lookups — never mutate global Staff.permissions here.
   const notAssigned: string[] = [];
   for (const member of staff) {
     const staffId = String(member._id);
     try {
-      const onProject = (project.assignedStaff || []).some((s) => String(s._id) === staffId);
-      if (onProject) {
-        // Already on the project's list; make sure their own record has it too (no-op if so)
-        await addProjectToStaff(staffId, projectId, project.name, clientId, clientName);
-      } else {
-        await assignStaffToProject(staffId, projectId, project.name, clientId, clientName);
-      }
-      // Added to whatever they already have, so nothing is taken away
-      await Staff.updateOne(
-        { _id: member._id },
-        { $addToSet: { permissions: { $each: STAFF_PERMISSIONS } } }
-      );
+      await assignStaffToProject(staffId, projectId, project.name, clientId, clientName, {
+        idempotent: true,
+      });
     } catch (error) {
       console.error(`⚠️ Couldn't assign partner ${staffId} to project ${projectId}:`, error);
       notAssigned.push(staffDisplayName(member));
     }
   }
 
-  // Staff lists and the project are cached; drop them so the new assignment shows
+  // Drop project lists, single project, team, and staff caches so the new assignment shows immediately
   try {
-    const staffKeys = await safeRedisKeysCache("staff:*");
-    if (staffKeys.length > 0) await safeRedisDelCache(...staffKeys);
-    await safeRedisDelCache(`project:${projectId}`);
+    const keysToDelete = new Set<string>([
+      `project:${projectId}`,
+      `clients:${clientId}:staff`,
+    ]);
+    for (const pattern of ["staff:*", `projects:${clientId}*`, `project:${projectId}:*`]) {
+      const matched = await safeRedisKeysCache(pattern);
+      matched.forEach((k) => keysToDelete.add(k));
+    }
+    if (keysToDelete.size > 0) {
+      await safeRedisDelCache(...Array.from(keysToDelete));
+    }
   } catch (cacheError) {
     console.error("⚠️ Cache invalidation error (non-critical):", cacheError);
   }
@@ -463,6 +463,23 @@ export const PATCH = async (req: NextRequest) => {
       case "reopen": {
         partnership.status = action === "close" ? "closed" : "active";
         await partnership.save();
+        if (action === "reopen") {
+          const activeStaffIds = partners
+            .filter((p) => p.partnerType === "staff" && p.status === "active" && Types.ObjectId.isValid(p.partnerId))
+            .map((p) => p.partnerId);
+          if (activeStaffIds.length > 0) {
+            const team = await loadTeamStaff(String(partnership.clientId), activeStaffIds);
+            if (team.ok && team.value.length > 0) {
+              const client = await Client.findById(partnership.clientId).select("name").lean<ClientRecord>();
+              notAssigned = await assignPartnersToProject(
+                team.value,
+                String(partnership.projectId),
+                String(partnership.clientId),
+                client?.name || "Business"
+              );
+            }
+          }
+        }
         break;
       }
 

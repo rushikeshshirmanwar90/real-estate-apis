@@ -555,6 +555,10 @@ export async function POST(request: NextRequest) {
                     miniSectionId: updatedMaterial.miniSectionId || undefined,
                     billingDate: billingDate || undefined,
                     billImages: activityBillImages.length > 0 ? activityBillImages : undefined,
+                    // This purchase's vendor payment, so purchase reports can show it per bill
+                    ...(hasPaymentInfo
+                        ? { paymentStatus: paymentStatus || 'unpaid', amountPaid: Number(amountPaid) || 0 }
+                        : {}),
                     addedAt: new Date(),
                 }],
                 message: action === 'created'

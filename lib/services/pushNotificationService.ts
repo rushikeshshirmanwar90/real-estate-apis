@@ -1,5 +1,6 @@
 import { PushToken } from "@/lib/models/PushToken";
 import { PushTokenManager } from "./pushTokenManager";
+import { getActivePartnerStaffIdsForProject } from "@/lib/services/partnershipService";
 
 // TypeScript interfaces for better type safety
 interface ProjectDocument {
@@ -282,8 +283,38 @@ export class PushNotificationService {
         return { success: true, messagesSent: 0, errors: ['Project not found and no fallback clientId'] };
       }
 
-      return await this.sendToClientAdmins(
-        clientIdStr,
+      const partnerStaffIds = await getActivePartnerStaffIdsForProject(projectId);
+      const tokenFilter: Record<string, unknown> =
+        partnerStaffIds.length > 0
+          ? {
+              isActive: true,
+              $or: [
+                { clientId: clientIdStr, userType: 'admin' },
+                { userId: { $in: partnerStaffIds }, userType: 'staff' },
+              ],
+            }
+          : {
+              clientId: clientIdStr,
+              userType: 'admin',
+              isActive: true,
+            };
+
+      let recipientTokens = await PushToken.find(tokenFilter).lean<Array<{ userId?: string }>>();
+      const excludeUserId = options?.excludeUserId;
+      if (excludeUserId) {
+        recipientTokens = recipientTokens.filter((t) => t.userId !== excludeUserId);
+      }
+
+      if (recipientTokens.length === 0) {
+        console.log(`📭 No admin/partner push tokens found for project ${projectId}`);
+        return { success: true, messagesSent: 0, errors: ['No admin or partner tokens found'] };
+      }
+
+      const recipientUserIds = [...new Set(recipientTokens.map((t) => t.userId).filter((id): id is string => Boolean(id)))];
+      console.log(`📱 Sending to ${recipientUserIds.length} admin/partner(s) for project: ${projectId}`);
+
+      return await this.sendToUsers(
+        recipientUserIds,
         title,
         body,
         { ...data, projectId, ...(projectName ? { projectName } : {}) },

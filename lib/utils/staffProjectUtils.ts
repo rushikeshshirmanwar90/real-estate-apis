@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import { Staff } from "../models/users/Staff";
 import { Projects } from "../models/Project";
 
@@ -9,66 +10,49 @@ export async function assignStaffToProject(
   projectId: string,
   projectName: string,
   clientId: string,
-  clientName: string
+  clientName: string,
+  options?: { idempotent?: boolean }
 ) {
   try {
-    // 1. Update the Project collection (existing logic)
-    const project = await Projects.findById(projectId);
+    const staffIdStr = String(staffId);
+    const projectIdStr = String(projectId);
+    const clientIdStr = String(clientId);
+
+    // 1. Update the Project collection
+    const project = await Projects.findById(projectIdStr)
+      .select("assignedStaff")
+      .lean<{ assignedStaff?: Array<{ _id?: unknown }> }>();
     if (!project) {
       throw new Error("Project not found");
     }
 
-    const staff = await Staff.findById(staffId);
+    const staff = await Staff.findById(staffIdStr)
+      .select("firstName lastName assignedProjects")
+      .lean<{ firstName?: string; lastName?: string; assignedProjects?: Array<{ projectId?: unknown; status?: string }> }>();
     if (!staff) {
       throw new Error("Staff not found");
     }
 
     // Check if staff is already assigned to this project
     const isAlreadyAssignedToProject = project.assignedStaff?.some(
-      (assignedStaff: any) => assignedStaff._id.toString() === staffId
+      (assignedStaff) => assignedStaff?._id?.toString() === staffIdStr
     );
 
-    if (isAlreadyAssignedToProject) {
+    if (isAlreadyAssignedToProject && !options?.idempotent) {
       throw new Error("Staff is already assigned to this project");
     }
 
-    // Add staff to project's assignedStaff array
-    const staffToAssign = {
-      _id: staff._id,
-      fullName: `${staff.firstName} ${staff.lastName}`,
-    };
-
-    const updatedAssignedStaff = [...(project.assignedStaff || []), staffToAssign];
-
-    // Update the project
-    await Projects.findByIdAndUpdate(
-      projectId,
-      { assignedStaff: updatedAssignedStaff },
-      { new: true }
-    );
-
-    // 2. Update the Staff collection (NEW LOGIC)
-    const projectAssignment = {
-      projectId: projectId,
-      projectName: projectName,
-      clientId: clientId,
-      clientName: clientName,
-      assignedAt: new Date(),
-      status: "active",
-    };
-
-    // Check if project is already in staff's assignedProjects
-    const isAlreadyInStaffProjects = staff.assignedProjects?.some(
-      (project: any) => project.projectId.toString() === projectId
-    );
-
-    if (!isAlreadyInStaffProjects) {
-      await Staff.findByIdAndUpdate(
-        staffId,
-        { $push: { assignedProjects: projectAssignment } },
-        { new: true }
+    if (!isAlreadyAssignedToProject) {
+      // Project.assignedStaff._id is declared as String in schema; normalize to string
+      const fullName = `${staff.firstName || ""} ${staff.lastName || ""}`.trim() || "Staff";
+      await Projects.updateOne(
+        { _id: projectIdStr, "assignedStaff._id": { $ne: staffIdStr } },
+        { $push: { assignedStaff: { _id: staffIdStr, fullName } } }
       );
     }
+
+    // 2. Update the Staff collection (add or re-activate assignment)
+    await addProjectToStaff(staffIdStr, projectIdStr, projectName, clientIdStr, clientName);
 
     return { success: true, message: "Staff assigned to project successfully" };
   } catch (error) {
@@ -90,36 +74,52 @@ export async function addProjectToStaff(
   monthlyPayment: number = 0
 ) {
   try {
-    const staff = await Staff.findById(staffId);
+    const staffIdStr = String(staffId);
+    const projectIdStr = String(projectId);
+    const clientIdStr = String(clientId);
+
+    const staff = await Staff.findById(staffIdStr)
+      .select("assignedProjects")
+      .lean<{ assignedProjects?: Array<{ projectId?: unknown; status?: string }> }>();
     if (!staff) {
       throw new Error("Staff not found");
     }
 
-    // Check if project is already in staff's assignedProjects
-    const isAlreadyInStaffProjects = staff.assignedProjects?.some(
-      (project: any) => project.projectId.toString() === projectId
+    const existingAssignment = staff.assignedProjects?.find(
+      (project) => project?.projectId?.toString() === projectIdStr
     );
 
-    if (!isAlreadyInStaffProjects) {
+    if (!existingAssignment) {
       const projectAssignment = {
-        projectId: projectId,
-        projectName: projectName,
-        clientId: clientId,
-        clientName: clientName,
+        projectId: Types.ObjectId.isValid(projectIdStr) ? new Types.ObjectId(projectIdStr) : projectIdStr,
+        projectName,
+        clientId: Types.ObjectId.isValid(clientIdStr) ? new Types.ObjectId(clientIdStr) : clientIdStr,
+        clientName,
         assignedAt: new Date(),
         status: "active",
         monthlyPayment: monthlyPayment || 0,
       };
 
-      await Staff.findByIdAndUpdate(
-        staffId,
-        { $push: { assignedProjects: projectAssignment } },
-        { new: true }
+      await Staff.updateOne(
+        { _id: staffIdStr },
+        { $push: { assignedProjects: projectAssignment } }
       );
 
-      console.log(`✅ Added project ${projectName} to staff ${staffId}'s assignedProjects`);
+      console.log(`✅ Added project ${projectName} to staff ${staffIdStr}'s assignedProjects`);
+    } else if (existingAssignment.status !== "active") {
+      await Staff.updateOne(
+        { _id: staffIdStr, "assignedProjects.projectId": existingAssignment.projectId },
+        {
+          $set: {
+            "assignedProjects.$.status": "active",
+            "assignedProjects.$.projectName": projectName,
+            "assignedProjects.$.clientName": clientName,
+          },
+        }
+      );
+      console.log(`✅ Reactivated project ${projectName} in staff ${staffIdStr}'s assignedProjects`);
     } else {
-      console.log(`⚠️ Project ${projectName} already exists in staff ${staffId}'s assignedProjects`);
+      console.log(`⚠️ Project ${projectName} already exists in staff ${staffIdStr}'s assignedProjects`);
     }
 
     return { success: true, message: "Project added to staff successfully" };

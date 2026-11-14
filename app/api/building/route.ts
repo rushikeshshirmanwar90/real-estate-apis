@@ -286,6 +286,8 @@ export const POST = async (req: NextRequest) => {
         try {
           const miniSection = await MiniSection.create({
             name: sectionName,
+            sectionId: savedBuilding._id.toString(),
+            projectId: body.projectId.toString(),
             projectDetails: {
               projectName,
               projectId: body.projectId.toString(),

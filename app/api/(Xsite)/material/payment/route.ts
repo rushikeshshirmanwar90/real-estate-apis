@@ -13,6 +13,7 @@ import {
   refreshCommitmentAmountIfActive,
 } from "@/lib/services/paymentCommitmentService";
 import {
+  isStaffActivePartnerOnProject,
   LedgerPaymentLine,
   LedgerResult,
   recordAttributedPayments,
@@ -43,6 +44,17 @@ export const POST = async (request: NextRequest) => {
     const { projectId, clientId, materialIds, amountPaid } = body || {};
     const denied = await scopeAccessError(session, { clientId, projectId });
     if (denied) return denied;
+
+    if (
+      session.kind === "user" &&
+      session.userType === "staff" &&
+      !(await isStaffActivePartnerOnProject(session.userId, String(projectId || "")))
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Forbidden" },
+        { status: 403 }
+      );
+    }
 
     // ── Validation ────────────────────────────────────────────────────────
     if (!projectId || !Types.ObjectId.isValid(projectId)) {

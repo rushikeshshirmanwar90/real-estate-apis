@@ -1,5 +1,6 @@
 import connect from "@/lib/db";
 import { PushToken } from "@/lib/models/PushToken";
+import { getActivePartnerStaffIdsForProject } from "@/lib/services/partnershipService";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const EXPO_BATCH_SIZE = 100;
@@ -203,9 +204,30 @@ export async function resolveRecipientsFromDB(
       }
     });
 
+    // Include staff users who are active partners on this specific project
+    // so they receive payment and project alerts ONLY for partnered projects.
+    if (projectId) {
+      const partnerStaffIds = await getActivePartnerStaffIdsForProject(projectId);
+      if (partnerStaffIds.length > 0) {
+        const partnerTokens = await PushToken.find({
+          userId: { $in: partnerStaffIds },
+          userType: "staff",
+          isActive: true,
+        })
+          .select("userId")
+          .lean<Array<{ userId?: string }>>();
+
+        partnerTokens.forEach((t) => {
+          if (t.userId && !recipientMap.has(t.userId)) {
+            recipientMap.set(t.userId, { userId: t.userId, userType: "staff" });
+          }
+        });
+      }
+    }
+
     const recipients = Array.from(recipientMap.values());
     console.log(
-      `✅ resolveRecipientsFromDB: found ${recipients.length} admin recipients for clientId ${clientId}`
+      `✅ resolveRecipientsFromDB: found ${recipients.length} recipients for clientId ${clientId}${projectId ? `, projectId ${projectId}` : ""}`
     );
     return recipients;
   } catch (err) {

@@ -26,6 +26,36 @@ export const BillImageSchema = new Schema(
   { _id: false }
 );
 
+// Site / material photo with embedded GPS location & timestamp
+export const MaterialSiteImageSchema = new Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    publicId: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+
+    uploadedAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    location: {
+      latitude: { type: Number, required: false },
+      longitude: { type: Number, required: false },
+      address: { type: String, required: false, trim: true },
+      timestamp: { type: String, required: false },
+    },
+  },
+  { _id: false }
+);
+
 export const MaterialSchema = new Schema(
   {
     name: {
@@ -113,6 +143,13 @@ export const MaterialSchema = new Schema(
     // no bill section for them, matching how paymentStatus behaves above.
     billImages: {
       type: [BillImageSchema],
+      required: false,
+      default: undefined,
+    },
+
+    // Photos of the delivered material with location stamp
+    materialImages: {
+      type: [MaterialSiteImageSchema],
       required: false,
       default: undefined,
     },
@@ -211,6 +248,13 @@ const MaterialActivitySchema = new Schema({
   // lets the notification feed render it without scanning each material.
   billImages: {
     type: [BillImageSchema],
+    required: false,
+    default: undefined,
+  },
+
+  // Photos of the delivered material with location stamp
+  materialImages: {
+    type: [MaterialSiteImageSchema],
     required: false,
     default: undefined,
   },

@@ -4,13 +4,21 @@ import { PartnershipTransaction } from '@/lib/models/Xsite/PartnershipTransactio
 import {
   buildSummaries,
   combineLedgerResults,
+  getActivePartnerProjectIdsForStaff,
+  getActivePartnerStaffIdsForProject,
+  getActiveStaffPartnersForProject,
+  isStaffActivePartnerOnProject,
   parsePaidBy,
   recordAttributedPayments,
   resolvePaymentAttribution,
 } from './partnershipService';
 
 jest.mock('@/lib/models/Xsite/Partnership', () => ({
-  Partnership: { findOne: jest.fn() },
+  Partnership: {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    exists: jest.fn(),
+  },
 }));
 jest.mock('@/lib/models/Xsite/PartnershipTransaction', () => ({
   PartnershipTransaction: { insertMany: jest.fn(), updateMany: jest.fn(), aggregate: jest.fn() },
@@ -18,6 +26,8 @@ jest.mock('@/lib/models/Xsite/PartnershipTransaction', () => ({
 }));
 
 const mockFindOne = Partnership.findOne as jest.Mock;
+const mockFind = Partnership.find as jest.Mock;
+const mockExists = Partnership.exists as jest.Mock;
 const mockInsertMany = PartnershipTransaction.insertMany as jest.Mock;
 const mockAggregate = PartnershipTransaction.aggregate as jest.Mock;
 
@@ -222,5 +232,49 @@ describe('buildSummaries', () => {
       ['Suresh Patil', 0, 0],
     ]);
     expect(summary.pool.balance).toBe(0);
+  });
+});
+
+describe('per-project staff partner access helpers', () => {
+  it('returns only active staff partner entries and deduplicated IDs for a project', async () => {
+    mockFindOne.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve(partnership) }),
+    });
+
+    const entries = await getActiveStaffPartnersForProject(String(projectId));
+    expect(entries.map((e) => e.partnerId)).toEqual(['staff-suresh']);
+
+    const ids = await getActivePartnerStaffIdsForProject(projectId);
+    expect(ids).toEqual(['staff-suresh']);
+  });
+
+  it('returns empty arrays for invalid project IDs without querying DB', async () => {
+    expect(await getActiveStaffPartnersForProject('invalid-id')).toEqual([]);
+    expect(await getActivePartnerStaffIdsForProject('')).toEqual([]);
+    expect(mockFindOne).not.toHaveBeenCalled();
+  });
+
+  it('checks whether a staff user is an active partner on a specific project only', async () => {
+    mockExists.mockResolvedValueOnce({ _id: partnershipId });
+    expect(await isStaffActivePartnerOnProject('staff-suresh', projectId)).toBe(true);
+
+    mockExists.mockResolvedValueOnce(null);
+    expect(await isStaffActivePartnerOnProject('staff-suresh', new Types.ObjectId())).toBe(false);
+
+    expect(await isStaffActivePartnerOnProject('', projectId)).toBe(false);
+    expect(await isStaffActivePartnerOnProject('staff-suresh', 'bad-id')).toBe(false);
+  });
+
+  it('lists deduplicated active partnered project IDs for a staff user', async () => {
+    const projectB = new Types.ObjectId();
+    mockFind.mockReturnValue({
+      select: () => ({
+        lean: () => Promise.resolve([{ projectId }, { projectId: projectB }, { projectId }]),
+      }),
+    });
+
+    const projectIds = await getActivePartnerProjectIdsForStaff('staff-suresh');
+    expect(projectIds).toEqual([String(projectId), String(projectB)]);
+    expect(await getActivePartnerProjectIdsForStaff('')).toEqual([]);
   });
 });

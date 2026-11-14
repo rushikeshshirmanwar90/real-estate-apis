@@ -10,6 +10,10 @@ import {
   recommitCommitment,
   resolveCommitmentById,
 } from "@/lib/services/paymentCommitmentService";
+import {
+  getActivePartnerProjectIdsForStaff,
+  isStaffActivePartnerOnProject,
+} from "@/lib/services/partnershipService";
 
 // GET /api/payment-commitment?entityType=&entityId=   (single lookup)
 // GET /api/payment-commitment?commitmentId=            (single lookup by id)
@@ -35,12 +39,23 @@ export const GET = async (req: NextRequest) => {
       : await scopeAccessError(session, { clientId, projectId });
     if (denied) return denied;
 
+    const isStaffSession = session.kind === "user" && session.userType === "staff";
+    const allowedPartnerProjectIds = isStaffSession
+      ? await getActivePartnerProjectIdsForStaff(session.userId)
+      : null;
+
     if (commitmentId) {
       if (!Types.ObjectId.isValid(commitmentId)) {
         return errorResponse("Invalid commitmentId", 400);
       }
       const commitment = await PaymentCommitment.findById(commitmentId);
       if (!commitment) return errorResponse("Commitment not found", 404);
+      if (
+        allowedPartnerProjectIds &&
+        !allowedPartnerProjectIds.includes(String(commitment.projectId))
+      ) {
+        return errorResponse("Forbidden", 403);
+      }
       return successResponse(commitment, "Commitment retrieved");
     }
 
@@ -56,6 +71,13 @@ export const GET = async (req: NextRequest) => {
         entityId,
         status: { $ne: "resolved" },
       });
+      if (
+        commitment &&
+        allowedPartnerProjectIds &&
+        !allowedPartnerProjectIds.includes(String(commitment.projectId))
+      ) {
+        return errorResponse("Forbidden", 403);
+      }
       return successResponse(commitment || null, "Commitment retrieved");
     }
 
@@ -65,7 +87,19 @@ export const GET = async (req: NextRequest) => {
         if (!Types.ObjectId.isValid(projectId)) {
           return errorResponse("Invalid projectId", 400);
         }
+        if (allowedPartnerProjectIds && !allowedPartnerProjectIds.includes(String(projectId))) {
+          return successResponse([], "Commitments retrieved");
+        }
         query.projectId = projectId;
+      } else if (allowedPartnerProjectIds) {
+        if (allowedPartnerProjectIds.length === 0) {
+          return successResponse([], "Commitments retrieved");
+        }
+        query.projectId = {
+          $in: allowedPartnerProjectIds
+            .filter((id) => Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id)),
+        };
       }
       if (clientId) {
         if (!Types.ObjectId.isValid(clientId)) {
@@ -119,6 +153,14 @@ export const POST = async (req: NextRequest) => {
     } = body || {};
     const denied = await scopeAccessError(session, { clientId, projectId });
     if (denied) return denied;
+
+    if (
+      session.kind === "user" &&
+      session.userType === "staff" &&
+      !(await isStaffActivePartnerOnProject(session.userId, String(projectId || "")))
+    ) {
+      return errorResponse("Forbidden", 403);
+    }
 
     if (!clientId || !Types.ObjectId.isValid(clientId)) {
       return errorResponse("Valid clientId is required", 400);
@@ -191,6 +233,18 @@ export const PATCH = async (req: NextRequest) => {
     }
     const denied = await recordAccessError(session, PaymentCommitment, commitmentId);
     if (denied) return denied;
+
+    if (session.kind === "user" && session.userType === "staff") {
+      const existing = await PaymentCommitment.findById(commitmentId)
+        .select("projectId")
+        .lean<{ projectId?: Types.ObjectId }>();
+      if (
+        !existing?.projectId ||
+        !(await isStaffActivePartnerOnProject(session.userId, String(existing.projectId)))
+      ) {
+        return errorResponse("Forbidden", 403);
+      }
+    }
 
     if (action === "recommit") {
       const parsedDate = newCommitmentDate ? new Date(newCommitmentDate) : null;

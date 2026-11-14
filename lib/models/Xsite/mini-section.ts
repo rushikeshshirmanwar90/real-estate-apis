@@ -1,5 +1,6 @@
 import { model, models, Schema, Model } from "mongoose";
 import { MaterialSchema } from "./materials-activity";
+import { EmbeddedLaborSchema } from "./Labor";
 
 const SectionSchema = new Schema(
   {
@@ -8,21 +9,32 @@ const SectionSchema = new Schema(
       required: true,
     },
 
+    sectionId: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+
+    projectId: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+
     projectDetails: {
       projectName: {
         type: String,
-        required: true,
+        required: false,
         trim: true,
       },
       projectId: {
         type: String,
-        required: true,
+        required: false,
         trim: true,
       },
     },
 
     mainSectionDetails: {
-      // project section
       sectionName: {
         type: String,
         required: false,
@@ -35,14 +47,39 @@ const SectionSchema = new Schema(
       },
     },
 
+    description: {
+      type: String,
+      required: false,
+    },
+
+    images: {
+      type: [String],
+      required: false,
+    },
+
     MaterialUsed: {
       type: [MaterialSchema],
+      required: false,
+    },
+
+    Labors: {
+      type: [EmbeddedLaborSchema],
       required: false,
     },
 
     isCompleted: {
       type: Boolean,
       default: false,
+    },
+
+    completedAt: {
+      type: Date,
+      required: false,
+    },
+
+    completedBy: {
+      type: String,
+      required: false,
     },
 
     // References a Phase subdocument _id within this mini-section's parent
@@ -52,8 +89,31 @@ const SectionSchema = new Schema(
       required: false,
     },
   },
-  { timestamps: true },
+  { timestamps: true }
 );
+
+// Pre-save hook to automatically synchronize root and nested IDs
+SectionSchema.pre("save", function (next) {
+  if (!this.sectionId && this.mainSectionDetails?.sectionId) {
+    this.sectionId = this.mainSectionDetails.sectionId;
+  }
+  if (!this.projectId && this.projectDetails?.projectId) {
+    this.projectId = this.projectDetails.projectId;
+  }
+  if (!this.mainSectionDetails?.sectionId && this.sectionId) {
+    this.mainSectionDetails = {
+      ...(this.mainSectionDetails || {}),
+      sectionId: this.sectionId,
+    };
+  }
+  if (!this.projectDetails?.projectId && this.projectId) {
+    this.projectDetails = {
+      ...(this.projectDetails || {}),
+      projectId: this.projectId,
+    };
+  }
+  next();
+});
 
 // Safe model registration to prevent data loss during redeployment
 let MiniSection: Model<any>;

@@ -419,3 +419,87 @@ export const buildSummaries = async (
 
   return summaries;
 };
+
+// ─── Per-project staff partner access helpers ──────────────────────────────
+// Staff who join a project's partnership get admin privileges and payment
+// alerts ONLY for that partnered project, never globally across other sites.
+
+/** Returns active staff partner entries for a given active project partnership. */
+export const getActiveStaffPartnersForProject = async (
+  projectId: string | Types.ObjectId
+): Promise<PartnerEntry[]> => {
+  const id = String(projectId || "").trim();
+  if (!Types.ObjectId.isValid(id)) return [];
+
+  const partnership = await Partnership.findOne({
+    projectId: new Types.ObjectId(id),
+    status: "active",
+  })
+    .select("partners")
+    .lean<Pick<PartnershipDoc, "partners">>();
+
+  if (!partnership?.partners?.length) return [];
+  return partnership.partners.filter(
+    (p) => p.partnerType === "staff" && p.status === "active" && Boolean(p.partnerId)
+  );
+};
+
+/** Returns deduplicated staff user IDs who are active partners on `projectId`. */
+export const getActivePartnerStaffIdsForProject = async (
+  projectId: string | Types.ObjectId
+): Promise<string[]> => {
+  const partners = await getActiveStaffPartnersForProject(projectId);
+  return Array.from(new Set(partners.map((p) => String(p.partnerId))));
+};
+
+/** Checks whether `staffId` is an active partner on `projectId`'s active partnership. */
+export const isStaffActivePartnerOnProject = async (
+  staffId: string,
+  projectId: string | Types.ObjectId
+): Promise<boolean> => {
+  const staffKey = String(staffId || "").trim();
+  const projectKey = String(projectId || "").trim();
+  if (!staffKey || !Types.ObjectId.isValid(projectKey)) return false;
+
+  const found = await Partnership.exists({
+    projectId: new Types.ObjectId(projectKey),
+    status: "active",
+    partners: {
+      $elemMatch: {
+        partnerId: staffKey,
+        partnerType: "staff",
+        status: "active",
+      },
+    },
+  });
+  return Boolean(found);
+};
+
+/** Returns all active partnered project IDs where `staffId` is an active partner. */
+export const getActivePartnerProjectIdsForStaff = async (
+  staffId: string
+): Promise<string[]> => {
+  const staffKey = String(staffId || "").trim();
+  if (!staffKey) return [];
+
+  const rows = await Partnership.find({
+    status: "active",
+    partners: {
+      $elemMatch: {
+        partnerId: staffKey,
+        partnerType: "staff",
+        status: "active",
+      },
+    },
+  })
+    .select("projectId")
+    .lean<{ projectId?: Types.ObjectId }[]>();
+
+  return Array.from(
+    new Set(
+      rows
+        .map((row) => (row.projectId ? String(row.projectId) : ""))
+        .filter(Boolean)
+    )
+  );
+};

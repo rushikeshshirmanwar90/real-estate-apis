@@ -76,33 +76,42 @@ export const POST = async (req: NextRequest) => {
     let buffer: Buffer;
     let mimeType: string;
     let fileName: string;
+    let customFolder = "";
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
       const file = form.get("file");
+      const folderVal = form.get("folder");
+      if (typeof folderVal === "string" && folderVal.trim()) {
+        customFolder = folderVal.trim();
+      }
 
       if (!file || typeof file === "string") {
-        return errorResponse("A 'file' field with the bill image is required", 400);
+        return errorResponse("A 'file' field with the image is required", 400);
       }
 
       buffer = Buffer.from(await file.arrayBuffer());
       mimeType = (file.type || "image/jpeg").toLowerCase();
-      fileName = file.name || "bill.jpg";
+      fileName = file.name || "image.jpg";
     } else {
       const body = await req.json().catch(() => null);
 
       if (!body || typeof body.image !== "string" || !body.image.trim()) {
         return errorResponse(
-          "An 'image' field with a base64 (or data URI) bill image is required",
+          "An 'image' field with a base64 (or data URI) image is required",
           400
         );
+      }
+
+      if (typeof body.folder === "string" && body.folder.trim()) {
+        customFolder = body.folder.trim();
       }
 
       const parsed = parseDataUri(body.image, body.mimeType);
       mimeType = parsed.mimeType;
       fileName = typeof body.fileName === "string" && body.fileName
         ? body.fileName
-        : "bill.jpg";
+        : "image.jpg";
 
       buffer = Buffer.from(parsed.base64, "base64");
       if (buffer.length === 0) {
@@ -124,11 +133,13 @@ export const POST = async (req: NextRequest) => {
       );
     }
 
-    console.log("🧾 Uploading material bill:", {
+    const targetFolder = customFolder || UPLOAD_FOLDER;
+
+    console.log("🧾 Uploading material image:", {
       fileName,
       mimeType,
       sizeKb: Math.round(buffer.length / 1024),
-      folder: UPLOAD_FOLDER,
+      folder: targetFolder,
     });
 
     // Unsigned upload with a preset — mirrors the existing admin dashboard flow,
@@ -140,7 +151,7 @@ export const POST = async (req: NextRequest) => {
       fileName
     );
     uploadForm.append("upload_preset", UPLOAD_PRESET);
-    uploadForm.append("folder", UPLOAD_FOLDER);
+    uploadForm.append("folder", targetFolder);
 
     const cloudinaryRes = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,

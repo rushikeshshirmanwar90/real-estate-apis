@@ -1,5 +1,5 @@
-import { checkValidClient } from "@/lib/auth";
-import { authErrorResponse } from "@/lib/auth/session";
+import { checkValidClient, type Session } from "@/lib/auth";
+import { authErrorResponse, projectAccessError, clientAccessError } from "@/lib/auth/session";
 import { Projects } from "@/lib/models/Project";
 import { Building } from "@/lib/models/Building";
 import { Section } from "@/lib/models/Section";
@@ -43,8 +43,9 @@ export const GET = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  let session: Session;
   try {
-    await checkValidClient(req, ["partner", "superadmin"]);
+    session = await checkValidClient(req);
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -65,6 +66,9 @@ export const GET = async (
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid project ID format", 400);
     }
+
+    const denied = (await projectAccessError(session, id)) ?? clientAccessError(session, clientId);
+    if (denied) return denied;
 
     await connect();
 
@@ -102,8 +106,9 @@ export const DELETE = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  let session: Session;
   try {
-    await checkValidClient(req, ["partner", "superadmin"]);
+    session = await checkValidClient(req);
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -114,6 +119,9 @@ export const DELETE = async (
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid project ID format", 400);
     }
+
+    const denied = await projectAccessError(session, id);
+    if (denied) return denied;
 
     await connect();
 
@@ -290,8 +298,9 @@ export const PUT = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
+  let session: Session;
   try {
-    await checkValidClient(req, ["partner", "superadmin"]);
+    session = await checkValidClient(req);
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -302,6 +311,9 @@ export const PUT = async (
     if (!isValidObjectId(id)) {
       return errorResponse("Invalid project ID format", 400);
     }
+
+    const denied = await projectAccessError(session, id);
+    if (denied) return denied;
 
     await connect();
 
