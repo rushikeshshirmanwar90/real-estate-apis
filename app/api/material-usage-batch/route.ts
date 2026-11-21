@@ -393,6 +393,19 @@ export const POST = async (req: NextRequest | Request) => {
       { new: true }
     );
 
+    // Clear the cached material lists NOW, right after the DB write. This used to run
+    // at the end of the activity-logging try block below, so any failure while
+    // logging the activity (name lookups, MaterialActivity.save validation, …) skipped
+    // it — the request still returned success, but GET /api/material-usage kept
+    // serving the old cached list without the new usage. Deleting (instead of
+    // patching) is also correct for every cached page/sort/section variant.
+    try {
+      await invalidateCachePattern(`material-usage:${projectId}:*`);
+      await invalidateCachePattern(`material:${projectId}:*`);
+    } catch (cacheError) {
+      console.error('❌ Cache invalidation after material usage failed:', cacheError);
+    }
+
     console.log(`\n✅ BATCH MATERIAL USAGE COMPLETED:`);
     console.log(`  - Materials processed: ${usedMaterials.length}`);
     console.log(`  - Total cost of used materials: ${totalCostOfUsedMaterials}`);
@@ -540,74 +553,7 @@ export const POST = async (req: NextRequest | Request) => {
           console.error('Critical error in material activity notification:', error);
         });
 
-      // ✅ OPTIMIZED: Update both material and material-usage caches
-      console.log('\n========================================');
-      console.log('🔄 UPDATING CACHES AFTER MATERIAL USAGE');
-      console.log('========================================');
-      
-      try {
-        // 1. Update material-usage cache
-        const usageKeys = await safeRedisKeysCache(`material-usage:${projectId}:*`);
-        console.log(`📋 Found ${usageKeys.length} material-usage cache keys`);
-        
-        if (usageKeys.length > 0) {
-          // For material-usage, it's simpler to invalidate since the data structure is complex
-          await safeRedisDelCache(...usageKeys);
-          console.log(`🗑️ Invalidated ${usageKeys.length} material-usage cache keys`);
-        }
-        
-        // 2. Update material (available) cache with fresh data
-        const materialKeys = await safeRedisKeysCache(`material:${projectId}:*`);
-        console.log(`📋 Found ${materialKeys.length} material cache keys to update`);
-        
-        if (materialKeys.length > 0) {
-          // ✅ CRITICAL FIX: Use cleanedProject (already has materials with 0 qty removed)
-          // Don't fetch again from DB - cleanedProject is already up-to-date!
-          console.log(`✅ Using cleanedProject data (materials with 0 qty already removed)`);
-          console.log(`   - Available materials in cleanedProject: ${cleanedProject?.MaterialAvailable?.length || 0}`);
-          
-          if (cleanedProject) {
-            for (const cacheKey of materialKeys) {
-              try {
-                const cachedData = await safeRedisGetCache(cacheKey);
-                if (cachedData) {
-                  const parsedCache = JSON.parse(cachedData);
-                  
-                  if (parsedCache.MaterialAvailable && Array.isArray(parsedCache.MaterialAvailable)) {
-                    // ✅ CRITICAL FIX: Update with cleanedProject data (0 qty materials removed)
-                    parsedCache.MaterialAvailable = cleanedProject.MaterialAvailable || [];
-                    parsedCache.pagination.totalItems = (cleanedProject.MaterialAvailable || []).length;
-                    parsedCache.pagination.totalPages = Math.ceil(
-                      (cleanedProject.MaterialAvailable || []).length / (parsedCache.pagination.itemsPerPage || 20)
-                    );
-                    
-                    // Save updated cache
-                    await safeRedisSetCache(cacheKey, JSON.stringify(parsedCache), 'EX', 86400);
-                    console.log(`✅ Updated material cache: ${cacheKey}`);
-                    console.log(`   - Materials in cache: ${parsedCache.MaterialAvailable.length}`);
-                  }
-                }
-              } catch (updateError) {
-                console.error(`❌ Error updating cache key ${cacheKey}:`, updateError);
-                await safeRedisDelCache(cacheKey);
-              }
-            }
-          } else {
-            console.warn(`⚠️ cleanedProject is null - falling back to invalidation`);
-            // If cleanedProject is null, invalidate cache
-            await safeRedisDelCache(...materialKeys);
-          }
-        }
-        
-        console.log('✅ Cache update completed');
-        console.log('========================================\n');
-        
-      } catch (cacheError) {
-        console.error('❌ Cache update error:', cacheError);
-        // Fallback to invalidation
-        await invalidateCachePattern(`material-usage:${projectId}:*`);
-        await invalidateCachePattern(`material:${projectId}:*`);
-      }
+      // (Cache invalidation now happens right after the DB write, above.)
 
       console.log(`========================================`);
       console.log(`📊 SAVED ACTIVITY DETAILS:`);

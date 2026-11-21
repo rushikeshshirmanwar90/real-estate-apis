@@ -232,7 +232,8 @@ export const GET = async (req: NextRequest) => {
     const cacheKey = `material:${projectId}:${clientId}:${sectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
 
-    const cachedData = await safeRedisGetCache(cacheKey);
+    // `_t` (cache buster) = caller wants fresh data, so bypass the cached copy.
+    const cachedData = cacheBuster ? null : await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
       if (Array.isArray(cacheValue.MaterialAvailable)) {

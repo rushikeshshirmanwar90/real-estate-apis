@@ -83,7 +83,11 @@ export const GET = async (req: NextRequest) => {
     const cacheKey = `material-usage:${projectId}:${clientId}:${sectionId || 'all'}:${miniSectionId || 'all'}:${sortBy}:${sortOrder}:${page}:${limit}`;
     console.log(`🔍 Cache key: ${cacheKey}${cacheBuster ? ` (cache buster: ${cacheBuster})` : ''}`);
     
-    const cachedData = await safeRedisGetCache(cacheKey);
+    // A cache buster (`_t`) means the app explicitly wants fresh data (e.g. right after
+    // recording usage), so skip the cached copy and read from the database. Without
+    // this, `_t` was ignored (it isn't part of the key) and a stale cached list could
+    // keep the newly recorded usage off the Material Used page for up to 24 hours.
+    const cachedData = cacheBuster ? null : await safeRedisGetCache(cacheKey);
     if (cachedData) {
       const cacheValue = JSON.parse(cachedData);
       return NextResponse.json(cacheValue, { status: 200 });
